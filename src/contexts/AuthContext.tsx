@@ -1,55 +1,78 @@
-"use client";
+'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User } from '@/lib/types';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { User } from '@/lib/types';
+import { 
+  getCurrentSession, 
+  login as authLogin, 
+  logout as authLogout,
+  isAdmin as checkIsAdmin,
+  refreshSession
+} from '@/lib/auth';
 
 interface AuthContextType {
   user: User | null;
-  login: (userData: User) => void;
-  logout: () => void;
   isLoading: boolean;
   isAdmin: boolean;
+  login: (employeeNo: string, password: string) => Promise<{ success: boolean; user?: User; error?: string }>;
+  logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Check for existing session on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('wareops_user');
-    if (storedUser) {
+    const checkSession = () => {
       try {
-        const userData = JSON.parse(storedUser);
-        setUser(userData);
+        const session = getCurrentSession();
+        if (session) {
+          setUser(session.user);
+          // Refresh session to extend expiry
+          refreshSession();
+        }
       } catch (error) {
-        console.error('Error parsing stored user data:', error);
-        localStorage.removeItem('wareops_user');
+        console.error('Error loading session:', error);
+        authLogout();
+      } finally {
+        setIsLoading(false);
       }
-    }
-    setIsLoading(false);
+    };
+
+    checkSession();
   }, []);
 
-  const login = (userData: User) => {
-    setUser(userData);
-    localStorage.setItem('wareops_user', JSON.stringify(userData));
+  const login = async (employeeNo: string, password: string) => {
+    try {
+      const result = await authLogin(employeeNo, password);
+      if (result.success && result.user) {
+        setUser(result.user);
+      }
+      return result;
+    } catch (error) {
+      console.error('Login error:', error);
+      return { success: false, error: 'Login failed' };
+    }
   };
 
   const logout = () => {
+    authLogout();
     setUser(null);
-    localStorage.removeItem('wareops_user');
+    // Force a page reload to ensure clean state
+    window.location.href = '/';
   };
 
-  const isAdmin = user?.role === 'Admin';
+  const isAdmin = checkIsAdmin();
 
   const value = {
     user,
-    login,
-    logout,
     isLoading,
     isAdmin,
+    login,
+    logout,
   };
 
   return (

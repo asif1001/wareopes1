@@ -34,16 +34,21 @@ import { Input } from "@/components/ui/input"
 
 import Image from "next/image"
 import { logoutUser } from "@/app/actions"
+import { useAuth } from "@/contexts/AuthContext"
 
 export function DashboardHeader({title}: {title: string}) {
   const router = useRouter()
+  const { logout } = useAuth()
 
   const handleLogout = async () => {
     try {
       await logoutUser()
-      router.push('/')
+      // Clear auth context user state
+      logout()
     } catch (error) {
       console.error('Logout failed:', error)
+      // Even if logoutUser fails, clear the context and redirect
+      logout()
     }
   }
   return (

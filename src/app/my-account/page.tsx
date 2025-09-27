@@ -159,11 +159,8 @@ export default function MyAccountPage() {
       
       if (result.success) {
         logout(); // Clear auth context
-        setMessage({ type: 'success', text: result.message || 'Logged out successfully' });
-        // In a real app, you would redirect to login page
-        setTimeout(() => {
-          window.location.href = '/login';
-        }, 2000);
+        // Immediately redirect to login page without delay
+        window.location.href = '/';
       } else {
         setMessage({ type: 'error', text: result.error || 'Failed to logout' });
       }
@@ -235,7 +232,7 @@ export default function MyAccountPage() {
                   <div className="relative">
                     <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-200">
                       <Image
-                        src={userData.profilePicture}
+                        src={(userData.profilePicture ?? '/placeholder-avatar.svg') as string}
                         alt="Profile Picture"
                         width={128}
                         height={128}

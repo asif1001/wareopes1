@@ -5,42 +5,48 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useActionState, useEffect } from 'react';
-import { useFormStatus } from 'react-dom';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { loginAction } from './actions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 
-function LoginButton() {
-    const { pending } = useFormStatus();
-    return (
-        <Button type="submit" className="w-full" disabled={pending}>
-            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Login
-        </Button>
-    );
-}
-
-
 export default function LoginPage() {
-    const initialState = { 
-        success: false, 
-        message: '', 
-        error: '' 
-    };
-    const [state, formAction] = useActionState(loginAction, initialState);
+    const [employeeNo, setEmployeeNo] = useState('');
+    const [password, setPassword] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+    
     const router = useRouter();
-    const { login } = useAuth();
+    const { login, user } = useAuth();
 
-    // Handle redirect after successful login
+    // Redirect if already logged in
     useEffect(() => {
-        if (state?.success && state?.redirect && state?.user) {
-            // Store user data in auth context
-            login(state.user);
-            router.push(state.redirect);
+        if (user) {
+            router.push('/dashboard');
         }
-    }, [state, router, login]);
+    }, [user, router]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setError('');
+        setSuccess('');
+
+        try {
+            const result = await login(employeeNo, password);
+            if (result.success) {
+                setSuccess('Login successful! Redirecting...');
+                router.push('/dashboard');
+            } else {
+                setError(result.error || 'Login failed');
+            }
+        } catch (err) {
+            setError('An unexpected error occurred');
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
         <div className="w-full lg:grid lg:min-h-screen lg:grid-cols-2 xl:min-h-screen">
@@ -56,7 +62,7 @@ export default function LoginPage() {
                         </p>
                     </div>
                     <Card>
-                        <form action={formAction}>
+                        <form onSubmit={handleSubmit}>
                             <CardHeader>
                                 <CardTitle className="text-2xl">Login</CardTitle>
                                 <CardDescription>
@@ -64,29 +70,46 @@ export default function LoginPage() {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent>
-                                {state.error && (
+                                {error && (
                                     <Alert variant="destructive" className="mb-4">
                                         <AlertCircle className="h-4 w-4" />
                                         <AlertTitle>Login Failed</AlertTitle>
-                                        <AlertDescription>{state.error}</AlertDescription>
+                                        <AlertDescription>{error}</AlertDescription>
                                     </Alert>
                                 )}
-                                {state.success && (
+                                {success && (
                                     <Alert className="mb-4">
                                         <AlertTitle>Success</AlertTitle>
-                                        <AlertDescription>{state.message}</AlertDescription>
+                                        <AlertDescription>{success}</AlertDescription>
                                     </Alert>
                                 )}
                                 <div className="grid gap-4">
                                     <div className="grid gap-2">
                                         <Label htmlFor="employeeNo">Employee No / CPR No</Label>
-                                        <Input id="employeeNo" name="employeeNo" placeholder="e.g., 123456789" required />
+                                        <Input 
+                                            id="employeeNo" 
+                                            name="employeeNo" 
+                                            placeholder="e.g., 123456789" 
+                                            value={employeeNo}
+                                            onChange={(e) => setEmployeeNo(e.target.value)}
+                                            required 
+                                        />
                                     </div>
                                     <div className="grid gap-2">
                                         <Label htmlFor="password">Password</Label>
-                                        <Input id="password" name="password" type="password" required />
+                                        <Input 
+                                            id="password" 
+                                            name="password" 
+                                            type="password" 
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            required 
+                                        />
                                     </div>
-                                    <LoginButton />
+                                    <Button type="submit" className="w-full" disabled={isLoading}>
+                                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                        Login
+                                    </Button>
                                 </div>
                             </CardContent>
                         </form>

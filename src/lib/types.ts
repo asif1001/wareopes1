@@ -126,11 +126,14 @@ export type UserRole = typeof userRoles[number];
 export type User = {
     id: string;
     fullName: string;
+    name?: string; // Alternative name field for compatibility
     employeeNo: string;
     password?: string; // Should be handled securely, not stored plaintext
     email?: string;
+    phone?: string;
     department: string;
     role: UserRole;
+    profilePicture?: string;
 };
 
 export type Source = {

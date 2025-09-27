@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { Boxes, LayoutDashboard, Flag, FileText, GanttChartSquare, MessageSquareWarning, Settings } from "lucide-react";
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -11,11 +12,12 @@ const navItems = [
     { href: "/dashboard/tasks", label: "Tasks", icon: GanttChartSquare },
     { href: "/dashboard/feedback", label: "Feedback", icon: MessageSquareWarning },
     { href: "/dashboard/reports", label: "Reports", icon: FileText },
-    { href: "/dashboard/settings", label: "Settings", icon: Settings },
+    { href: "/dashboard/settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
 
 export function DashboardNav() {
     const pathname = usePathname();
+    const { isAdmin } = useAuth();
 
     return (
         <div className="flex flex-col h-full">
@@ -27,7 +29,9 @@ export function DashboardNav() {
             </div>
             <div className="flex-1 overflow-y-auto">
                 <SidebarMenu className="p-2">
-                    {navItems.map((item) => (
+                    {navItems
+                        .filter(item => !item.adminOnly || isAdmin)
+                        .map((item) => (
                         <SidebarMenuItem key={item.href}>
                             <SidebarMenuButton 
                                 asChild

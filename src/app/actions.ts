@@ -487,88 +487,83 @@ export async function updateBranchAction(prevState: any, formData: FormData) {
 }
 
 // Delete actions
-export async function deleteUserAction(id: string) {
+export async function deleteUserAction(id: string): Promise<void> {
   try {
     if (!id) {
-      return { success: false, error: "User ID is required" };
+      console.error("User ID is required");
+      return;
     }
 
     console.log("Deleting user:", id);
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     revalidatePath('/dashboard/settings');
-    return { success: true, error: null };
   } catch (error) {
     console.error("Error deleting user:", error);
-    return { success: false, error: "Failed to delete user" };
   }
 }
 
-export async function deleteSourceAction(id: string) {
+export async function deleteSourceAction(id: string): Promise<void> {
   try {
     if (!id) {
-      return { success: false, error: "Source ID is required" };
+      console.error("Source ID is required");
+      return;
     }
 
     console.log("Deleting source:", id);
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     revalidatePath('/dashboard/settings');
-    return { success: true, error: null };
   } catch (error) {
     console.error("Error deleting source:", error);
-    return { success: false, error: "Failed to delete source" };
   }
 }
 
-export async function deleteContainerSizeAction(id: string) {
+export async function deleteContainerSizeAction(id: string): Promise<void> {
   try {
     if (!id) {
-      return { success: false, error: "Container size ID is required" };
+      console.error("Container size ID is required");
+      return;
     }
 
     console.log("Deleting container size:", id);
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     revalidatePath('/dashboard/settings');
-    return { success: true, error: null };
   } catch (error) {
     console.error("Error deleting container size:", error);
-    return { success: false, error: "Failed to delete container size" };
   }
 }
 
-export async function deleteDepartmentAction(id: string) {
+export async function deleteDepartmentAction(id: string): Promise<void> {
   try {
     if (!id) {
-      return { success: false, error: "Department ID is required" };
+      console.error("Department ID is required");
+      return;
     }
 
     console.log("Deleting department:", id);
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     revalidatePath('/dashboard/settings');
-    return { success: true, error: null };
   } catch (error) {
     console.error("Error deleting department:", error);
-    return { success: false, error: "Failed to delete department" };
   }
 }
 
-export async function deleteBranchAction(id: string) {
+export async function deleteBranchAction(id: string): Promise<void> {
   try {
     if (!id) {
-      return { success: false, error: "Branch ID is required" };
+      console.error("Branch ID is required");
+      return;
     }
 
     console.log("Deleting branch:", id);
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     revalidatePath('/dashboard/settings');
-    return { success: true, error: null };
   } catch (error) {
     console.error("Error deleting branch:", error);
-    return { success: false, error: "Failed to delete branch" };
   }
 }
 
@@ -608,8 +603,13 @@ export async function logoutUser() {
 
     console.log("Logging out user");
     
+    // Clear localStorage session
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('wareops_session');
+    }
+
     // Simulate logout process
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     // In a real app, you'd use your auth library's logout function
     // For example, with NextAuth: await signOut({ redirect: false })
