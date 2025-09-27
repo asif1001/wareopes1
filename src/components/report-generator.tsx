@@ -1,7 +1,7 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
-import { generateReportAction } from "@/app/actions";
+import { generateReport } from "@/app/actions";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,7 @@ function SubmitButton() {
 
 export function ReportGenerator() {
   const initialState = { output: null, error: null };
-  const [state, formAction] = useActionState(generateReportAction, initialState);
+  const [state, formAction] = useActionState(generateReport, initialState);
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">

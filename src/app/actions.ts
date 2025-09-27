@@ -92,10 +92,28 @@ export async function deleteUser(id: string) {
   revalidatePath("/dashboard");
 }
 
-export async function generateReport(type: string) {
+export async function generateReport(prevState: any, formData: FormData) {
   // Implementation for generating reports
-  console.log("Generating report:", type);
-  return { success: true, reportId: "report-123" };
+  const reportTitle = formData.get("reportTitle") as string;
+  const reportDescription = formData.get("reportDescription") as string;
+  
+  console.log("Generating report:", reportTitle);
+  
+  // Simulate AI-generated report suggestions
+  const output = {
+    reportDescription: `Based on your request for "${reportTitle}", here's a comprehensive analysis of your warehouse operations data. This report will help you understand key performance indicators and identify areas for improvement.`,
+    chartSuggestions: `For "${reportTitle}", I recommend the following visualizations:
+    
+1. Bar Chart - Compare performance across different time periods
+2. Line Chart - Show trends over time for key metrics
+3. Pie Chart - Display distribution of categories or segments
+4. Heat Map - Visualize patterns in your operational data
+5. Dashboard Cards - Highlight key performance indicators
+
+These visualizations will provide clear insights into your warehouse operations and help drive data-driven decisions.`
+  };
+  
+  return { output, error: null };
 }
 
 export async function createShipment(formData: FormData) {
