@@ -54,6 +54,11 @@ export function RecentShipments({ shipments }: { shipments: SerializableShipment
                 bookingDate: booking.bookingDate,
             }))
         )
+        .filter(booking => {
+            // Only show bookings that are today or in the future
+            const bookingDate = startOfDay(parseISO(booking.bookingDate));
+            return bookingDate >= today;
+        })
         .sort((a, b) => new Date(a.bookingDate).getTime() - new Date(b.bookingDate).getTime())
         .reduce((acc, booking) => {
             const dateKey = format(parseISO(booking.bookingDate), 'yyyy-MM-dd');
