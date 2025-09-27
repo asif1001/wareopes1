@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useActionState } from 'react';
+import { useActionState, useEffect } from 'react';
 import { useFormStatus } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import { loginAction } from './actions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
@@ -22,8 +23,20 @@ function LoginButton() {
 
 
 export default function LoginPage() {
-    const initialState = { error: null };
+    const initialState = { 
+        success: false, 
+        message: '', 
+        error: '' 
+    };
     const [state, formAction] = useActionState(loginAction, initialState);
+    const router = useRouter();
+
+    // Handle redirect after successful login
+    useEffect(() => {
+        if (state?.success && state?.redirect) {
+            router.push(state.redirect);
+        }
+    }, [state, router]);
 
     return (
         <div className="w-full lg:grid lg:min-h-screen lg:grid-cols-2 xl:min-h-screen">
@@ -52,6 +65,12 @@ export default function LoginPage() {
                                         <AlertCircle className="h-4 w-4" />
                                         <AlertTitle>Login Failed</AlertTitle>
                                         <AlertDescription>{state.error}</AlertDescription>
+                                    </Alert>
+                                )}
+                                {state.success && (
+                                    <Alert className="mb-4">
+                                        <AlertTitle>Success</AlertTitle>
+                                        <AlertDescription>{state.message}</AlertDescription>
                                     </Alert>
                                 )}
                                 <div className="grid gap-4">

@@ -1,9 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  experimental: {
-    appDir: true,
-  },
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -19,6 +16,10 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "plus.unsplash.com",
+      },
+      {
+        protocol: "https",
+        hostname: "picsum.photos",
       },
     ],
   },
