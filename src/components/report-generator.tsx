@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
 import { generateReportAction } from "@/app/actions";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Lightbulb, Loader2, BarChart, FileText } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { useActionState as useReactActionState } from "react";
+import { useActionState } from "react";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -29,7 +29,7 @@ function SubmitButton() {
 
 export function ReportGenerator() {
   const initialState = { output: null, error: null };
-  const [state, formAction] = useReactActionState(generateReportAction, initialState);
+  const [state, formAction] = useActionState(generateReportAction, initialState);
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">
