@@ -17,15 +17,17 @@ import Image from 'next/image';
 import { Sidebar, SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { DashboardNav } from "@/components/dashboard-nav";
 import { DashboardHeader } from '@/components/dashboard-header';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function MyAccountPage() {
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('settings');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Mock user data - in a real app, this would come from your auth system
-  const [userData, setUserData] = useState({
+  const [userData, setUserData] = useState(user || {
     name: 'John Doe',
     email: 'john.doe@company.com',
     phone: '+1 (555) 123-4567',
@@ -156,6 +158,7 @@ export default function MyAccountPage() {
       const result = await logoutUser();
       
       if (result.success) {
+        logout(); // Clear auth context
         setMessage({ type: 'success', text: result.message || 'Logged out successfully' });
         // In a real app, you would redirect to login page
         setTimeout(() => {

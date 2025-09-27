@@ -10,6 +10,7 @@ import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { loginAction } from './actions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useAuth } from '@/contexts/AuthContext';
 
 function LoginButton() {
     const { pending } = useFormStatus();
@@ -30,13 +31,16 @@ export default function LoginPage() {
     };
     const [state, formAction] = useActionState(loginAction, initialState);
     const router = useRouter();
+    const { login } = useAuth();
 
     // Handle redirect after successful login
     useEffect(() => {
-        if (state?.success && state?.redirect) {
+        if (state?.success && state?.redirect && state?.user) {
+            // Store user data in auth context
+            login(state.user);
             router.push(state.redirect);
         }
-    }, [state, router]);
+    }, [state, router, login]);
 
     return (
         <div className="w-full lg:grid lg:min-h-screen lg:grid-cols-2 xl:min-h-screen">

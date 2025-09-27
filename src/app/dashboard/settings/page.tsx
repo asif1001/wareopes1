@@ -10,6 +10,7 @@ import { deleteUserAction, deleteSourceAction, deleteContainerSizeAction, delete
 import { UserEditForm, SourceEditForm, ContainerSizeEditForm, DepartmentEditForm, BranchEditForm } from "@/components/settings-edit-forms";
 import type { User, Source, ContainerSize, Department, Branch } from "@/lib/types";
 import { BulkImport } from "@/components/bulk-import";
+import { AdminRoute } from "@/components/AdminRoute";
 
 async function UsersTable() {
   const users = await getUsers();
@@ -204,53 +205,55 @@ export default async function SettingsPage() {
   const branches = await getBranches();
 
   return (
-    <div className="flex flex-col h-full">
-      <DashboardHeader title="Settings" />
-      <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
-        <Tabs defaultValue="users">
-          <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="users">User</TabsTrigger>
-            <TabsTrigger value="sources">Source</TabsTrigger>
-            <TabsTrigger value="containers">Container Size</TabsTrigger>
-            <TabsTrigger value="departments">Department</TabsTrigger>
-            <TabsTrigger value="branches">Branch</TabsTrigger>
-            <TabsTrigger value="bulk-import">Bulk Import</TabsTrigger>
-          </TabsList>
-          <TabsContent value="users">
-            <div className="grid lg:grid-cols-2 gap-6">
-                <UserForm departments={departments} />
-                <UsersTable />
-            </div>
-          </TabsContent>
-          <TabsContent value="sources">
-            <div className="grid lg:grid-cols-2 gap-6">
-                <SourceForm />
-                <SourcesTable />
-            </div>
-          </TabsContent>
-          <TabsContent value="containers">
-            <div className="grid lg:grid-cols-2 gap-6">
-                <ContainerSizeForm />
-                <ContainerSizesTable />
-            </div>
-          </TabsContent>
-          <TabsContent value="departments">
-            <div className="grid lg:grid-cols-2 gap-6">
-                <DepartmentForm branches={branches} />
-                <DepartmentsTable />
-            </div>
-          </TabsContent>
-          <TabsContent value="branches">
-            <div className="grid lg:grid-cols-2 gap-6">
-                <BranchForm />
-                <BranchesTable />
-            </div>
-          </TabsContent>
-          <TabsContent value="bulk-import">
-            <BulkImport />
-          </TabsContent>
-        </Tabs>
-      </main>
-    </div>
+    <AdminRoute>
+      <div className="flex flex-col h-full">
+        <DashboardHeader title="Settings" />
+        <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
+          <Tabs defaultValue="users">
+            <TabsList className="grid w-full grid-cols-6">
+              <TabsTrigger value="users">User</TabsTrigger>
+              <TabsTrigger value="sources">Source</TabsTrigger>
+              <TabsTrigger value="containers">Container Size</TabsTrigger>
+              <TabsTrigger value="departments">Department</TabsTrigger>
+              <TabsTrigger value="branches">Branch</TabsTrigger>
+              <TabsTrigger value="bulk-import">Bulk Import</TabsTrigger>
+            </TabsList>
+            <TabsContent value="users">
+              <div className="grid lg:grid-cols-2 gap-6">
+                  <UserForm departments={departments} />
+                  <UsersTable />
+              </div>
+            </TabsContent>
+            <TabsContent value="sources">
+              <div className="grid lg:grid-cols-2 gap-6">
+                  <SourceForm />
+                  <SourcesTable />
+              </div>
+            </TabsContent>
+            <TabsContent value="containers">
+              <div className="grid lg:grid-cols-2 gap-6">
+                  <ContainerSizeForm />
+                  <ContainerSizesTable />
+              </div>
+            </TabsContent>
+            <TabsContent value="departments">
+              <div className="grid lg:grid-cols-2 gap-6">
+                  <DepartmentForm branches={branches} />
+                  <DepartmentsTable />
+              </div>
+            </TabsContent>
+            <TabsContent value="branches">
+              <div className="grid lg:grid-cols-2 gap-6">
+                  <BranchForm />
+                  <BranchesTable />
+              </div>
+            </TabsContent>
+            <TabsContent value="bulk-import">
+              <BulkImport />
+            </TabsContent>
+          </Tabs>
+        </main>
+      </div>
+    </AdminRoute>
   );
 }
