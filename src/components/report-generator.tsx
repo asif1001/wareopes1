@@ -28,7 +28,13 @@ function SubmitButton() {
 }
 
 export function ReportGenerator() {
-  const initialState = { output: null, error: null };
+  const initialState = { 
+    output: { 
+      reportDescription: "", 
+      chartSuggestions: "" 
+    }, 
+    error: null 
+  };
   const [state, formAction] = useActionState(generateReport, initialState);
 
   return (

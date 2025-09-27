@@ -92,7 +92,10 @@ export async function deleteUser(id: string) {
   revalidatePath("/dashboard");
 }
 
-export async function generateReport(prevState: any, formData: FormData) {
+export async function generateReport(
+  prevState: { output: { reportDescription: string; chartSuggestions: string; }; error: null; }, 
+  formData: FormData
+) {
   // Implementation for generating reports
   const reportTitle = formData.get("reportTitle") as string;
   const reportDescription = formData.get("reportDescription") as string;
