@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { addSource, addContainerSize } from "@/lib/firebase/firestore";
 
 // Login action
 export async function loginAction(prevState: any, formData: FormData) {
@@ -307,8 +308,11 @@ export async function addSourceAction(prevState: any, formData: FormData) {
       return { message: "Name and code are required" };
     }
 
-    console.log("Adding source:", { name, code });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Actually save to Firebase
+    await addSource({
+      name: name,
+      shortName: code
+    });
 
     revalidatePath('/dashboard/settings');
     return { message: "Source added successfully" };
@@ -327,8 +331,11 @@ export async function addContainerSizeAction(prevState: any, formData: FormData)
       return { message: "Size is required" };
     }
 
-    console.log("Adding container size:", { size, description });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Actually save to Firebase
+    await addContainerSize({
+      size: size,
+      cmb: description || ''
+    });
 
     revalidatePath('/dashboard/settings');
     return { message: "Container size added successfully" };

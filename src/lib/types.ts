@@ -134,6 +134,8 @@ export type User = {
     department: string;
     role: UserRole;
     profilePicture?: string;
+    createdAt?: string; // ISO string for serialization
+    updatedAt?: string; // ISO string for serialization
 };
 
 export type Source = {

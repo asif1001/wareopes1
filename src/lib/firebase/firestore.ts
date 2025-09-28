@@ -281,7 +281,23 @@ export async function deleteShipment(id: string) {
 export async function getUsers(): Promise<User[]> {
     const usersCol = collection(db, 'Users');
     const userSnapshot = await getDocs(usersCol);
-    return userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    return userSnapshot.docs.map(doc => {
+        const data = doc.data();
+        // Function to convert Firestore Timestamps to ISO strings for serialization
+        const toISOString = (timestamp: any): string | undefined => {
+            if (timestamp instanceof Timestamp) {
+                return timestamp.toDate().toISOString();
+            }
+            return undefined;
+        };
+        
+        return {
+            id: doc.id,
+            ...data,
+            createdAt: toISOString(data.createdAt),
+            updatedAt: toISOString(data.updatedAt)
+        } as User;
+    });
 }
 
 export async function getUserByEmployeeNo(employeeNo: string): Promise<User | null> {

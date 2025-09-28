@@ -17,7 +17,12 @@ const navItems = [
 
 export function DashboardNav() {
     const pathname = usePathname();
-    const { isAdmin } = useAuth();
+    const { isAdmin, isLoading } = useAuth();
+
+    // Prevent hydration mismatch by not rendering admin-only items during initial load
+    const filteredNavItems = isLoading 
+        ? navItems.filter(item => !item.adminOnly)
+        : navItems.filter(item => !item.adminOnly || isAdmin);
 
     return (
         <div className="flex flex-col h-full">
@@ -29,9 +34,7 @@ export function DashboardNav() {
             </div>
             <div className="flex-1 overflow-y-auto">
                 <SidebarMenu className="p-2">
-                    {navItems
-                        .filter(item => !item.adminOnly || isAdmin)
-                        .map((item) => (
+                    {filteredNavItems.map((item) => (
                         <SidebarMenuItem key={item.href}>
                             <SidebarMenuButton 
                                 asChild

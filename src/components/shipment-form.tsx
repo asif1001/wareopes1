@@ -185,10 +185,10 @@ export function ShipmentForm({
 
     const form = useForm<ShipmentFormData>({
         defaultValues: parseShipmentData(shipment) || {
-            source: '',
+            source: 'TMC',
             invoice: '',
             billOfLading: '',
-            containers: [{ id: '1', size: "", quantity: 1 }],
+            containers: [{ id: '1', size: "40ft", quantity: 1 }],
             cleared: false,
             totalCases: '',
             domLines: '',
@@ -226,10 +226,10 @@ export function ShipmentForm({
             actionState.error = null;
             actionState.success = false;
             const defaultValues = parseShipmentData(shipment) || {
-                source: '',
+                source: 'TMC',
                 invoice: '',
                 billOfLading: '',
-                containers: [{ id: '1', size: "", quantity: 1 }],
+                containers: [{ id: '1', size: "40ft", quantity: 1 }],
                 cleared: false,
                 totalCases: '',
                 domLines: '',

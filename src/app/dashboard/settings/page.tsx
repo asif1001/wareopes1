@@ -20,7 +20,7 @@ async function UsersTable() {
       <CardHeader>
         <CardTitle>Existing Users</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="max-h-96 overflow-y-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -62,7 +62,7 @@ async function SourcesTable() {
             <CardHeader>
                 <CardTitle>Existing Sources</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="max-h-96 overflow-y-auto">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -98,7 +98,7 @@ async function ContainerSizesTable() {
             <CardHeader>
                 <CardTitle>Existing Container Sizes</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="max-h-96 overflow-y-auto">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -135,7 +135,7 @@ async function DepartmentsTable() {
             <CardHeader>
                 <CardTitle>Existing Departments</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="max-h-96 overflow-y-auto">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -171,7 +171,7 @@ async function BranchesTable() {
             <CardHeader>
                 <CardTitle>Existing Branches</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="max-h-96 overflow-y-auto">
                 <Table>
                     <TableHeader>
                         <TableRow>

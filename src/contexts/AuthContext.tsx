@@ -23,6 +23,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   // Check for existing session on mount
   useEffect(() => {
@@ -39,6 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authLogout();
       } finally {
         setIsLoading(false);
+        setIsHydrated(true);
       }
     };
 
@@ -65,7 +67,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = '/';
   };
 
-  const isAdmin = checkIsAdmin();
+  // Only check admin status after hydration to prevent server/client mismatch
+  const isAdmin = isHydrated ? checkIsAdmin() : false;
 
   const value = {
     user,

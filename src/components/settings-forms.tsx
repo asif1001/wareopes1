@@ -115,8 +115,8 @@ export function SourceForm() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="grid gap-2">
-                        <Label htmlFor="shortName">Source Short Name</Label>
-                        <Input id="shortName" name="shortName" required />
+                        <Label htmlFor="code">Source Code</Label>
+                        <Input id="code" name="code" required />
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="name">Source Name</Label>
@@ -160,8 +160,8 @@ export function ContainerSizeForm() {
                         <Input id="size" name="size" required />
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="cmb">CMB</Label>
-                        <Input id="cmb" name="cmb" required />
+                        <Label htmlFor="description">Description</Label>
+                        <Input id="description" name="description" />
                     </div>
                 </CardContent>
                 <CardFooter>
@@ -249,8 +249,8 @@ export function BranchForm() {
                         <Input id="name" name="name" required />
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="code">Branch Code</Label>
-                        <Input id="code" name="code" required />
+                        <Label htmlFor="location">Branch Location</Label>
+                        <Input id="location" name="location" required />
                     </div>
                 </CardContent>
                 <CardFooter>
