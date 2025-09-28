@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { addSource, addContainerSize } from "@/lib/firebase/firestore";
+import { UserRole } from "@/lib/types";
 
 // Login action
 export async function loginAction(prevState: any, formData: FormData) {
@@ -368,14 +369,20 @@ export async function addDepartmentAction(prevState: any, formData: FormData) {
 export async function addBranchAction(prevState: any, formData: FormData) {
   try {
     const name = formData.get('name') as string;
-    const location = formData.get('location') as string;
+    const code = formData.get('code') as string;
 
-    if (!name || !location) {
-      return { message: "Name and location are required" };
+    if (!name || !code) {
+      return { message: "Name and code are required" };
     }
 
-    console.log("Adding branch:", { name, location });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    console.log("Adding branch:", { name, code });
+    
+    // Call the actual Firebase function
+    const { addBranch } = await import('@/lib/firebase/firestore');
+    await addBranch({
+      name,
+      code
+    });
 
     revalidatePath('/dashboard/settings');
     return { message: "Branch added successfully" };
@@ -392,14 +399,22 @@ export async function updateUserAction(prevState: any, formData: FormData) {
     const fullName = formData.get('fullName') as string;
     const email = formData.get('email') as string;
     const department = formData.get('department') as string;
-    const role = formData.get('role') as string;
+    const role = formData.get('role') as UserRole;
 
     if (!id || !fullName || !email || !department || !role) {
       return { message: "All fields are required" };
     }
 
     console.log("Updating user:", { id, fullName, email, department, role });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Call the actual Firebase function
+    const { updateUser } = await import('@/lib/firebase/firestore');
+    await updateUser(id, {
+      fullName,
+      email,
+      department,
+      role
+    });
 
     revalidatePath('/dashboard/settings');
     return { message: "User updated successfully" };
@@ -420,7 +435,13 @@ export async function updateSourceAction(prevState: any, formData: FormData) {
     }
 
     console.log("Updating source:", { id, name, code });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Call the actual Firebase function
+    const { updateSource } = await import('@/lib/firebase/firestore');
+    await updateSource(id, {
+      name,
+      shortName: code
+    });
 
     revalidatePath('/dashboard/settings');
     return { message: "Source updated successfully" };
@@ -441,7 +462,13 @@ export async function updateContainerSizeAction(prevState: any, formData: FormDa
     }
 
     console.log("Updating container size:", { id, size, description });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Call the actual Firebase function
+    const { updateContainerSize } = await import('@/lib/firebase/firestore');
+    await updateContainerSize(id, {
+      size,
+      cmb: description || ''
+    });
 
     revalidatePath('/dashboard/settings');
     return { message: "Container size updated successfully" };
@@ -462,7 +489,13 @@ export async function updateDepartmentAction(prevState: any, formData: FormData)
     }
 
     console.log("Updating department:", { id, name, branch });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Call the actual Firebase function
+    const { updateDepartment } = await import('@/lib/firebase/firestore');
+    await updateDepartment(id, {
+      name,
+      branch
+    });
 
     revalidatePath('/dashboard/settings');
     return { message: "Department updated successfully" };
@@ -476,14 +509,20 @@ export async function updateBranchAction(prevState: any, formData: FormData) {
   try {
     const id = formData.get('id') as string;
     const name = formData.get('name') as string;
-    const location = formData.get('location') as string;
+    const code = formData.get('code') as string;
 
-    if (!id || !name || !location) {
+    if (!id || !name || !code) {
       return { message: "All fields are required" };
     }
 
-    console.log("Updating branch:", { id, name, location });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    console.log("Updating branch:", { id, name, code });
+    
+    // Call the actual Firebase function
+    const { updateBranch } = await import('@/lib/firebase/firestore');
+    await updateBranch(id, {
+      name,
+      code
+    });
 
     revalidatePath('/dashboard/settings');
     return { message: "Branch updated successfully" };
@@ -494,83 +533,113 @@ export async function updateBranchAction(prevState: any, formData: FormData) {
 }
 
 // Delete actions
-export async function deleteUserAction(id: string): Promise<void> {
+export async function deleteUserAction(prevState: any, formData: FormData) {
   try {
+    const id = formData.get('id') as string;
+    
     if (!id) {
-      console.error("User ID is required");
-      return;
+      return { message: "User ID is required" };
     }
 
     console.log("Deleting user:", id);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Call the actual Firebase function
+    const { deleteUser } = await import('@/lib/firebase/firestore');
+    await deleteUser(id);
 
     revalidatePath('/dashboard/settings');
+    return { message: "User deleted successfully" };
   } catch (error) {
     console.error("Error deleting user:", error);
+    return { message: "Failed to delete user" };
   }
 }
 
-export async function deleteSourceAction(id: string): Promise<void> {
+export async function deleteSourceAction(prevState: any, formData: FormData) {
   try {
+    const id = formData.get('id') as string;
+    
     if (!id) {
-      console.error("Source ID is required");
-      return;
+      return { message: "Source ID is required" };
     }
 
     console.log("Deleting source:", id);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Call the actual Firebase function
+    const { deleteSource } = await import('@/lib/firebase/firestore');
+    await deleteSource(id);
 
     revalidatePath('/dashboard/settings');
+    return { message: "Source deleted successfully" };
   } catch (error) {
     console.error("Error deleting source:", error);
+    return { message: "Failed to delete source" };
   }
 }
 
-export async function deleteContainerSizeAction(id: string): Promise<void> {
+export async function deleteContainerSizeAction(prevState: any, formData: FormData) {
   try {
+    const id = formData.get('id') as string;
+    
     if (!id) {
-      console.error("Container size ID is required");
-      return;
+      return { message: "Container size ID is required" };
     }
 
     console.log("Deleting container size:", id);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Call the actual Firebase function
+    const { deleteContainerSize } = await import('@/lib/firebase/firestore');
+    await deleteContainerSize(id);
 
     revalidatePath('/dashboard/settings');
+    return { message: "Container size deleted successfully" };
   } catch (error) {
     console.error("Error deleting container size:", error);
+    return { message: "Failed to delete container size" };
   }
 }
 
-export async function deleteDepartmentAction(id: string): Promise<void> {
+export async function deleteDepartmentAction(prevState: any, formData: FormData) {
   try {
+    const id = formData.get('id') as string;
+    
     if (!id) {
-      console.error("Department ID is required");
-      return;
+      return { message: "Department ID is required" };
     }
 
     console.log("Deleting department:", id);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Call the actual Firebase function
+    const { deleteDepartment } = await import('@/lib/firebase/firestore');
+    await deleteDepartment(id);
 
     revalidatePath('/dashboard/settings');
+    return { message: "Department deleted successfully" };
   } catch (error) {
     console.error("Error deleting department:", error);
+    return { message: "Failed to delete department" };
   }
 }
 
-export async function deleteBranchAction(id: string): Promise<void> {
+export async function deleteBranchAction(prevState: any, formData: FormData) {
   try {
+    const id = formData.get('id') as string;
+    
     if (!id) {
-      console.error("Branch ID is required");
-      return;
+      return { message: "Branch ID is required" };
     }
 
     console.log("Deleting branch:", id);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Call the actual Firebase function
+    const { deleteBranch } = await import('@/lib/firebase/firestore');
+    await deleteBranch(id);
 
     revalidatePath('/dashboard/settings');
+    return { message: "Branch deleted successfully" };
   } catch (error) {
     console.error("Error deleting branch:", error);
+    return { message: "Failed to delete branch" };
   }
 }
 

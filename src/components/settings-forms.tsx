@@ -249,8 +249,8 @@ export function BranchForm() {
                         <Input id="name" name="name" required />
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="location">Branch Location</Label>
-                        <Input id="location" name="location" required />
+                        <Label htmlFor="code">Branch Code</Label>
+                        <Input id="code" name="code" required />
                     </div>
                 </CardContent>
                 <CardFooter>

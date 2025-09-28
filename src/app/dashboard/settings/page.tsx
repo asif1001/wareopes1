@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Trash2, Edit } from "lucide-react";
 import { deleteUserAction, deleteSourceAction, deleteContainerSizeAction, deleteDepartmentAction, deleteBranchAction } from "@/app/actions";
 import { UserEditForm, SourceEditForm, ContainerSizeEditForm, DepartmentEditForm, BranchEditForm } from "@/components/settings-edit-forms";
+import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import type { User, Source, ContainerSize, Department, Branch } from "@/lib/types";
 import { BulkImport } from "@/components/bulk-import";
 import { AdminRoute } from "@/components/AdminRoute";
@@ -20,7 +21,7 @@ async function UsersTable() {
       <CardHeader>
         <CardTitle>Existing Users</CardTitle>
       </CardHeader>
-      <CardContent className="max-h-96 overflow-y-auto">
+      <CardContent className="max-h-96 overflow-y-auto relative">
         <Table>
           <TableHeader>
             <TableRow>
@@ -42,14 +43,21 @@ async function UsersTable() {
                 <TableCell>{user.role}</TableCell>
                 <TableCell className="text-right flex justify-end gap-2">
                     <UserEditForm user={user} departments={departments} />
-                    <form action={deleteUserAction.bind(null, user.id)}>
-                        <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4" /></Button>
-                    </form>
+                    <DeleteConfirmationDialog
+                      title="Delete User"
+                      description={`Are you sure you want to delete ${user.fullName}? This action cannot be undone.`}
+                      itemId={user.id}
+                      deleteAction={deleteUserAction}
+                    />
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
+        {/* Bottom scroll indicator */}
+        <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-background/80 to-transparent pointer-events-none flex items-end justify-center pb-1">
+          <div className="w-8 h-1 bg-muted-foreground/30 rounded-full"></div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -78,9 +86,12 @@ async function SourcesTable() {
                                 <TableCell>{source.name}</TableCell>
                                 <TableCell className="text-right flex justify-end gap-2">
                                     <SourceEditForm source={source} />
-                                    <form action={deleteSourceAction.bind(null, source.id)}>
-                                        <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4" /></Button>
-                                    </form>
+                                    <DeleteConfirmationDialog
+                                      title="Delete Source"
+                                      description={`Are you sure you want to delete ${source.name}? This action cannot be undone.`}
+                                      itemId={source.id}
+                                      deleteAction={deleteSourceAction}
+                                    />
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -114,9 +125,12 @@ async function ContainerSizesTable() {
                                 <TableCell>{size.cmb}</TableCell>
                                 <TableCell className="text-right flex justify-end gap-2">
                                     <ContainerSizeEditForm containerSize={size} />
-                                    <form action={deleteContainerSizeAction.bind(null, size.id)}>
-                                        <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4" /></Button>
-                                    </form>
+                                    <DeleteConfirmationDialog
+                                      title="Delete Container Size"
+                                      description={`Are you sure you want to delete ${size.size}? This action cannot be undone.`}
+                                      itemId={size.id}
+                                      deleteAction={deleteContainerSizeAction}
+                                    />
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -151,9 +165,12 @@ async function DepartmentsTable() {
                                 <TableCell>{dept.branch}</TableCell>
                                 <TableCell className="text-right flex justify-end gap-2">
                                     <DepartmentEditForm department={dept} branches={branches} />
-                                    <form action={deleteDepartmentAction.bind(null, dept.id)}>
-                                        <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4" /></Button>
-                                    </form>
+                                    <DeleteConfirmationDialog
+                                      title="Delete Department"
+                                      description={`Are you sure you want to delete ${dept.name}? This action cannot be undone.`}
+                                      itemId={dept.id}
+                                      deleteAction={deleteDepartmentAction}
+                                    />
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -187,9 +204,12 @@ async function BranchesTable() {
                                 <TableCell>{branch.code}</TableCell>
                                 <TableCell className="text-right flex justify-end gap-2">
                                     <BranchEditForm branch={branch} />
-                                    <form action={deleteBranchAction.bind(null, branch.id)}>
-                                        <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4" /></Button>
-                                    </form>
+                                    <DeleteConfirmationDialog
+                                      title="Delete Branch"
+                                      description={`Are you sure you want to delete ${branch.name}? This action cannot be undone.`}
+                                      itemId={branch.id}
+                                      deleteAction={deleteBranchAction}
+                                    />
                                 </TableCell>
                             </TableRow>
                         ))}
