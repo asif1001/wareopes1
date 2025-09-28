@@ -277,20 +277,28 @@ export async function addUserAction(prevState: any, formData: FormData) {
   try {
     const fullName = formData.get('fullName') as string;
     const employeeNo = formData.get('employeeNo') as string;
+    const password = formData.get('password') as string;
     const email = formData.get('email') as string;
     const department = formData.get('department') as string;
     const role = formData.get('role') as string;
 
     // Validate input
-    if (!fullName || !employeeNo || !email || !department || !role) {
+    if (!fullName || !employeeNo || !password || !department || !role) {
       return { message: "All fields are required" };
     }
 
-    // Here you would typically add the user to the database
-    console.log("Adding user:", { fullName, employeeNo, email, department, role });
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Actually save to Firebase
+    const { addUser } = await import('@/lib/firebase/firestore');
+    await addUser({
+      fullName,
+      employeeNo,
+      password,
+      email: email || '',
+      department,
+      role: role as UserRole,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
 
     revalidatePath('/dashboard/settings');
     return { message: "User added successfully" };
@@ -355,8 +363,12 @@ export async function addDepartmentAction(prevState: any, formData: FormData) {
       return { message: "Name and branch are required" };
     }
 
-    console.log("Adding department:", { name, branch });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Actually save to Firebase
+    const { addDepartment } = await import('@/lib/firebase/firestore');
+    await addDepartment({
+      name,
+      branch
+    });
 
     revalidatePath('/dashboard/settings');
     return { message: "Department added successfully" };
