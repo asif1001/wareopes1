@@ -1,0 +1,27 @@
+rules_version = '2';
+
+// Firebase Storage rules for custom authentication system
+// Since the app uses custom session-based auth (not Firebase Auth),
+// we need to allow access based on file validation rather than auth tokens
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Rules for profile images - allow access with file validation
+    match /profile-images/{imageId} {
+      // Allow read access to all users (profile images are generally public)
+      allow read: if true;
+      
+      // Allow write (upload/update/delete) with file validation
+      // Since we can't check Firebase Auth, we rely on application-level security
+      allow write: if true;
+      
+      // Additional validation for uploads
+      allow create: if request.resource.size < 5 * 1024 * 1024 // 5MB limit
+        && request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // Default rule - deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

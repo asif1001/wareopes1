@@ -1,5 +1,6 @@
 import { Sidebar, SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { DashboardNav } from "@/components/dashboard-nav";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -20,15 +21,17 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <DashboardNav />
-      </Sidebar>
-      <SidebarInset>
-        <Suspense fallback={<LoadingFallback />}>
-          {children}
-        </Suspense>
-      </SidebarInset>
-    </SidebarProvider>
+    <ProtectedRoute>
+      <SidebarProvider>
+        <Sidebar>
+          <DashboardNav />
+        </Sidebar>
+        <SidebarInset>
+          <Suspense fallback={<LoadingFallback />}>
+            {children}
+          </Suspense>
+        </SidebarInset>
+      </SidebarProvider>
+    </ProtectedRoute>
   )
 }

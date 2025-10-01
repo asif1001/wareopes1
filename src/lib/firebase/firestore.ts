@@ -1,6 +1,6 @@
 import { db } from './firebase';
 import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc, query, where, serverTimestamp, orderBy, limit, writeBatch } from 'firebase/firestore';
-import type { Shipment, User, Source, ContainerSize, Department, Branch, ContainerBooking, Container, ClearedContainerSummary } from '@/lib/types';
+import type { Shipment, User, Source, ContainerSize, Department, Branch, ContainerBooking, Container, ClearedContainerSummary, Task } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
 import type { SerializableShipment } from '@/lib/types';
 import { format, subMonths, startOfMonth, parse, compareAsc, subDays } from 'date-fns';
@@ -316,7 +316,17 @@ export async function addUser(user: Omit<User, 'id'>) {
 }
 
 export async function updateUser(id: string, user: Partial<User>) {
-    await updateDoc(doc(db, 'Users', id), user);
+    await updateDoc(doc(db, 'Users', id), {
+        ...user,
+        updatedAt: serverTimestamp()
+    });
+}
+
+export async function updateUserProfile(id: string, profileData: Partial<User>) {
+    await updateDoc(doc(db, 'Users', id), {
+        ...profileData,
+        updatedAt: serverTimestamp()
+    });
 }
 
 export async function deleteUser(id: string) {
@@ -398,4 +408,154 @@ export async function updateBranch(id: string, branch: Partial<Branch>) {
 
 export async function deleteBranch(id: string) {
     await deleteDoc(doc(db, 'Branches', id));
+}
+
+// Task Functions
+export async function getTasksOptimized(options?: {
+  limit?: number;
+  status?: string[];
+  assignedTo?: string[];
+  priority?: string[];
+  fields?: string[];
+}): Promise<Task[]> {
+    const tasksCol = collection(db, 'Tasks');
+    let q = query(tasksCol, orderBy('createdAt', 'desc'));
+    
+    // Apply filters to reduce data transfer
+    if (options?.status && options.status.length > 0) {
+        q = query(q, where('status', 'in', options.status));
+    }
+    if (options?.assignedTo && options.assignedTo.length > 0) {
+        q = query(q, where('assignedTo', 'in', options.assignedTo));
+    }
+    if (options?.priority && options.priority.length > 0) {
+        q = query(q, where('priority', 'in', options.priority));
+    }
+    if (options?.limit) {
+        q = query(q, limit(options.limit));
+    }
+    
+    const taskSnapshot = await getDocs(q);
+    return taskSnapshot.docs.map(doc => {
+        const data = doc.data();
+        const toISOString = (timestamp: any): string | undefined => {
+            if (timestamp instanceof Timestamp) {
+                return timestamp.toDate().toISOString();
+            }
+            return undefined;
+        };
+        
+        // Return only requested fields if specified
+        const task = {
+            id: doc.id,
+            ...data,
+            createdAt: toISOString(data.createdAt) || data.createdAt,
+            updatedAt: toISOString(data.updatedAt) || data.updatedAt,
+            dueDate: toISOString(data.dueDate) || data.dueDate
+        } as Task;
+        
+        // If specific fields requested, return only those
+        if (options?.fields && options.fields.length > 0) {
+            const filteredTask: any = { id: task.id };
+            options.fields.forEach(field => {
+                if (field in task) {
+                    filteredTask[field] = task[field as keyof Task];
+                }
+            });
+            return filteredTask as Task;
+        }
+        
+        return task;
+    });
+}
+
+// Get minimal user data for task assignments (only name, fullName, avatar)
+export async function getUsersMinimal(): Promise<Pick<User, 'id' | 'name' | 'fullName' | 'profilePicture'>[]> {
+    const usersCol = collection(db, 'Users');
+    const userSnapshot = await getDocs(usersCol);
+    return userSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+            id: doc.id,
+            name: data.name,
+            fullName: data.fullName,
+            profilePicture: data.profilePicture
+        };
+    });
+}
+
+// Get task counts by status (for dashboard stats without full data)
+export async function getTaskCounts(): Promise<{
+    total: number;
+    active: number;
+    completed: number;
+    overdue: number;
+}> {
+    const tasksCol = collection(db, 'Tasks');
+    
+    // Get all tasks with minimal fields for counting
+    const allTasksQuery = query(tasksCol);
+    const snapshot = await getDocs(allTasksQuery);
+    
+    const now = new Date();
+    let total = 0;
+    let active = 0;
+    let completed = 0;
+    let overdue = 0;
+    
+    snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        total++;
+        
+        if (data.status === 'Done' || data.status === 'Completed') {
+            completed++;
+        } else {
+            active++;
+            // Check if overdue
+            const dueDate = data.dueDate instanceof Timestamp ? 
+                data.dueDate.toDate() : new Date(data.dueDate);
+            if (dueDate < now) {
+                overdue++;
+            }
+        }
+    });
+    
+    return { total, active, completed, overdue };
+}
+
+// Batch update multiple tasks (reduces individual update calls)
+export async function batchUpdateTasks(updates: { id: string; data: Partial<Task> }[]): Promise<void> {
+    const batch = writeBatch(db);
+    
+    updates.forEach(({ id, data }) => {
+        const taskRef = doc(db, 'Tasks', id);
+        batch.update(taskRef, {
+            ...data,
+            updatedAt: serverTimestamp()
+        });
+    });
+    
+    await batch.commit();
+}
+
+export async function addTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) {
+    const taskData = {
+        ...task,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+    };
+    const docRef = await addDoc(collection(db, 'Tasks'), taskData);
+    return docRef.id;
+}
+
+export async function updateTask(id: string, task: Partial<Task>) {
+    const taskData = {
+        ...task,
+        updatedAt: serverTimestamp()
+    };
+    await updateDoc(doc(db, 'Tasks', id), taskData);
+}
+
+export async function deleteTask(id: string) {
+    await deleteDoc(doc(db, 'Tasks', id));
 }

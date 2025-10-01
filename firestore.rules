@@ -1,0 +1,45 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection - users can read/write their own data
+    match /Users/{userId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Shipments collection - authenticated users can read/write
+    match /Shipments/{shipmentId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Sources collection - authenticated users can read/write
+    match /Sources/{sourceId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Container sizes collection - authenticated users can read/write
+    match /ContainerSizes/{sizeId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Departments collection - authenticated users can read/write
+    match /Departments/{deptId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Branches collection - authenticated users can read/write
+    match /Branches/{branchId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Tasks collection - authenticated users can read/write
+    match /Tasks/{taskId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Default rule - deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

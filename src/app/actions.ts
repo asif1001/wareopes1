@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { addSource, addContainerSize } from "@/lib/firebase/firestore";
-import { UserRole } from "@/lib/types";
+import { addSource, addContainerSize, addTask, updateTask, deleteTask, getTasksOptimized, getUsersMinimal, getTaskCounts, batchUpdateTasks } from "@/lib/firebase/firestore";
+import { UserRole, Task, User } from "@/lib/types";
 
 // Login action
 export async function loginAction(prevState: any, formData: FormData) {
@@ -436,6 +436,19 @@ export async function updateUserAction(prevState: any, formData: FormData) {
   }
 }
 
+// Update user profile action (for my-account page)
+export async function updateUserProfileAction(userId: string, profileData: Partial<User>) {
+  try {
+    const { updateUserProfile } = await import('@/lib/firebase/firestore');
+    await updateUserProfile(userId, profileData);
+    
+    return { success: true, message: "Profile updated successfully" };
+  } catch (error) {
+    console.error("Error updating user profile:", error);
+    return { success: false, message: "Failed to update profile" };
+  }
+}
+
 export async function updateSourceAction(prevState: any, formData: FormData) {
   try {
     const id = formData.get('id') as string;
@@ -706,5 +719,87 @@ export async function logoutUser() {
   } catch (error) {
     console.error("Error during logout:", error);
     return { success: false, error: "Failed to logout" };
+  }
+}
+
+// Task Actions
+export async function createTaskAction(taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) {
+  try {
+    const taskId = await addTask(taskData);
+    revalidatePath('/dashboard/tasks');
+    return { success: true, taskId, message: "Task created successfully" };
+  } catch (error) {
+    console.error("Error creating task:", error);
+    return { success: false, error: "Failed to create task" };
+  }
+}
+
+// Optimized actions for minimal data reads
+export async function getTasksOptimizedAction(options?: {
+  limit?: number;
+  status?: string[];
+  assignedTo?: string[];
+  priority?: string[];
+  fields?: string[];
+}) {
+  try {
+    const tasks = await getTasksOptimized(options);
+    return { success: true, data: tasks };
+  } catch (error) {
+    console.error('Error fetching optimized tasks:', error);
+    return { success: false, error: 'Failed to fetch tasks' };
+  }
+}
+
+export async function getUsersMinimalAction() {
+  try {
+    const users = await getUsersMinimal();
+    return { success: true, data: users };
+  } catch (error) {
+    console.error('Error fetching minimal users:', error);
+    return { success: false, error: 'Failed to fetch users' };
+  }
+}
+
+export async function getTaskCountsAction() {
+  try {
+    const counts = await getTaskCounts();
+    return { success: true, data: counts };
+  } catch (error) {
+    console.error('Error fetching task counts:', error);
+    return { success: false, error: 'Failed to fetch task counts' };
+  }
+}
+
+export async function batchUpdateTasksAction(updates: { id: string; data: Partial<Task> }[]) {
+  try {
+    await batchUpdateTasks(updates);
+    revalidatePath('/dashboard/tasks');
+    return { success: true };
+  } catch (error) {
+    console.error('Error batch updating tasks:', error);
+    return { success: false, error: 'Failed to update tasks' };
+  }
+}
+
+export async function updateTaskAction(id: string, taskData: Partial<Task>) {
+  try {
+    await updateTask(id, taskData);
+    revalidatePath('/dashboard/tasks');
+    return { success: true, message: "Task updated successfully" };
+  } catch (error) {
+    console.error("Error updating task:", error);
+    return { success: false, error: "Failed to update task" };
+  }
+}
+
+export async function deleteTaskAction(id: string) {
+  try {
+    await deleteTask(id);
+    revalidatePath('/dashboard/tasks');
+    return { success: true, message: "Task deleted successfully" };
+  } catch (error) {
+    console.error("Error deleting task:", error);
+    return { success: false, error: "Failed to delete task" };
   }
 }

@@ -80,14 +80,63 @@ export type SerializableShipment = Omit<Shipment, 'bahrainEta' | 'originalDocume
 };
 
 
+export type TaskStatus = 'Not Started' | 'To Do' | 'In Progress' | 'Completed' | 'Done' | 'Blocked' | 'On Hold';
+export type TaskPriority = 'Critical' | 'High' | 'Medium' | 'Low';
+export type TaskCategory = 'General' | 'Inventory' | 'Shipping' | 'Quality Control' | 'Maintenance' | 'Documentation' | 'Training';
+
+export type TaskAttachment = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  url: string;
+  uploadedAt: string;
+  uploadedBy: string;
+};
+
+export type TaskComment = {
+  id: string;
+  content: string;
+  author: string;
+  authorAvatar: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type TaskActivity = {
+  id: string;
+  type: 'created' | 'updated' | 'status_changed' | 'assigned' | 'comment_added' | 'attachment_added';
+  description: string;
+  user: string;
+  userAvatar: string;
+  timestamp: string;
+  oldValue?: string;
+  newValue?: string;
+};
+
 export type Task = {
   id: string;
   title: string;
+  description?: string;
   assignedTo: string;
   assignedToAvatar: string;
-  status: 'To Do' | 'In Progress' | 'Done' | 'Blocked';
-  priority: 'High' | 'Medium' | 'Low';
+  assignedBy?: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  category: TaskCategory;
   dueDate: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  estimatedHours?: number;
+  actualHours?: number;
+  tags?: string[];
+  attachments?: TaskAttachment[];
+  comments?: TaskComment[];
+  activityHistory?: TaskActivity[];
+  reminderEnabled?: boolean;
+  reminderInterval?: number; // in hours
+  completedAt?: string;
 };
 
 export type Feedback = {

@@ -17,10 +17,13 @@ import Image from 'next/image';
 import { Sidebar, SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { DashboardNav } from "@/components/dashboard-nav";
 import { DashboardHeader } from '@/components/dashboard-header';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
+import { uploadProfileImage, validateImageFile, deleteProfileImage } from '@/lib/firebase/storage';
+import { updateUserProfileAction } from '@/app/actions';
 
 export default function MyAccountPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('settings');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -48,14 +51,54 @@ export default function MyAccountPage() {
     sessionTimeout: '30'
   });
 
-  const handleProfilePictureChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProfilePictureChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      // In a real app, you would upload this to your server/cloud storage
-      // For now, we'll create a local URL for preview
-      const imageUrl = URL.createObjectURL(file);
-      setUserData({ ...userData, profilePicture: imageUrl });
-      setMessage({ type: 'success', text: 'Profile picture updated successfully!' });
+    if (!file) return;
+
+    // Validate the image file
+    const validation = validateImageFile(file);
+    if (!validation.isValid) {
+      setMessage({ type: 'error', text: validation.error || 'Invalid file' });
+      return;
+    }
+
+    setIsLoading(true);
+    setMessage(null);
+
+    try {
+      // Delete old profile image if it exists
+      if (userData.profilePicture && userData.profilePicture.includes('firebase')) {
+        await deleteProfileImage(userData.profilePicture);
+      }
+
+      // Upload new image to Firebase Storage
+      const imageUrl = await uploadProfileImage(file, user?.id || '');
+      
+      // Update user data in Firebase
+      const result = await updateUserProfileAction(user?.id || '', {
+        profilePicture: imageUrl
+      });
+
+      if (result.success) {
+        // Update local state
+        setUserData({ ...userData, profilePicture: imageUrl });
+        
+        // Update user context to reflect changes globally
+        if (user) {
+          const updatedUser = { ...user, profilePicture: imageUrl };
+          // Force context refresh by calling login again with current user data
+          window.location.reload(); // Temporary solution to refresh context
+        }
+        
+        setMessage({ type: 'success', text: 'Profile picture updated successfully!' });
+      } else {
+        setMessage({ type: 'error', text: result.message || 'Failed to update profile picture' });
+      }
+    } catch (error) {
+      console.error('Error updating profile picture:', error);
+      setMessage({ type: 'error', text: 'Failed to upload profile picture. Please try again.' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -70,14 +113,30 @@ export default function MyAccountPage() {
 
     try {
       const formData = new FormData(e.currentTarget);
-      const result = await updateUserProfile(formData);
+      
+      // Extract form data
+      const profileData = {
+        fullName: formData.get('fullName') as string,
+        email: formData.get('email') as string,
+        phone: formData.get('phone') as string,
+      };
+
+      // Update user profile in Firebase
+      const result = await updateUserProfileAction(user?.id || '', profileData);
       
       if (result.success) {
-        setMessage({ type: 'success', text: result.message || 'Profile updated successfully' });
+        // Update local state
+        setUserData({ ...userData, ...profileData });
+        
+        // Update user context to reflect changes globally
+         await refreshUser();
+         
+         setMessage({ type: 'success', text: result.message || 'Profile updated successfully' });
       } else {
-        setMessage({ type: 'error', text: result.error || 'Failed to update profile' });
+        setMessage({ type: 'error', text: result.message || 'Failed to update profile' });
       }
     } catch (error) {
+      console.error('Error updating profile:', error);
       setMessage({ type: 'error', text: 'Failed to update profile. Please try again.' });
     } finally {
       setIsLoading(false);
@@ -172,6 +231,7 @@ export default function MyAccountPage() {
   };
 
   return (
+    <ProtectedRoute>
     <SidebarProvider>
       <Sidebar>
         <DashboardNav />
@@ -272,10 +332,10 @@ export default function MyAccountPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">Full Name</Label>
+                    <Label htmlFor="fullName">Full Name</Label>
                     <Input
-                      id="name"
-                      name="name"
+                      id="fullName"
+                      name="fullName"
                       value={userData.name}
                       onChange={(e) => setUserData({...userData, name: e.target.value})}
                       required
@@ -603,5 +663,6 @@ export default function MyAccountPage() {
         </div>
       </SidebarInset>
     </SidebarProvider>
+  </ProtectedRoute>
   );
 }

@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, CheckCircle, HelpCircle, Mail, Phone, Clock, MessageSquare } from 'lucide-react';
 import { submitSupportTicket } from '@/app/actions';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardHeader } from '@/components/dashboard-header';
 
 export default function SupportPage() {
@@ -40,6 +41,7 @@ export default function SupportPage() {
   };
 
   return (
+    <ProtectedRoute>
     <div className="flex flex-col min-h-screen">
       <DashboardHeader title="Support" />
       
@@ -252,5 +254,6 @@ export default function SupportPage() {
         </div>
       </div>
     </div>
+    </ProtectedRoute>
   );
 }

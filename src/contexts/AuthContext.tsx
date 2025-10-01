@@ -9,6 +9,7 @@ import {
   isAdmin as checkIsAdmin,
   refreshSession
 } from '@/lib/auth';
+import { getUsers } from '@/lib/firebase/firestore';
 
 interface AuthContextType {
   user: User | null;
@@ -16,6 +17,7 @@ interface AuthContextType {
   isAdmin: boolean;
   login: (employeeNo: string, password: string) => Promise<{ success: boolean; user?: User; error?: string }>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -67,6 +69,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = '/';
   };
 
+  const refreshUser = async () => {
+    if (!user?.id) return;
+    
+    try {
+      const users = await getUsers();
+      const updatedUser = users.find(u => u.id === user.id);
+      
+      if (updatedUser) {
+        setUser(updatedUser);
+        
+        // Update session storage with new user data
+        const session = getCurrentSession();
+        if (session) {
+          const updatedSession = {
+            ...session,
+            user: updatedUser
+          };
+          localStorage.setItem('session', JSON.stringify(updatedSession));
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing user data:', error);
+    }
+  };
+
   // Only check admin status after hydration to prevent server/client mismatch
   const isAdmin = isHydrated ? checkIsAdmin() : false;
 
@@ -76,6 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAdmin,
     login,
     logout,
+    refreshUser,
   };
 
   return (
