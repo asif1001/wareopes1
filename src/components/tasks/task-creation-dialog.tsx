@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -46,17 +46,18 @@ import {
 } from "lucide-react"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
-import type { TaskPriority, TaskCategory, TaskAttachment } from "@/lib/types"
+import type { Task, TaskPriority, TaskCategory, TaskAttachment } from "@/lib/types"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface TaskCreationDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onTaskCreate: (task: any) => Promise<{ success: boolean; error?: string }>
+  onTaskCreate: (newTask: Omit<Task, "id" | "createdAt" | "updatedAt">) => Promise<{ success: boolean; error?: string }>
   assignableUsers: Array<{
     id: string
     name: string
     fullName: string
-    avatar?: string
+    profilePicture?: string
   }>
 }
 
@@ -74,6 +75,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const ALLOWED_FILE_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 
 export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignableUsers }: TaskCreationDialogProps) {
+  const { user } = useAuth()
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [priority, setPriority] = useState<TaskPriority>("Medium")
@@ -88,6 +90,39 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
   const [reminderInterval, setReminderInterval] = useState(24)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Cleanup object URLs when component unmounts or attachments change
+  useEffect(() => {
+    return () => {
+      attachments.forEach(attachment => {
+        if (attachment.url.startsWith('blob:')) {
+          URL.revokeObjectURL(attachment.url)
+        }
+      })
+    }
+  }, [attachments])
+
+  const resetForm = () => {
+    setTitle("")
+    setDescription("")
+    setPriority("Medium")
+    setCategory("General")
+    setAssignedTo("none")
+    setDueDate(undefined)
+    setEstimatedHours("")
+    setTags([])
+    setCurrentTag("")
+    // Clean up attachment URLs before clearing
+    attachments.forEach(attachment => {
+      if (attachment.url.startsWith('blob:')) {
+        URL.revokeObjectURL(attachment.url)
+      }
+    })
+    setAttachments([])
+    setReminderEnabled(false)
+    setReminderInterval(24)
+    setErrors({})
+  }
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
@@ -106,8 +141,14 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
     
     if (!dueDate) {
       newErrors.dueDate = "Due date is required"
-    } else if (dueDate < new Date()) {
-      newErrors.dueDate = "Due date cannot be in the past"
+    } else {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const selectedDate = new Date(dueDate)
+      selectedDate.setHours(0, 0, 0, 0)
+      if (selectedDate < today) {
+        newErrors.dueDate = "Due date cannot be in the past"
+      }
     }
     
     if (estimatedHours && (isNaN(Number(estimatedHours)) || Number(estimatedHours) <= 0)) {
@@ -122,17 +163,33 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
     const files = event.target.files
     if (!files) return
     
+    // Clear previous attachment errors
+    setErrors(prev => ({ ...prev, attachments: '' }))
+    
+    const validFiles: File[] = []
+    const errorMessages: string[] = []
+    
     Array.from(files).forEach(file => {
       if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-        setErrors(prev => ({ ...prev, attachments: `File type ${file.type} is not allowed` }))
+        errorMessages.push(`${file.name}: File type not allowed`)
         return
       }
       
       if (file.size > MAX_FILE_SIZE) {
-        setErrors(prev => ({ ...prev, attachments: `File ${file.name} is too large (max 10MB)` }))
+        errorMessages.push(`${file.name}: File too large (max 10MB)`)
         return
       }
       
+      validFiles.push(file)
+    })
+    
+    // Show errors if any
+    if (errorMessages.length > 0) {
+      setErrors(prev => ({ ...prev, attachments: errorMessages.join(', ') }))
+    }
+    
+    // Process valid files
+    validFiles.forEach(file => {
       const attachment: TaskAttachment = {
         id: Math.random().toString(36).substr(2, 9),
         name: file.name,
@@ -151,7 +208,13 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
   }
 
   const removeAttachment = (id: string) => {
-    setAttachments(prev => prev.filter(att => att.id !== id))
+    setAttachments(prev => {
+      const attachmentToRemove = prev.find(att => att.id === id)
+      if (attachmentToRemove && attachmentToRemove.url.startsWith('blob:')) {
+        URL.revokeObjectURL(attachmentToRemove.url)
+      }
+      return prev.filter(att => att.id !== id)
+    })
   }
 
   const addTag = () => {
@@ -173,57 +236,54 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
     
     try {
       const assignedUser = assignableUsers.find(user => user.id === assignedTo)
+      const currentTime = new Date().toISOString()
+      const taskId = `TSK-${String(Date.now()).slice(-3).padStart(3, '0')}`
       
       const newTask = {
+        id: taskId,
         title: title.trim(),
         description: description.trim(),
+        assignedTo: assignedUser ? assignedUser.fullName || assignedUser.name : "Unassigned",
+        assignedToAvatar: assignedUser?.profilePicture || "/placeholder-avatar.png",
+        status: "To Do" as const,
         priority,
         category,
-        assignedTo: assignedUser ? assignedUser.name : "Unassigned",
-        dueDate: dueDate!.toISOString(),
+        dueDate: dueDate!.toISOString().split('T')[0], // Format as YYYY-MM-DD
         estimatedHours: estimatedHours ? Number(estimatedHours) : undefined,
+        actualHours: undefined,
         tags: tags.length > 0 ? tags : undefined,
+        createdAt: currentTime,
+        updatedAt: currentTime,
+        createdBy: user?.fullName || user?.name || "Unknown User",
         attachments: attachments.length > 0 ? attachments : undefined,
         reminderEnabled,
         reminderInterval: reminderEnabled ? reminderInterval : undefined,
-        status: "To Do" as const,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdBy: "current-user",
         comments: [],
         activityHistory: [{
-          id: Math.random().toString(36).substr(2, 9),
+          id: `activity-${Math.random().toString(36).substr(2, 9)}`,
           type: "created" as const,
           description: "Task created",
-          timestamp: new Date().toISOString(),
-          userId: "current-user",
-          userName: "Current User"
+          timestamp: currentTime,
+          user: user?.fullName || user?.name || "Unknown User",
+          userAvatar: user?.profilePicture || "/placeholder-avatar.png"
         }]
       }
 
+      // Use the provided onTaskCreate callback
       const result = await onTaskCreate(newTask)
       
       if (result.success) {
-        // Reset form
-        setTitle("")
-        setDescription("")
-        setPriority("Medium")
-        setCategory("General")
-        setAssignedTo("none")
-        setDueDate(undefined)
-        setEstimatedHours("")
-        setTags([])
-        setCurrentTag("")
-        setAttachments([])
-        setReminderEnabled(false)
-        setReminderInterval(24)
-        setErrors({})
+        // Reset form and close dialog on success
+        resetForm()
         onOpenChange(false)
       } else {
-        setErrors({ submit: result.error || "Failed to create task. Please try again." })
+        // Handle error from task creation
+        setErrors({ submit: result.error || 'Failed to create task. Please try again.' })
       }
     } catch (error) {
-      setErrors({ submit: "Failed to create task. Please try again." })
+      console.error('Task creation error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create task. Please try again.'
+      setErrors({ submit: errorMessage })
     } finally {
       setIsSubmitting(false)
     }
@@ -245,14 +305,6 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button size="sm" className="h-8 gap-1 hidden">
-          <PlusCircle className="h-3.5 w-3.5" />
-          <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
-            Add Task
-          </span>
-        </Button>
-      </DialogTrigger>
       <DialogContent className="max-w-6xl max-h-[95vh] w-[90vw]">
         <DialogHeader>
           <DialogTitle className="text-2xl">Create New Task</DialogTitle>
@@ -267,9 +319,7 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
             <div className="space-y-4">
               {/* Title */}
               <div className="space-y-2">
-                <Label htmlFor="title" className="text-sm font-medium">
-                  Title *
-                </Label>
+                <Label htmlFor="title" className="text-sm font-medium">Task Title *</Label>
                 <Input
                   id="title"
                   placeholder="Enter task title..."
@@ -278,18 +328,13 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
                   className={cn(errors.title && "border-red-500")}
                 />
                 {errors.title && (
-                  <p className="text-sm text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {errors.title}
-                  </p>
+                  <p className="text-sm text-red-500">{errors.title}</p>
                 )}
               </div>
 
               {/* Description */}
               <div className="space-y-2">
-                <Label htmlFor="description" className="text-sm font-medium">
-                  Description *
-                </Label>
+                <Label htmlFor="description" className="text-sm font-medium">Description *</Label>
                 <Textarea
                   id="description"
                   placeholder="Describe the task in detail..."
@@ -298,10 +343,7 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
                   className={cn("min-h-[120px] resize-none", errors.description && "border-red-500")}
                 />
                 {errors.description && (
-                  <p className="text-sm text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {errors.description}
-                  </p>
+                  <p className="text-sm text-red-500">{errors.description}</p>
                 )}
               </div>
 
@@ -314,9 +356,7 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
                   </SelectTrigger>
                   <SelectContent>
                     {PRIORITY_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
+                      <SelectItem key={option} value={option}>{option}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -331,9 +371,7 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
                   </SelectTrigger>
                   <SelectContent>
                     {CATEGORY_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
+                      <SelectItem key={option} value={option}>{option}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -346,7 +384,7 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Assign To</Label>
                 <Select value={assignedTo} onValueChange={setAssignedTo}>
-                  <SelectTrigger className={cn(errors.assignedTo && "border-red-500")}>
+                  <SelectTrigger>
                     <SelectValue placeholder="Select assignee" />
                   </SelectTrigger>
                   <SelectContent>
@@ -355,22 +393,19 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
                       <SelectItem key={user.id} value={user.id}>
                         <div className="flex items-center gap-2">
                           <Avatar className="h-6 w-6">
-                            <AvatarImage src={user.avatar} />
+                            <AvatarImage src={user.profilePicture} />
                             <AvatarFallback className="text-xs">
                               {user.name.split(' ').map(n => n[0]).join('')}
                             </AvatarFallback>
                           </Avatar>
-                          <span>{user.fullName}</span>
+                          {user.fullName}
                         </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {errors.assignedTo && (
-                  <p className="text-sm text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {errors.assignedTo}
-                  </p>
+                  <p className="text-sm text-red-500">{errors.assignedTo}</p>
                 )}
               </div>
 
@@ -401,31 +436,23 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
                   </PopoverContent>
                 </Popover>
                 {errors.dueDate && (
-                  <p className="text-sm text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {errors.dueDate}
-                  </p>
+                  <p className="text-sm text-red-500">{errors.dueDate}</p>
                 )}
               </div>
 
               {/* Estimated Hours */}
               <div className="space-y-2">
-                <Label htmlFor="estimatedHours" className="text-sm font-medium">
-                  Estimated Hours
-                </Label>
+                <Label htmlFor="estimatedHours" className="text-sm font-medium">Estimated Hours</Label>
                 <Input
                   id="estimatedHours"
                   type="number"
-                  placeholder="0"
+                  placeholder="e.g., 2.5"
                   value={estimatedHours}
                   onChange={(e) => setEstimatedHours(e.target.value)}
                   className={cn(errors.estimatedHours && "border-red-500")}
                 />
                 {errors.estimatedHours && (
-                  <p className="text-sm text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {errors.estimatedHours}
-                  </p>
+                  <p className="text-sm text-red-500">{errors.estimatedHours}</p>
                 )}
               </div>
 
@@ -439,7 +466,7 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
                     onChange={(e) => setCurrentTag(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && addTag()}
                   />
-                  <Button type="button" variant="outline" onClick={addTag}>
+                  <Button type="button" variant="outline" size="sm" onClick={addTag}>
                     Add
                   </Button>
                 </div>
@@ -474,27 +501,24 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
                 <div className="mt-4">
                   <Label htmlFor="file-upload" className="cursor-pointer">
                     <span className="mt-2 block text-sm font-medium text-gray-900">
-                      Click to upload files
+                      Drop files here or click to upload
                     </span>
                     <span className="mt-1 block text-xs text-gray-500">
-                      PDF, DOCX, JPG, PNG up to 10MB
+                      PDF, Word documents, and images up to 10MB
                     </span>
                   </Label>
                   <Input
                     id="file-upload"
                     type="file"
                     multiple
-                    accept=".pdf,.docx,.jpg,.jpeg,.png"
-                    onChange={handleFileUpload}
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                     className="hidden"
+                    onChange={handleFileUpload}
                   />
                 </div>
               </div>
               {errors.attachments && (
-                <p className="text-sm text-red-500 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  {errors.attachments}
-                </p>
+                <p className="text-sm text-red-500">{errors.attachments}</p>
               )}
             </div>
 
@@ -514,7 +538,6 @@ export function TaskCreationDialog({ open, onOpenChange, onTaskCreate, assignabl
                       variant="ghost"
                       size="sm"
                       onClick={() => removeAttachment(attachment.id)}
-                      className="text-red-500 hover:text-red-700"
                     >
                       <X className="h-4 w-4" />
                     </Button>

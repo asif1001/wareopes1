@@ -1,5 +1,5 @@
 import { db } from './firebase';
-import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc, query, where, serverTimestamp, orderBy, limit, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc, query, where, serverTimestamp, orderBy, limit, writeBatch, getDoc } from 'firebase/firestore';
 import type { Shipment, User, Source, ContainerSize, Department, Branch, ContainerBooking, Container, ClearedContainerSummary, Task } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
 import type { SerializableShipment } from '@/lib/types';
@@ -417,11 +417,19 @@ export async function getTasksOptimized(options?: {
   assignedTo?: string[];
   priority?: string[];
   fields?: string[];
+  currentUserId?: string; // Add user context for visibility filtering
+  filterMode?: 'created' | 'assigned' | 'both'; // New parameter to specify filtering mode
 }): Promise<Task[]> {
-    const tasksCol = collection(db, 'Tasks');
+    const tasksCol = collection(db, 'Tas-1');
     let q = query(tasksCol, orderBy('createdAt', 'desc'));
     
-    // Apply filters to reduce data transfer
+    // Apply user visibility filter first - users can only see tasks they created or are assigned to
+    if (options?.currentUserId) {
+        // Note: Firestore doesn't support OR queries directly, so we'll filter after fetching
+        // For better performance in production, consider denormalizing data or using composite queries
+    }
+    
+    // Apply other filters to reduce data transfer
     if (options?.status && options.status.length > 0) {
         q = query(q, where('status', 'in', options.status));
     }
@@ -432,11 +440,11 @@ export async function getTasksOptimized(options?: {
         q = query(q, where('priority', 'in', options.priority));
     }
     if (options?.limit) {
-        q = query(q, limit(options.limit));
+        q = query(q, limit(options.limit * 2)); // Fetch more to account for filtering
     }
     
     const taskSnapshot = await getDocs(q);
-    return taskSnapshot.docs.map(doc => {
+    let tasks = taskSnapshot.docs.map(doc => {
         const data = doc.data();
         const toISOString = (timestamp: any): string | undefined => {
             if (timestamp instanceof Timestamp) {
@@ -467,6 +475,124 @@ export async function getTasksOptimized(options?: {
         
         return task;
     });
+    
+    // Apply user visibility filter based on filterMode
+    if (options?.currentUserId) {
+        // Optimized: Get only the current user's data instead of all users
+        const currentUserDoc = doc(db, 'Users', options.currentUserId);
+        const currentUserSnapshot = await getDoc(currentUserDoc);
+        const currentUserFullName = currentUserSnapshot.exists() ? currentUserSnapshot.data().fullName : null;
+        
+        // Filter tasks efficiently in a single pass
+        const filteredTasks: Task[] = [];
+        const filterMode = options.filterMode || 'both'; // Default to 'both' for backward compatibility
+        
+        for (const task of tasks) {
+            // Task is created by current user (createdBy can contain user ID or user fullName)
+            const isCreatedByUser = task.createdBy === options.currentUserId || 
+                                  (currentUserFullName && task.createdBy === currentUserFullName);
+            
+            // Task is assigned to current user (assignedTo contains user fullName)
+            const isAssignedToUser = currentUserFullName && task.assignedTo === currentUserFullName;
+            
+            // Apply filtering based on mode
+            let shouldInclude = false;
+            if (filterMode === 'created' && isCreatedByUser) {
+                shouldInclude = true;
+            } else if (filterMode === 'assigned' && isAssignedToUser) {
+                shouldInclude = true;
+            } else if (filterMode === 'both' && (isCreatedByUser || isAssignedToUser)) {
+                shouldInclude = true;
+            }
+            
+            if (shouldInclude) {
+                // Add metadata while filtering to avoid double iteration
+                filteredTasks.push({
+                    ...task,
+                    isCreatedByCurrentUser: isCreatedByUser,
+                    isAssignedToCurrentUser: isAssignedToUser
+                });
+            }
+        }
+        tasks = filteredTasks;
+    }
+    
+    // Apply limit after filtering
+    if (options?.limit && tasks.length > options.limit) {
+        tasks = tasks.slice(0, options.limit);
+    }
+    
+    return tasks;
+}
+
+// Get all tasks created by the current user
+export async function getAllTasks(options?: {
+  limit?: number;
+  status?: string[];
+  assignedTo?: string[];
+  priority?: string[];
+  fields?: string[];
+  currentUserId?: string;
+}): Promise<Task[]> {
+    // Function to convert Firestore Timestamps to ISO strings for serialization
+    const toISOString = (timestamp: any): string | undefined => {
+        if (timestamp instanceof Timestamp) {
+            return timestamp.toDate().toISOString();
+        }
+        return undefined;
+    };
+    
+    const tasksCol = collection(db, 'Tas-1');
+    let q = query(tasksCol, orderBy('createdAt', 'desc'));
+    
+    // Filter by current user's created tasks
+    if (options?.currentUserId) {
+        q = query(q, where('createdBy', '==', options.currentUserId));
+    }
+    
+    // Apply additional filters to reduce data transfer
+    if (options?.status && options.status.length > 0) {
+        q = query(q, where('status', 'in', options.status));
+    }
+    if (options?.assignedTo && options.assignedTo.length > 0) {
+        q = query(q, where('assignedTo', 'in', options.assignedTo));
+    }
+    if (options?.priority && options.priority.length > 0) {
+        q = query(q, where('priority', 'in', options.priority));
+    }
+    if (options?.limit) {
+        q = query(q, limit(options.limit));
+    }
+    
+    const taskSnapshot = await getDocs(q);
+    
+    const tasks: Task[] = taskSnapshot.docs.map(doc => {
+        const data = doc.data();
+        
+        // Return only requested fields if specified
+        const task = {
+            id: doc.id,
+            ...data,
+            createdAt: toISOString(data.createdAt) || data.createdAt,
+            updatedAt: toISOString(data.updatedAt) || data.updatedAt,
+            dueDate: toISOString(data.dueDate) || data.dueDate
+        } as Task;
+        
+        // If specific fields requested, return only those
+        if (options?.fields && options.fields.length > 0) {
+            const filteredTask: any = { id: task.id };
+            options.fields.forEach(field => {
+                if (field in task) {
+                    filteredTask[field] = task[field as keyof Task];
+                }
+            });
+            return filteredTask as Task;
+        }
+        
+        return task;
+    });
+    
+    return tasks;
 }
 
 // Get minimal user data for task assignments (only name, fullName, avatar)
@@ -485,13 +611,13 @@ export async function getUsersMinimal(): Promise<Pick<User, 'id' | 'name' | 'ful
 }
 
 // Get task counts by status (for dashboard stats without full data)
-export async function getTaskCounts(): Promise<{
+export async function getTaskCounts(currentUserId?: string): Promise<{
     total: number;
     active: number;
     completed: number;
     overdue: number;
 }> {
-    const tasksCol = collection(db, 'Tasks');
+    const tasksCol = collection(db, 'Tas-1');
     
     // Get all tasks with minimal fields for counting
     const allTasksQuery = query(tasksCol);
@@ -505,6 +631,14 @@ export async function getTaskCounts(): Promise<{
     
     snapshot.docs.forEach(doc => {
         const data = doc.data();
+        
+        // Apply user visibility filtering - only count tasks user can see
+        if (currentUserId && 
+            data.createdBy !== currentUserId && 
+            data.assignedTo !== currentUserId) {
+            return; // Skip this task
+        }
+        
         total++;
         
         if (data.status === 'Done' || data.status === 'Completed') {
@@ -524,11 +658,31 @@ export async function getTaskCounts(): Promise<{
 }
 
 // Batch update multiple tasks (reduces individual update calls)
-export async function batchUpdateTasks(updates: { id: string; data: Partial<Task> }[]): Promise<void> {
+export async function batchUpdateTasks(updates: { id: string; data: Partial<Task>; currentUserId?: string }[]): Promise<void> {
     const batch = writeBatch(db);
     
+    // First, check authorization for all tasks if currentUserId is provided
+    if (updates.some(update => update.currentUserId)) {
+        for (const { id, currentUserId } of updates) {
+            if (currentUserId) {
+                const taskRef = doc(db, 'Tas-1', id);
+                const taskDoc = await getDoc(taskRef);
+                
+                if (!taskDoc.exists()) {
+                    throw new Error(`Task with ID ${id} not found`);
+                }
+                
+                const taskData = taskDoc.data();
+                if (taskData.createdBy !== currentUserId && taskData.assignedTo !== currentUserId) {
+                    throw new Error(`Unauthorized: You can only update tasks you created or are assigned to (Task ID: ${id})`);
+                }
+            }
+        }
+    }
+    
+    // If authorization passes, proceed with batch update
     updates.forEach(({ id, data }) => {
-        const taskRef = doc(db, 'Tasks', id);
+        const taskRef = doc(db, 'Tas-1', id);
         batch.update(taskRef, {
             ...data,
             updatedAt: serverTimestamp()
@@ -544,18 +698,48 @@ export async function addTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
     };
-    const docRef = await addDoc(collection(db, 'Tasks'), taskData);
+    const docRef = await addDoc(collection(db, 'Tas-1'), taskData);
     return docRef.id;
 }
 
-export async function updateTask(id: string, task: Partial<Task>) {
+export async function updateTask(id: string, task: Partial<Task>, currentUserId?: string) {
+    // Authorization check - user can only update tasks they created or are assigned to
+    if (currentUserId) {
+        const taskRef = doc(db, 'Tas-1', id);
+        const taskDoc = await getDoc(taskRef);
+        
+        if (!taskDoc.exists()) {
+            throw new Error('Task not found');
+        }
+        
+        const taskData = taskDoc.data();
+        if (taskData.createdBy !== currentUserId && taskData.assignedTo !== currentUserId) {
+            throw new Error('Unauthorized: You can only update tasks you created or are assigned to');
+        }
+    }
+    
     const taskData = {
         ...task,
         updatedAt: serverTimestamp()
     };
-    await updateDoc(doc(db, 'Tasks', id), taskData);
+    await updateDoc(doc(db, 'Tas-1', id), taskData);
 }
 
-export async function deleteTask(id: string) {
-    await deleteDoc(doc(db, 'Tasks', id));
+export async function deleteTask(id: string, currentUserId?: string) {
+    // Authorization check - user can only delete tasks they created
+    if (currentUserId) {
+        const taskRef = doc(db, 'Tas-1', id);
+        const taskDoc = await getDoc(taskRef);
+        
+        if (!taskDoc.exists()) {
+            throw new Error('Task not found');
+        }
+        
+        const taskData = taskDoc.data();
+        if (taskData.createdBy !== currentUserId) {
+            throw new Error('Unauthorized: You can only delete tasks you created');
+        }
+    }
+    
+    await deleteDoc(doc(db, 'Tas-1', id));
 }

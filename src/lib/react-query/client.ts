@@ -29,7 +29,7 @@ export const queryKeys = {
     list: (filters?: any) => [...queryKeys.tasks.lists(), filters] as const,
     details: () => [...queryKeys.tasks.all, 'detail'] as const,
     detail: (id: string) => [...queryKeys.tasks.details(), id] as const,
-    counts: () => [...queryKeys.tasks.all, 'counts'] as const,
+    counts: (userId?: string) => [...queryKeys.tasks.all, 'counts', userId] as const,
   },
   users: {
     all: ['users'] as const,

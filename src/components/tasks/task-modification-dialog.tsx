@@ -42,13 +42,14 @@ import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import type { Task, TaskStatus, TaskPriority, TaskCategory, TaskActivity } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
+import { useUpdateTask } from "@/lib/react-query/hooks"
 
 interface TaskModificationDialogProps {
   task: Task
   open: boolean
   onOpenChange: (open: boolean) => void
   onTaskUpdate: (updatedTask: Task) => void
-  assignableUsers: Array<{ id: string; name: string; avatar: string; department: string; fullName?: string }>
+  assignableUsers: Array<{ id: string; name: string; profilePicture: string; department: string; fullName?: string }>
 }
 
 const STATUS_WORKFLOW: Record<TaskStatus, TaskStatus[]> = {
@@ -96,11 +97,12 @@ export function TaskModificationDialog({
   assignableUsers 
 }: TaskModificationDialogProps) {
   const { toast } = useToast()
+  const updateTaskMutation = useUpdateTask()
   
   // Mock current user - in a real app, this would come from auth context
   const currentUser = {
     name: "Current User",
-    avatar: "/placeholder-avatar.png"
+    profilePicture: "/placeholder-avatar.png"
   }
 
   const [title, setTitle] = useState(task.title)
@@ -158,7 +160,7 @@ export function TaskModificationDialog({
     type,
     description,
     user: currentUser?.name || "Unknown User",
-    userAvatar: currentUser?.avatar || "",
+    userAvatar: currentUser?.profilePicture || "",
     timestamp: new Date().toISOString(),
     oldValue,
     newValue,
@@ -303,19 +305,21 @@ export function TaskModificationDialog({
         status,
         priority,
         category,
-        assignedTo: newAssignedUser?.name || task.assignedTo,
-        assignedToAvatar: newAssignedUser?.avatar || task.assignedToAvatar,
+        assignedTo: newAssignedUser?.fullName || newAssignedUser?.name || task.assignedTo,
+        assignedToAvatar: newAssignedUser?.profilePicture || task.assignedToAvatar,
         actualHours: actualHours ? Number(actualHours) : undefined,
         updatedAt: new Date().toISOString(),
         completedAt: status === "Done" || status === "Completed" ? new Date().toISOString() : undefined,
         activityHistory
       }
       
-      // Update task in Firebase with enhanced error handling
-      const { updateTaskAction } = await import('@/app/actions')
-      const result = await updateTaskAction(task.id, updatedTask)
-      
-      if (result.success) {
+      // Update task using React Query hook for better error handling
+      try {
+        await updateTaskMutation.mutateAsync({
+          id: task.id,
+          data: updatedTask
+        })
+        
         // Update local state
         await onTaskUpdate(updatedTask)
         
@@ -330,17 +334,26 @@ export function TaskModificationDialog({
         
         // Close dialog
         onOpenChange(false)
-      } else {
-        // Handle Firebase error but still update local state for better UX
-        setSaveError(result.error || "Failed to save changes to server")
-        await onTaskUpdate(updatedTask)
+      } catch (mutationError) {
+        const errorMessage = mutationError instanceof Error ? mutationError.message : "Failed to update task"
+        setSaveError(errorMessage)
         
-        toast({
-          title: "Partial Update",
-          description: "Changes saved locally but may not sync to server. Please try again.",
-          variant: "destructive",
-          duration: 7000,
-        })
+        // Check if it's an authorization error
+        if (errorMessage.includes('Unauthorized')) {
+          toast({
+            title: "Access Denied",
+            description: "You don't have permission to update this task. Only the creator or assigned user can make changes.",
+            variant: "destructive",
+            duration: 7000,
+          })
+        } else {
+          toast({
+            title: "Update Failed",
+            description: errorMessage,
+            variant: "destructive",
+            duration: 7000,
+          })
+        }
       }
     } catch (error) {
       console.error('Error updating task:', error)
@@ -520,7 +533,7 @@ export function TaskModificationDialog({
                       <SelectItem key={user.id} value={user.id}>
                         <div className="flex items-center gap-2">
                           <Avatar className="h-6 w-6">
-                            <AvatarImage src={user.avatar} alt={user.name} />
+                            <AvatarImage src={user.profilePicture} alt={user.name} />
                             <AvatarFallback>
                               <User className="h-3 w-3" />
                             </AvatarFallback>

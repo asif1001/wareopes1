@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { addSource, addContainerSize, addTask, updateTask, deleteTask, getTasksOptimized, getUsersMinimal, getTaskCounts, batchUpdateTasks } from "@/lib/firebase/firestore";
+import { addSource, addContainerSize, addTask, updateTask, deleteTask, getTasksOptimized, getAllTasks, getUsersMinimal, getTaskCounts, batchUpdateTasks } from "@/lib/firebase/firestore";
 import { UserRole, Task, User } from "@/lib/types";
 
 // Login action
@@ -723,9 +723,14 @@ export async function logoutUser() {
 }
 
 // Task Actions
-export async function createTaskAction(taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) {
+export async function createTaskAction(taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>, currentUserId?: string) {
   try {
-    const taskId = await addTask(taskData);
+    // Ensure the task has the correct createdBy field
+    const taskWithCreator = {
+      ...taskData,
+      createdBy: currentUserId || taskData.createdBy || "unknown"
+    };
+    const taskId = await addTask(taskWithCreator);
     revalidatePath('/dashboard/tasks');
     return { success: true, taskId, message: "Task created successfully" };
   } catch (error) {
@@ -741,6 +746,8 @@ export async function getTasksOptimizedAction(options?: {
   assignedTo?: string[];
   priority?: string[];
   fields?: string[];
+  currentUserId?: string;
+  filterMode?: 'created' | 'assigned' | 'both';
 }) {
   try {
     const tasks = await getTasksOptimized(options);
@@ -748,6 +755,23 @@ export async function getTasksOptimizedAction(options?: {
   } catch (error) {
     console.error('Error fetching optimized tasks:', error);
     return { success: false, error: 'Failed to fetch tasks' };
+  }
+}
+
+export async function getAllTasksAction(options?: {
+  limit?: number;
+  status?: string[];
+  assignedTo?: string[];
+  priority?: string[];
+  fields?: string[];
+  currentUserId?: string;
+}) {
+  try {
+    const tasks = await getAllTasks(options);
+    return { success: true, data: tasks };
+  } catch (error) {
+    console.error('Error fetching all tasks:', error);
+    return { success: false, error: 'Failed to fetch all tasks' };
   }
 }
 
@@ -761,9 +785,9 @@ export async function getUsersMinimalAction() {
   }
 }
 
-export async function getTaskCountsAction() {
+export async function getTaskCountsAction(currentUserId?: string) {
   try {
-    const counts = await getTaskCounts();
+    const counts = await getTaskCounts(currentUserId);
     return { success: true, data: counts };
   } catch (error) {
     console.error('Error fetching task counts:', error);
@@ -771,35 +795,35 @@ export async function getTaskCountsAction() {
   }
 }
 
-export async function batchUpdateTasksAction(updates: { id: string; data: Partial<Task> }[]) {
+export async function batchUpdateTasksAction(updates: { id: string; data: Partial<Task>; currentUserId?: string }[]) {
   try {
     await batchUpdateTasks(updates);
     revalidatePath('/dashboard/tasks');
     return { success: true };
   } catch (error) {
     console.error('Error batch updating tasks:', error);
-    return { success: false, error: 'Failed to update tasks' };
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to update tasks' };
   }
 }
 
-export async function updateTaskAction(id: string, taskData: Partial<Task>) {
+export async function updateTaskAction(id: string, taskData: Partial<Task>, currentUserId?: string) {
   try {
-    await updateTask(id, taskData);
+    await updateTask(id, taskData, currentUserId);
     revalidatePath('/dashboard/tasks');
     return { success: true, message: "Task updated successfully" };
   } catch (error) {
     console.error("Error updating task:", error);
-    return { success: false, error: "Failed to update task" };
+    return { success: false, error: error instanceof Error ? error.message : "Failed to update task" };
   }
 }
 
-export async function deleteTaskAction(id: string) {
+export async function deleteTaskAction(id: string, currentUserId?: string) {
   try {
-    await deleteTask(id);
+    await deleteTask(id, currentUserId);
     revalidatePath('/dashboard/tasks');
     return { success: true, message: "Task deleted successfully" };
   } catch (error) {
     console.error("Error deleting task:", error);
-    return { success: false, error: "Failed to delete task" };
+    return { success: false, error: error instanceof Error ? error.message : "Failed to delete task" };
   }
 }

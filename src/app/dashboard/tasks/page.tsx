@@ -49,9 +49,10 @@ import { format } from "date-fns"
 
 // Import React Query hooks for optimized data fetching
 import { 
-  useTasksOptimized, 
+  useAllTasks, 
   useUsersMinimal, 
   useTaskCounts,
+  useCreateTask,
   useUpdateTask,
   useDeleteTask,
   useBatchUpdateTasks
@@ -73,16 +74,10 @@ export default function TasksPage() {
   // Use React Query hooks for optimized data fetching with caching
   const { 
     data: tasks = [], 
-    isLoading: tasksLoading, 
+    isLoading, 
     error: tasksError,
     refetch: refetchTasks
-  } = useTasksOptimized({
-    limit: 100, // Pagination - load first 100 tasks
-    status: statusFilter.length > 0 ? statusFilter : undefined,
-    priority: priorityFilter.length > 0 ? priorityFilter : undefined,
-    assignedTo: assignedToFilter.length > 0 ? assignedToFilter : undefined,
-    fields: ['id', 'title', 'description', 'status', 'priority', 'assignedTo', 'assignedToAvatar', 'category', 'dueDate', 'estimatedHours', 'actualHours', 'completedAt', 'createdAt', 'updatedAt']
-  })
+  } = useAllTasks()
 
   const { 
     data: users = [], 
@@ -95,6 +90,7 @@ export default function TasksPage() {
   } = useTaskCounts()
 
   // Optimistic mutation hooks
+  const createTaskMutation = useCreateTask()
   const updateTaskMutation = useUpdateTask()
   const deleteTaskMutation = useDeleteTask()
   const batchUpdateMutation = useBatchUpdateTasks()
@@ -112,15 +108,13 @@ export default function TasksPage() {
   // Handle task creation with optimistic updates
   const handleTaskCreate = useCallback(async (newTask: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<{ success: boolean; error?: string }> => {
     try {
-      // The task creation is handled in the TaskCreationDialog component
-      // After creation, React Query will automatically refetch and update the cache
-      await refetchTasks()
+      const result = await createTaskMutation.mutateAsync(newTask)
       return { success: true }
     } catch (error) {
-      console.error('Error after task creation:', error)
-      return { success: false, error: 'Error refreshing tasks' }
+      console.error('Error creating task:', error)
+      return { success: false, error: error instanceof Error ? error.message : 'Error creating task' }
     }
-  }, [refetchTasks])
+  }, [createTaskMutation])
 
   // Handle task updates with optimistic updates
   const handleTaskUpdate = useCallback(async (updatedTask: Task) => {
@@ -197,7 +191,7 @@ export default function TasksPage() {
   }
 
   const tabTasks = getTabTasks()
-  const isLoading = tasksLoading || usersLoading
+  const allLoading = isLoading || usersLoading
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
@@ -237,26 +231,30 @@ export default function TasksPage() {
             availableUsers={users.map(user => user.name).filter((name): name is string => name !== undefined)}
           />
           
+          {/* All Tasks Card */}
           <Card>
             <CardHeader>
-              <CardTitle>All Tasks</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                All Tasks
+              </CardTitle>
               <CardDescription>
-                Complete overview of all tasks with advanced filtering and search capabilities.
+                All tasks from the task collection with advanced filtering and search capabilities.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
+              {allLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
                     <p className="text-sm text-muted-foreground">Loading tasks...</p>
                   </div>
                 </div>
-              ) : filteredTasks.length === 0 ? (
+              ) : tasks.length === 0 ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="text-center">
                     <p className="text-sm text-muted-foreground">No tasks found</p>
-                    <p className="text-xs text-muted-foreground mt-1">Create your first task to get started</p>
+                    <p className="text-xs text-muted-foreground mt-1">No tasks available in the collection</p>
                   </div>
                 </div>
               ) : (
@@ -274,11 +272,25 @@ export default function TasksPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                  {tabTasks.map((task) => (
+                  {tasks.filter(task => {
+                    const matchesSearch = searchQuery === '' || 
+                      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      task.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      task.assignedTo?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      task.category?.toLowerCase().includes(searchQuery.toLowerCase())
+                    
+                    const matchesStatus = statusFilter.length === 0 || statusFilter.includes(task.status)
+                    const matchesPriority = priorityFilter.length === 0 || priorityFilter.includes(task.priority)
+                    const matchesAssignedTo = assignedToFilter.length === 0 || assignedToFilter.includes(task.assignedTo || '')
+                    
+                    return matchesSearch && matchesStatus && matchesPriority && matchesAssignedTo
+                  }).map((task) => (
                     <TableRow key={task.id} className="cursor-pointer hover:bg-muted/50">
                       <TableCell className="font-medium">
                         <div onClick={() => handleTaskDetails(task)}>
-                          <div className="font-medium">{task.title}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-medium">{task.title}</div>
+                          </div>
                           {task.description && (
                             <div className="text-sm text-muted-foreground truncate max-w-[200px]">
                               {task.description}
@@ -333,8 +345,7 @@ export default function TasksPage() {
             </CardContent>
             <CardFooter>
               <div className="text-xs text-muted-foreground">
-                Showing <strong>{tabTasks.length}</strong> of{" "}
-                <strong>{tasks.length}</strong> tasks
+                Showing <strong>{tasks.length}</strong> tasks
               </div>
             </CardFooter>
           </Card>
@@ -548,7 +559,7 @@ export default function TasksPage() {
           id: user.id,
           name: user.name || user.fullName || user.id,
           fullName: user.fullName,
-          avatar: user.profilePicture
+          profilePicture: user.profilePicture
         }))}
       />
 
@@ -562,7 +573,7 @@ export default function TasksPage() {
             assignableUsers={users.map(user => ({
               id: user.id,
               name: user.name || user.fullName || user.id,
-              avatar: user.profilePicture || '/placeholder-avatar.png',
+              profilePicture: user.profilePicture || '/placeholder-avatar.png',
               department: 'Unknown', // getUsersMinimal doesn't include department
               fullName: user.fullName
             }))}

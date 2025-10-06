@@ -18,17 +18,22 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
     // Don't redirect while still loading
     if (isLoading) return;
 
-    // If no user is logged in, redirect to login
-    if (!user) {
-      router.push('/');
-      return;
-    }
+    // Add a small delay to prevent rapid redirects
+    const timeoutId = setTimeout(() => {
+      // If no user is logged in, redirect to login
+      if (!user) {
+        router.replace('/');
+        return;
+      }
 
-    // If admin is required but user is not admin, redirect to dashboard
-    if (requireAdmin && !isAdmin) {
-      router.push('/dashboard');
-      return;
-    }
+      // If admin is required but user is not admin, redirect to dashboard
+      if (requireAdmin && !isAdmin) {
+        router.replace('/dashboard');
+        return;
+      }
+    }, 50);
+
+    return () => clearTimeout(timeoutId);
   }, [user, isLoading, isAdmin, requireAdmin, router]);
 
   // Show loading spinner while checking authentication
