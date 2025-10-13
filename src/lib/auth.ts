@@ -19,12 +19,21 @@ const isClient = typeof window !== 'undefined';
 // Authenticate user with employee number and password
 export const authenticateUser = async (employeeNo: string, password: string): Promise<User | null> => {
   try {
-    const user = await getUserByEmployeeNo(employeeNo);
+    const normalizedEmployeeNo = employeeNo?.trim();
+    const normalizedPassword = password?.trim();
+
+    if (!normalizedEmployeeNo || !normalizedPassword) {
+      return null;
+    }
+
+    const user = await getUserByEmployeeNo(normalizedEmployeeNo);
     if (!user) return null;
-    
+
+    const storedPassword = user.password?.trim();
+
     // For now, we'll do a simple password comparison
     // In production, you should hash passwords properly
-    if (user.password === password) {
+    if (storedPassword && storedPassword === normalizedPassword) {
       return {
         id: user.id,
         employeeNo: user.employeeNo,
