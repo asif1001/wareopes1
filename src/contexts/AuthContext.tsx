@@ -57,7 +57,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (employeeNo: string, password: string) => {
     try {
-      const result = await authLogin(employeeNo, password);
+      const normalizedEmployeeNo = employeeNo?.trim();
+      const normalizedPassword = password?.trim();
+
+      if (!normalizedEmployeeNo || !normalizedPassword) {
+        return { success: false, error: 'Employee number and password are required' };
+      }
+
+      const result = await authLogin(normalizedEmployeeNo, normalizedPassword);
       if (result.success && result.user) {
         setUser(result.user);
       }

@@ -34,7 +34,16 @@ export default function LoginPage() {
         setSuccess('');
 
         try {
-            const result = await login(employeeNo, password);
+            const normalizedEmployeeNo = employeeNo.trim();
+            const normalizedPassword = password.trim();
+
+            if (!normalizedEmployeeNo || !normalizedPassword) {
+                setError('Employee number and password are required');
+                setIsLoading(false);
+                return;
+            }
+
+            const result = await login(normalizedEmployeeNo, normalizedPassword);
             if (result.success) {
                 setSuccess('Login successful! Redirecting...');
                 router.replace('/dashboard');

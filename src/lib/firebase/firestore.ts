@@ -301,8 +301,13 @@ export async function getUsers(): Promise<User[]> {
 }
 
 export async function getUserByEmployeeNo(employeeNo: string): Promise<User | null> {
+    const normalizedEmployeeNo = employeeNo?.trim();
+    if (!normalizedEmployeeNo) {
+        return null;
+    }
+
     const usersCol = collection(db, 'Users');
-    const q = query(usersCol, where('employeeNo', '==', employeeNo));
+    const q = query(usersCol, where('employeeNo', '==', normalizedEmployeeNo));
     const snapshot = await getDocs(q);
     if (snapshot.empty) {
         return null;

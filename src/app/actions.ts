@@ -7,8 +7,8 @@ import { UserRole, Task, User } from "@/lib/types";
 // Login action
 export async function loginAction(prevState: any, formData: FormData) {
   try {
-    const employeeNo = formData.get('employeeNo') as string;
-    const password = formData.get('password') as string;
+    const employeeNo = (formData.get('employeeNo') as string | null)?.trim();
+    const password = (formData.get('password') as string | null)?.trim();
 
     // Basic validation
     if (!employeeNo || !password) {
@@ -36,7 +36,8 @@ export async function loginAction(prevState: any, formData: FormData) {
       // In a real app, you would hash and compare passwords
       // For now, we'll check if the user exists and has a password field
       // You should implement proper password hashing (bcrypt, etc.)
-      if (user.password && user.password === password) {
+      const storedPassword = user.password?.trim();
+      if (storedPassword && storedPassword === password) {
         return {
           success: true,
           message: 'Login successful! Redirecting to dashboard...',
