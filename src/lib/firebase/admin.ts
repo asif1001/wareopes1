@@ -2,9 +2,6 @@ import { getApps, getApp, initializeApp, cert, applicationDefault } from 'fireba
 import { getFirestore } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
-// Statically import local service account JSON as a fallback in dev
-// resolveJsonModule is enabled in tsconfig, so JSON imports work in Node runtime
-import serviceAccountJson from '../../../serviceAccount.json';
 
 /**
  * Firebase Admin initialization
@@ -60,15 +57,8 @@ export async function getAdminDb() {
           }
         }
 
-        // If file lookups failed, use statically imported JSON (dev-friendly)
-        try {
-          if (serviceAccountJson && typeof serviceAccountJson === 'object') {
-            initializeApp({ credential: cert(serviceAccountJson as any) });
-            return;
-          }
-        } catch (_) {
-          // ignore and fall through
-        }
+        // If file lookups failed, do not attempt static JSON import.
+        // Rely on FIREBASE_ADMIN_CREDENTIALS or ADC in production environments.
 
         // Finally, fall back to ADC if available in environment
         initializeApp({ credential: applicationDefault() });
