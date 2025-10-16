@@ -1,0 +1,35 @@
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Development files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Testing
+/coverage/
+
+# Firebase debug logs
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# Scripts and debug files
+check-*.js
+create-*.js
+debug-*.js
+test-*.js
+tmp_*.json
+
+# Workspace folder
+workspace/
+
+# Documentation
+docs/
+*.md
