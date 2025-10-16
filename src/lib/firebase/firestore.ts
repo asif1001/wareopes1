@@ -272,6 +272,13 @@ export async function updateShipmentBookings(id: string, bookings: ContainerBook
     });
 }
 
+export async function updateShipmentBookingsOnly(id: string, bookings: ContainerBooking[]) {
+    await updateDoc(doc(db, 'shipments', id), {
+        bookings,
+        updatedAt: serverTimestamp(),
+    });
+}
+
 export async function deleteShipment(id: string) {
     await deleteDoc(doc(db, 'shipments', id));
 }

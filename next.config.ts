@@ -23,6 +23,19 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async headers() {
+    return [
+      {
+        source: '/dashboard/:path*',
+        headers: [
+          {
+            key: 'x-forwarded-host',
+            value: 'localhost:3001',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -1,6 +1,6 @@
 
 "use client"
-import { useEffect, useState, useActionState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
 import { format } from 'date-fns';
@@ -13,27 +13,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Ship, CalendarIcon, Loader2, AlertCircle } from "lucide-react";
 import type { SerializableShipment } from "@/lib/types";
-import { saveContainerBookingsAction } from "@/app/dashboard/shipments/actions";
 import { cn } from "@/lib/utils";
-import { useFormStatus } from "react-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 type BookingFormData = {
     bookings: {
         containerNo: string;
-        bookingDate?: Date;
+        bookingDate: Date | undefined;
     }[];
-}
-
-function SubmitButton() {
-    const { pending } = useFormStatus();
-    return (
-        <Button type="submit" disabled={pending}>
-            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save Bookings
-        </Button>
-    )
-}
+};
 
 function DatePickerField({ name, control }: { name: any, control: any }) {
     const [open, setOpen] = useState(false);
@@ -75,7 +63,8 @@ const expandContainers = (shipment: SerializableShipment) => {
 
 export function ContainerBookingModal({ shipment }: { shipment: SerializableShipment }) {
     const [open, setOpen] = useState(false);
-    const [actionState, formAction] = useActionState(saveContainerBookingsAction, { success: false, error: null });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
     const { toast } = useToast();
     const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -99,19 +88,22 @@ export function ContainerBookingModal({ shipment }: { shipment: SerializableShip
 
 
     useEffect(() => {
-        if (actionState.success) {
-            setOpen(false);
-            toast({ title: "Container bookings saved successfully!" });
+        if (submitError) {
+            toast({
+                title: "Error",
+                description: submitError,
+                variant: "destructive",
+            });
+            setSubmitError(null);
         }
-    }, [actionState, toast]);
+    }, [submitError, toast]);
 
     useEffect(() => {
         if (open) {
-            actionState.error = null;
-            actionState.success = false;
+            setSubmitError(null);
             form.reset(getDefaultValues());
         }
-    }, [open, shipment, form, actionState]);
+    }, [open, shipment, form]);
 
     const watchBookings = form.watch("bookings");
 
@@ -122,6 +114,34 @@ export function ContainerBookingModal({ shipment }: { shipment: SerializableShip
         ...b,
         bookingDate: getISODateString(b.bookingDate)
     }));
+    const handleSubmit = async (data: BookingFormData) => {
+        setIsSubmitting(true);
+        setSubmitError(null);
+
+        try {
+            const formData = new FormData();
+            formData.append('shipmentId', shipment.id);
+            formData.append('bookings', JSON.stringify(preparedBookings));
+
+            const response = await fetch('/api/container-bookings', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to save container bookings');
+            }
+
+            const result = await response.json();
+            toast({ title: "Container bookings saved successfully!" });
+            setOpen(false);
+        } catch (error) {
+            setSubmitError(error instanceof Error ? error.message : 'An unexpected error occurred');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
     
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
         if (e.key === "ArrowDown") {
@@ -157,17 +177,15 @@ export function ContainerBookingModal({ shipment }: { shipment: SerializableShip
                         <span><strong>B/L:</strong> {shipment.billOfLading}</span>
                     </div>
                 </DialogHeader>
-                <form action={formAction} className="flex-grow flex flex-col overflow-hidden">
+                <form onSubmit={form.handleSubmit(handleSubmit)} className="flex-grow flex flex-col overflow-hidden">
                     <div className="px-6 space-y-2 flex-shrink-0">
-                        {actionState.error && (
+                        {submitError && (
                             <Alert variant="destructive" className="mb-4">
                                 <AlertCircle className="h-4 w-4" />
                                 <AlertTitle>Error</AlertTitle>
-                                <AlertDescription>{actionState.error}</AlertDescription>
+                                <AlertDescription>{submitError}</AlertDescription>
                             </Alert>
                         )}
-                        <input type="hidden" name="shipmentId" value={shipment.id} />
-                        <input type="hidden" name="bookings" value={JSON.stringify(preparedBookings)} />
                         
                         <div className="grid grid-cols-2 gap-x-4 px-1 pb-1 font-medium text-sm text-muted-foreground">
                             <Label>Container No.</Label>
@@ -187,7 +205,7 @@ export function ContainerBookingModal({ shipment }: { shipment: SerializableShip
                                             render={({ field }) => (
                                                 <Input 
                                                     {...field}
-                                                    ref={el => inputRefs.current[index] = el}
+                                                    ref={el => { inputRefs.current[index] = el; }}
                                                     onKeyDown={(e) => handleKeyDown(e, index)} 
                                                     placeholder={`(${container.size})`} 
                                                     className="uppercase" 
@@ -206,7 +224,10 @@ export function ContainerBookingModal({ shipment }: { shipment: SerializableShip
                         <DialogClose asChild>
                             <Button type="button" variant="outline">Cancel</Button>
                         </DialogClose>
-                        <SubmitButton />
+                        <Button type="submit" disabled={isSubmitting}>
+                            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Save Bookings
+                        </Button>
                     </DialogFooter>
                 </form>
             </DialogContent>

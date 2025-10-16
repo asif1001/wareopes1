@@ -1,16 +1,12 @@
-"use client"
+"use client";
 
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import {
   Bell,
   Home,
   Package2,
   Search,
   Users,
-  Settings,
-  HelpCircle,
-  LogOut,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -31,31 +27,39 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-
+import { SidebarTrigger } from "@/components/ui/sidebar"
 import Image from "next/image"
-import { logoutUser } from "@/app/actions"
-import { useAuth } from "@/contexts/AuthContext"
+import { useRouter } from "next/navigation";
 
-export function DashboardHeader({title}: {title: string}) {
-  const router = useRouter()
-  const { logout } = useAuth()
+export function DashboardHeader({title, children}: {title: string, children?: React.ReactNode}) {
+  const router = useRouter();
 
   const handleLogout = async () => {
     try {
-      await logoutUser()
-      // Clear auth context user state
-      logout()
+      const response = await fetch('/api/logout', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Logout failed');
+      }
+
+      // On successful API call, redirect to the login page
+      router.push('/');
+      router.refresh(); // Optional: force a refresh to ensure all state is cleared
     } catch (error) {
-      console.error('Logout failed:', error)
-      // Even if logoutUser fails, clear the context and redirect
-      logout()
+      console.error("Failed to logout:", error);
+      // Optionally, show an error message to the user
     }
-  }
+  };
+
   return (
     <header className="flex h-14 items-center gap-4 border-b bg-card px-4 lg:h-[60px] lg:px-6">
+      <SidebarTrigger className="md:hidden" />
       <div className="w-full flex-1">
         <h1 className="text-lg font-semibold">{title}</h1>
       </div>
+      {children}
       <div className="flex flex-1 items-center justify-end gap-4 md:ml-auto md:gap-2 lg:gap-4">
         <form className="ml-auto flex-1 sm:flex-initial">
           <div className="relative">
@@ -100,21 +104,10 @@ export function DashboardHeader({title}: {title: string}) {
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/my-account" className="flex items-center gap-2">
-                <Settings className="h-4 w-4" />
-                Settings
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/support" className="flex items-center gap-2">
-                <HelpCircle className="h-4 w-4" />
-                Support
-              </Link>
-            </DropdownMenuItem>
+            <DropdownMenuItem>Settings</DropdownMenuItem>
+            <DropdownMenuItem>Support</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} className="flex items-center gap-2 text-red-600 focus:text-red-600">
-              <LogOut className="h-4 w-4" />
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleLogout(); }}>
               Logout
             </DropdownMenuItem>
           </DropdownMenuContent>

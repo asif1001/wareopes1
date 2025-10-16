@@ -103,3 +103,7 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--primary));
 }
+
+.calendar-container .fc-event {
+    cursor: pointer;
+}
