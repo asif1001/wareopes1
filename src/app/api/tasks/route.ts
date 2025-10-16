@@ -4,6 +4,7 @@ import { Task, TaskPriority, TaskStatus, AuditLog, SerializableTask, Attachment 
 import { makeSerializable } from "@/lib/serialization";
 import { Timestamp } from 'firebase-admin/firestore';
 import { nanoid } from "nanoid";
+import { getStorage } from 'firebase-admin/storage';
 
 const taskStatusEnum: [TaskStatus, ...TaskStatus[]] = ["Backlog", "To Do", "In Progress", "Blocked", "On Hold", "Review", "Done"];
 const taskPriorityEnum: [TaskPriority, ...TaskPriority[]] = ["No Priority", "Low", "Medium", "High", "Urgent"];
@@ -24,18 +25,88 @@ const taskSchema = z.object({
     subtasks: z.array(z.object({ title: z.string(), isComplete: z.boolean() })).optional(),
 });
 
-// File upload utility function (placeholder - would need actual storage implementation)
+// File upload utility function: uploads to Firebase Storage (Admin SDK) and returns a public download URL
 async function uploadFile(file: File, taskId: string): Promise<Attachment> {
-    // This is a placeholder implementation
-    // In a real app, you would upload to cloud storage (AWS S3, Firebase Storage, etc.)
-    // and return the actual file URL
+    // Ensure Firebase Admin app is initialized
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    await getAdminDb();
+
+    const storage = getStorage();
+
+    // Resolve bucket for Admin SDK operations (Google Cloud Storage).
+    // Prefer env-provided bucket and check both domains: appspot.com and firebasestorage.app.
+    const envBucket = (process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '').replace(/^gs:\/\//, '');
+    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '';
+    const candidates: string[] = [];
+
+    if (envBucket) {
+        const parts = envBucket.split('.');
+        const proj = parts[0];
+        if (envBucket.endsWith('.appspot.com')) {
+            candidates.push(envBucket);
+            if (proj) candidates.push(`${proj}.firebasestorage.app`);
+        } else if (envBucket.endsWith('.firebasestorage.app')) {
+            candidates.push(envBucket);
+            if (proj) candidates.push(`${proj}.appspot.com`);
+        } else {
+            // treat as project id
+            candidates.push(`${envBucket}.appspot.com`, `${envBucket}.firebasestorage.app`);
+        }
+    } else if (projectId) {
+        candidates.push(`${projectId}.appspot.com`, `${projectId}.firebasestorage.app`);
+    }
+
+    let chosenBucketName: string | undefined;
+    const attempted: string[] = [];
+    let lastErr: any = null;
+
+    for (const cand of candidates) {
+        attempted.push(cand);
+        try {
+            const candBucket = storage.bucket(cand);
+            const [exists] = await candBucket.exists();
+            if (exists) {
+                chosenBucketName = cand;
+                break;
+            }
+        } catch (e) {
+            lastErr = e;
+        }
+    }
+
+    if (!chosenBucketName) {
+        const attemptedMsg = attempted.length ? `Tried: ${attempted.join(', ')}` : 'No bucket candidates available';
+        const lastErrMsg = lastErr ? `; last error: ${lastErr?.message || String(lastErr)}` : '';
+        throw new Error(`Bucket check failed: ${attemptedMsg}${lastErrMsg}. Ensure Firebase Storage is enabled for the project and that at least one of the buckets exists: "<project-id>.appspot.com" or "<project-id>.firebasestorage.app".`);
+    }
+
+    const bucket = storage.bucket(chosenBucketName);
 
     const fileId = nanoid();
-    const fileExtension = file.name.split('.').pop() || '';
-    const fileName = `${fileId}.${fileExtension}`;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `tasks/${taskId}/${fileId}-${safeName}`;
 
-    // Placeholder URL - in real implementation, this would be the actual uploaded file URL
-    const fileUrl = `https://storage.example.com/tasks/${taskId}/${fileName}`;
+    // Read bytes from the web File object
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Generate a persistent download token so we can construct a stable URL
+    const downloadToken = nanoid();
+
+    await bucket.file(storagePath).save(buffer, {
+        metadata: {
+            contentType: file.type || 'application/octet-stream',
+            metadata: {
+                firebaseStorageDownloadTokens: downloadToken,
+            },
+        },
+        resumable: false,
+        public: false,
+    });
+
+    const encodedPath = encodeURIComponent(storagePath);
+    const finalBucket = bucket.name;
+    const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${finalBucket}/o/${encodedPath}?alt=media&token=${downloadToken}`;
 
     return {
         id: fileId,
@@ -44,7 +115,7 @@ async function uploadFile(file: File, taskId: string): Promise<Attachment> {
         fileType: file.type,
         size: file.size,
         uploadedAt: (Timestamp.fromDate(new Date()) as any),
-        uploadedBy: "user1", // Would be actual user ID
+        uploadedBy: "user1", // TODO: replace with actual user ID
     };
 }
 
@@ -75,12 +146,47 @@ function generateAuditLogs(
     return logs;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
     try {
+        // Identify current user from secure session cookie
+        const { cookies } = await import('next/headers');
+        const sessionCookie = (await cookies()).get('session');
+        const currentUserId = sessionCookie?.value;
+
+        if (!currentUserId) {
+            return NextResponse.json({ error: 'Unauthorized: no session' }, { status: 401 });
+        }
+
+        // Use Admin SDK to query only tasks where the user is reporter or assignee
         const { getAdminDb } = await import('@/lib/firebase/admin');
         const adb = await getAdminDb();
-        const snap = await adb.collection('tasks').get();
-        const tasks = snap.docs.map((d: any) => makeSerializable({ id: d.id, ...(d.data ? d.data() : d) }));
+
+        // Firestore doesn't support OR in a single query; run two queries and merge
+        const [reporterSnap, assigneeSnap] = await Promise.all([
+            adb.collection('tasks').where('reporterId', '==', currentUserId).get(),
+            adb.collection('tasks').where('assigneeId', '==', currentUserId).get(),
+        ]);
+
+        const seen = new Set<string>();
+        const tasks: any[] = [];
+
+        for (const d of reporterSnap.docs) {
+            if (!seen.has(d.id)) {
+                seen.add(d.id);
+                const raw = d.data ? d.data() : {};
+                const { id: _discard, ...dataNoId } = raw as any;
+                tasks.push(makeSerializable({ id: d.id, ...dataNoId }));
+            }
+        }
+        for (const d of assigneeSnap.docs) {
+            if (!seen.has(d.id)) {
+                seen.add(d.id);
+                const raw = d.data ? d.data() : {};
+                const { id: _discard, ...dataNoId } = raw as any;
+                tasks.push(makeSerializable({ id: d.id, ...dataNoId }));
+            }
+        }
+
         return NextResponse.json(tasks);
     } catch (error) {
         console.error("Error fetching tasks:", error);
@@ -113,9 +219,15 @@ export async function POST(request: NextRequest) {
         const { id, ...taskData } = parsed.data;
         const currentUserId = "user1"; // Placeholder for actual auth user
 
+        // Compute bucket name used for uploads (for error reporting)
+        const envBucket = (process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '').replace(/^gs:\/\//, '');
+        const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '';
+        let resolvedBucket = envBucket || (projectId ? `${projectId}.firebasestorage.app` : '');
+
         // Handle file uploads
         const attachments: File[] = [];
         const attachmentFiles: Attachment[] = [];
+        const uploadErrors: { fileName: string; message: string }[] = [];
 
         // Extract attachment files from form data
         for (const [key, value] of formData.entries()) {
@@ -133,8 +245,10 @@ export async function POST(request: NextRequest) {
                     const attachment = await uploadFile(file, tempTaskId);
                     attachmentFiles.push(attachment);
                 } catch (error) {
-                    console.error(`Failed to upload file ${file.name}:`, error);
-                    // Continue with other files, or handle error as needed
+                    const message = error instanceof Error ? error.message : 'Unknown error';
+                    console.error(`Failed to upload file ${file.name}:`, message);
+                    uploadErrors.push({ fileName: file.name, message });
+                    // Continue with other files
                 }
             }
         }
@@ -214,10 +328,89 @@ export async function POST(request: NextRequest) {
             } as any);
         }
 
-        return NextResponse.json({ success: true });
+        // If attachments were provided but none uploaded, surface a clear error
+        if (attachments.length > 0 && attachmentFiles.length === 0) {
+            const firstErr = uploadErrors[0]?.message || 'Attachment upload failed';
+            return NextResponse.json({ 
+                success: false, 
+                error: `No attachments were uploaded. ${firstErr}. Check Storage bucket configuration and credentials.`,
+                details: { attempted: attachments.length, uploaded: attachmentFiles.length, bucket: resolvedBucket || '(default)', errors: uploadErrors }
+            }, { status: 500 });
+        }
+
+        return NextResponse.json({ success: true, details: { uploaded: attachmentFiles.length, bucket: resolvedBucket || '(default)' } });
     } catch (error) {
         console.error("Error saving task:", error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         return NextResponse.json({ success: false, error: `Failed to save task: ${errorMessage}` }, { status: 500 });
+    }
+}
+
+export async function DELETE(request: NextRequest) {
+    try {
+        const { id } = await request.json().catch(() => ({ id: undefined }));
+        if (!id || typeof id !== 'string' || id.trim() === '') {
+            return NextResponse.json({ success: false, error: 'Task id is required.' }, { status: 400 });
+        }
+
+        // Initialize admin
+        const { getAdminDb } = await import('@/lib/firebase/admin');
+        const adb = await getAdminDb();
+
+        // Attempt to delete any stored attachments under tasks/<id>/ prefix
+        let attachmentsDeleted = false;
+        try {
+            const storage = (await import('firebase-admin/storage')).getStorage();
+            const envBucket = (process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '').replace(/^gs:\/\//, '');
+            const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '';
+            const candidates: string[] = [];
+            if (envBucket) {
+                const proj = envBucket.split('.')[0];
+                if (envBucket.endsWith('.appspot.com')) {
+                    candidates.push(envBucket);
+                    if (proj) candidates.push(`${proj}.firebasestorage.app`);
+                } else if (envBucket.endsWith('.firebasestorage.app')) {
+                    candidates.push(envBucket);
+                    if (proj) candidates.push(`${proj}.appspot.com`);
+                } else {
+                    candidates.push(`${envBucket}.appspot.com`, `${envBucket}.firebasestorage.app`);
+                }
+            } else if (projectId) {
+                candidates.push(`${projectId}.appspot.com`, `${projectId}.firebasestorage.app`);
+            }
+
+            let bucket: ReturnType<typeof storage.bucket> | null = null;
+            for (const cand of candidates) {
+                try {
+                    const b = storage.bucket(cand);
+                    const [exists] = await b.exists();
+                    if (exists) { bucket = b; break; }
+                } catch (_) {}
+            }
+            if (!bucket) {
+                throw new Error(`No Storage bucket found for candidates: ${candidates.join(', ')}`);
+            }
+            try {
+                const [exists] = await bucket.exists();
+                if (exists) {
+                    await bucket.deleteFiles({ prefix: `tasks/${id}/` });
+                    attachmentsDeleted = true;
+                }
+            } catch (e) {
+                // Swallow storage errors to not block task deletion
+                console.warn('Attachment cleanup skipped:', (e as any)?.message || e);
+            }
+        } catch (e) {
+            console.warn('Storage not available for attachment cleanup:', (e as any)?.message || e);
+        }
+
+        // Delete the task document
+        await adb.collection('tasks').doc(id).delete();
+
+        return NextResponse.json({ success: true, details: { attachmentsDeleted } });
+    } catch (error) {
+        console.error('Error deleting task:', error);
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        return NextResponse.json({ success: false, error: `Failed to delete task: ${msg}` }, { status: 500 });
     }
 }

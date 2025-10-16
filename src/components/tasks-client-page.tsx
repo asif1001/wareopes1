@@ -54,7 +54,7 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
         <div className="flex flex-col h-full">
             <DashboardHeader title="Tasks">
                 <div className="ml-auto flex items-center gap-2">
-                    <Button size="sm" className="h-8 gap-1" onClick={() => openModal()}>
+                    <Button size="sm" className="h-8 gap-1" onClick={() => openModal()} data-testid="add-task">
                         <PlusCircle className="h-3.5 w-3.5" />
                         <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
                             Add Task
@@ -88,13 +88,13 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
                                 </DropdownMenuContent>
                             </DropdownMenu>
                             <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
-                                <Button variant={view === 'table' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setView('table')}>
+                                <Button variant={view === 'table' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setView('table')} data-testid="view-table">
                                     <List className="h-4 w-4" />
                                 </Button>
-                                <Button variant={view === 'kanban' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setView('kanban')}>
+                                <Button variant={view === 'kanban' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setView('kanban')} data-testid="view-kanban">
                                     <LayoutGrid className="h-4 w-4" />
                                 </Button>
-                                <Button variant={view === 'calendar' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setView('calendar')}>
+                                <Button variant={view === 'calendar' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setView('calendar')} data-testid="view-calendar">
                                     <Calendar className="h-4 w-4" />
                                 </Button>
                             </div>

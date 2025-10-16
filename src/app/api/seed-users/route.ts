@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { collection, getDocs, addDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase/firebase';
 
 export async function POST() {
 	try {
-		const usersCol = collection(db, 'Users');
-		const snapshot = await getDocs(usersCol);
+		// Use Firebase Admin SDK to bypass Firestore security rules
+		const { getAdminDb } = await import('@/lib/firebase/admin');
+		const adb = await getAdminDb();
+		const snapshot = await adb.collection('Users').limit(1).get();
 
 		if (!snapshot.empty) {
 			return NextResponse.json({ ok: true, message: 'Users already exist. No action taken.' });
@@ -38,8 +38,8 @@ export async function POST() {
 			updatedAt: now,
 		};
 
-		const adminRef = await addDoc(usersCol, adminUser);
-		const userRef = await addDoc(usersCol, regularUser);
+		const adminRef = await adb.collection('Users').add(adminUser);
+		const userRef = await adb.collection('Users').add(regularUser);
 
 		return NextResponse.json({ ok: true, created: [adminRef.id, userRef.id] });
 	} catch (e: any) {

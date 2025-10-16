@@ -563,10 +563,14 @@ export function TaskDetailsDialog({
                         </p>
                       </div>
                     </div>
-                    <Button size="sm" variant="outline">
+                    <a
+                      href={attachment.url}
+                      download={attachment.name}
+                      className="inline-flex items-center h-8 px-3 text-sm border rounded-md hover:bg-muted text-foreground"
+                    >
                       <Download className="h-4 w-4 mr-1" />
                       Download
-                    </Button>
+                    </a>
                   </div>
                 </CardContent>
               </Card>

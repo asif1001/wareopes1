@@ -10,10 +10,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import { SerializableTask, SerializableUserProfile, TaskPriority, TaskStatus } from "@/lib/task-types";
-import { CalendarIcon, PlusCircle, Trash2, Upload, X } from "lucide-react";
+import { CalendarIcon, PlusCircle, Trash2, Upload, X, Download, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { HistoryAndComments } from "./task-history";
+import { TaskCommentForm } from "./task-comment-form";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 
@@ -60,6 +61,9 @@ export function TaskModal({ isOpen, onClose, task, users, currentUserId, onTaskS
     const [existingAttachments, setExistingAttachments] = useState<any[]>([]);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+    // Comments state for live updates within the modal
+    const [comments, setComments] = useState<any[]>([]);
+
     // Date picker states
     const [startDateOpen, setStartDateOpen] = useState(false);
     const [dueDateOpen, setDueDateOpen] = useState(false);
@@ -84,8 +88,19 @@ export function TaskModal({ isOpen, onClose, task, users, currentUserId, onTaskS
                     subtasks: task.subtasks?.map(s => ({ title: s.title, isComplete: s.isComplete })) || [],
                 });
                 setSubtasks(task.subtasks?.map(s => ({ title: s.title, isComplete: s.isComplete })) || []);
-                setExistingAttachments(task.attachments || []);
+                // Normalize attachments to a consistent shape for display in the modal
+                const normalizedAttachments = (task.attachments || []).map((att: any) => ({
+                    ...att,
+                    fileName: att?.fileName ?? att?.name ?? att?.filename ?? "Untitled",
+                    fileUrl: att?.fileUrl ?? att?.url ?? att?.href ?? att?.downloadUrl ?? "",
+                    fileType: att?.fileType ?? att?.type ?? "",
+                    size: att?.size ?? 0,
+                    uploadedAt: att?.uploadedAt ?? att?.uploaded_at ?? null,
+                    uploadedBy: att?.uploadedBy ?? att?.uploaded_by ?? "Unknown",
+                }));
+                setExistingAttachments(normalizedAttachments);
                 setAttachments([]); // Always reset new attachments when opening modal
+                setComments(task.comments || []);
             } else {
                 // Set default start date to today for new tasks
                 const today = new Date().toISOString().split('T')[0];
@@ -103,6 +118,7 @@ export function TaskModal({ isOpen, onClose, task, users, currentUserId, onTaskS
                 setSubtasks([]);
                 setAttachments([]);
                 setExistingAttachments([]);
+                setComments([]);
             }
         }
     }, [isOpen, task]);
@@ -433,7 +449,7 @@ export function TaskModal({ isOpen, onClose, task, users, currentUserId, onTaskS
                                 {/* Subtasks - compact list */}
                                 <div className="space-y-2">
                                     <Label className="text-xs font-medium text-slate-700">Subtasks</Label>
-                                    <div className="max-h-24 overflow-y-auto space-y-1">
+                                    <div className="max-h-48 overflow-y-auto space-y-1">
                                         {subtasks.map((subtask, index) => (
                                             <div key={index} className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
                                                 <div className="w-4 h-4 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
@@ -489,16 +505,65 @@ export function TaskModal({ isOpen, onClose, task, users, currentUserId, onTaskS
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-xs font-medium text-slate-900 truncate">{attachment.fileName}</p>
+                                            <p className="text-[10px] text-slate-500 mt-0.5">
+                                                Uploaded by {attachment.uploadedBy} on {attachment.uploadedAt ? format(new Date(attachment.uploadedAt), "PPp") : "Unknown"}
+                                            </p>
                                         </div>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => removeExistingAttachment(index)}
-                                            className="h-6 w-6 p-0 text-slate-500 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </Button>
+                                        <div className="flex items-center gap-1">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-6 px-2 text-xs"
+                                                onClick={() => {
+                                                    const url = attachment.fileUrl;
+                                                    if (!url || /example\.com/i.test(url)) {
+                                                        toast({
+                                                            title: "Invalid attachment link",
+                                                            description: "This file has a placeholder URL. Please re-upload the attachment to preview.",
+                                                        });
+                                                        return;
+                                                    }
+                                                    window.open(url, "_blank", "noopener,noreferrer");
+                                                }}
+                                            >
+                                                <ExternalLink className="h-3 w-3 mr-1" />
+                                                Preview
+                                            </Button>
+                                            {attachment.fileUrl && !/example\.com/i.test(attachment.fileUrl) ? (
+                                                <a
+                                                    href={attachment.fileUrl}
+                                                    download={attachment.fileName}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center h-6 px-2 text-xs border border-slate-300 rounded hover:bg-slate-50 text-slate-700"
+                                                >
+                                                    <Download className="h-3 w-3 mr-1" />
+                                                    Download
+                                                </a>
+                                            ) : (
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled
+                                                    title="Invalid link. Re-upload to enable download."
+                                                    className="h-6 px-2 text-xs text-slate-500"
+                                                >
+                                                    <Download className="h-3 w-3 mr-1" />
+                                                    Download
+                                                </Button>
+                                            )}
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => removeExistingAttachment(index)}
+                                                className="h-6 w-6 p-0 text-slate-500 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 ))}
 
@@ -551,19 +616,30 @@ export function TaskModal({ isOpen, onClose, task, users, currentUserId, onTaskS
                             </div>
                         </div>
 
-                        {/* Activity History - Only for existing tasks */}
+                        {/* Comments & Activity - Only for existing tasks */}
                         {task && (
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                                 <div className="flex items-center gap-2">
                                     <div className="w-4 h-4 rounded bg-gray-100 flex items-center justify-center">
                                         <span className="text-xs font-bold text-gray-600">5</span>
                                     </div>
-                                    <h3 className="text-sm font-semibold text-slate-900">Activity History</h3>
+                                    <h3 className="text-sm font-semibold text-slate-900">Comments & Activity</h3>
                                 </div>
-                                <div className="max-h-32 overflow-y-auto border border-slate-200 rounded p-2 bg-slate-50/50">
+                                {/* Comment input */}
+                                <div className="border border-slate-200 rounded p-2 bg-white">
+                                    <TaskCommentForm
+                                        taskId={task.id}
+                                        onCommentAdded={(c) => {
+                                            setComments(prev => [...prev, c]);
+                                            toast({ title: "Comment added" });
+                                        }}
+                                    />
+                                </div>
+                                {/* Combined history and comments */}
+                                <div className="max-h-40 overflow-y-auto border border-slate-200 rounded p-2 bg-slate-50/50">
                                     <HistoryAndComments
                                         history={task.history}
-                                        comments={task.comments}
+                                        comments={comments}
                                         users={users}
                                     />
                                 </div>

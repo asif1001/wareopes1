@@ -1,7 +1,7 @@
 // Script to create a test user in Firebase for login testing
 const { initializeApp } = require('firebase/app');
 const { getFirestore, collection, addDoc } = require('firebase/firestore');
-const { getAuth, createUserWithEmailAndPassword } = require('firebase/auth');
+const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } = require('firebase/auth');
 
 // Firebase configuration
 const firebaseConfig = {
@@ -44,7 +44,9 @@ async function createTestUser() {
       console.log('Firebase Auth user created:', userCredential.user.uid);
     } catch (authError) {
       if (authError.code === 'auth/email-already-in-use') {
-        console.log('User already exists in Firebase Auth, continuing...');
+        console.log('User already exists in Firebase Auth, signing in...');
+        const signInCred = await signInWithEmailAndPassword(auth, testUser.email, testUser.password);
+        console.log('Signed in as existing user:', signInCred.user.uid);
       } else {
         throw authError;
       }

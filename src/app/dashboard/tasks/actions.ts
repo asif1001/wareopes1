@@ -292,7 +292,7 @@ export async function addComment(formData: FormData) {
         await taskRef.update({ comments: [...existing, newComment] });
 
         revalidatePath("/dashboard/tasks");
-        return { success: true };
+        return { success: true, comment: newComment };
     } catch (error) {
         console.error("Error adding comment:", error);
         return {

@@ -113,12 +113,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Fallback: client-side Firestore verification (requires anonymous auth enabled)
       const result = await authLogin(employeeNo, password);
       if (result.success && result.user) {
-        // Best effort: set cookie for middleware via server
+        // Best effort: set cookie for middleware via server using login-session
         try {
-          await fetch('/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ employeeNo, password })
+          const userId = encodeURIComponent(result.user.id);
+          await fetch(`/api/login-session?userId=${userId}`, {
+            method: 'GET',
           });
         } catch {}
         setUser(result.user);

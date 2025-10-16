@@ -30,23 +30,16 @@ import { Input } from "@/components/ui/input"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import Image from "next/image"
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function DashboardHeader({title, children}: {title: string, children?: React.ReactNode}) {
   const router = useRouter();
+  const { logout } = useAuth();
 
   const handleLogout = async () => {
     try {
-      const response = await fetch('/api/logout', {
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        throw new Error('Logout failed');
-      }
-
-      // On successful API call, redirect to the login page
-      router.push('/');
-      router.refresh(); // Optional: force a refresh to ensure all state is cleared
+      // Clear client-side session and redirect using AuthContext
+      logout();
     } catch (error) {
       console.error("Failed to logout:", error);
       // Optionally, show an error message to the user

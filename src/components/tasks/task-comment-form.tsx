@@ -10,7 +10,7 @@ import { addComment } from "@/app/dashboard/tasks/actions";
 
 type TaskCommentFormProps = {
     taskId: string;
-    onCommentAdded: () => void;
+    onCommentAdded?: (comment: { id: string; text: string; createdAt: string; createdBy: string }) => void;
 };
 
 const commentFormSchema = z.object({
@@ -33,8 +33,13 @@ export function TaskCommentForm({ taskId, onCommentAdded }: TaskCommentFormProps
         const result = await addComment(formData);
         if (result.success) {
             form.reset();
-            if (onCommentAdded) {
-                onCommentAdded();
+            // Convert createdAt to ISO string for client display
+            if (onCommentAdded && result.comment) {
+                const serializable = {
+                    ...result.comment,
+                    createdAt: new Date(result.comment.createdAt).toISOString(),
+                };
+                onCommentAdded(serializable);
             }
         } else {
             // Handle error, e.g., show a toast notification
@@ -44,7 +49,7 @@ export function TaskCommentForm({ taskId, onCommentAdded }: TaskCommentFormProps
 
     return (
         <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2">
                 <FormField
                     control={form.control}
                     name="comment"
@@ -60,10 +65,10 @@ export function TaskCommentForm({ taskId, onCommentAdded }: TaskCommentFormProps
                         </FormItem>
                     )}
                 />
-                <Button type="submit" size="sm" className="self-end">
+                <Button type="button" size="sm" className="self-end" onClick={form.handleSubmit(onSubmit)}>
                     Comment
                 </Button>
-            </form>
+            </div>
         </Form>
     );
 }

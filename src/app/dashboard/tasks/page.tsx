@@ -2,28 +2,35 @@ import { makeSerializable } from "@/lib/serialization";
 import { TasksClientPage } from "@/components/tasks-client-page";
 import { SerializableTask, SerializableUserProfile } from "@/lib/task-types";
 import { getUsers as getUsersFromFirestore } from "@/lib/firebase/firestore";
+import { cookies } from 'next/headers';
 
-async function getTasks(): Promise<SerializableTask[]> {
-    // Use Admin SDK on the server so server components can read without
-    // being blocked by Firestore security rules. Avoid importing client
-    // Firestore at module top-level to prevent the client SDK from being
-    // initialized during server rendering which can trigger permission
-    // errors or bundling of server-only code.
-    if (typeof window === 'undefined') {
-        const { getAdminDb } = await import('@/lib/firebase/admin');
-        const adb = await getAdminDb();
-        const snap = await adb.collection('tasks').get();
-        return snap.docs.map((d: any) => makeSerializable({ id: d.id, ...(d.data ? d.data() : d) } as any));
+async function getTasksForUser(userId: string): Promise<SerializableTask[]> {
+    // Server-side: use Admin SDK and restrict to reporterId or assigneeId matching userId
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+    const [reporterSnap, assigneeSnap] = await Promise.all([
+        adb.collection('tasks').where('reporterId', '==', userId).get(),
+        adb.collection('tasks').where('assigneeId', '==', userId).get(),
+    ]);
+    const seen = new Set<string>();
+    const tasks: SerializableTask[] = [] as any;
+    for (const d of reporterSnap.docs) {
+        if (!seen.has(d.id)) {
+            seen.add(d.id);
+            const raw = d.data ? d.data() : {};
+            const { id: _discard, ...dataNoId } = raw as any;
+            tasks.push(makeSerializable({ id: d.id, ...dataNoId } as any));
+        }
     }
-
-    // Client-side fallback: dynamically import client Firestore only when running in browser
-    const [{ collection, getDocs }, { db }] = await Promise.all([
-        import('firebase/firestore'),
-        import('@/lib/firebase/firebase')
-    ] as any);
-    const tasksCol = collection(db, 'tasks');
-    const taskSnapshot = await getDocs(tasksCol);
-    return taskSnapshot.docs.map((doc: any) => makeSerializable({ ...doc.data(), id: doc.id }));
+    for (const d of assigneeSnap.docs) {
+        if (!seen.has(d.id)) {
+            seen.add(d.id);
+            const raw = d.data ? d.data() : {};
+            const { id: _discard, ...dataNoId } = raw as any;
+            tasks.push(makeSerializable({ id: d.id, ...dataNoId } as any));
+        }
+    }
+    return tasks;
 }
 
 async function getUsers(): Promise<SerializableUserProfile[]> {
@@ -36,10 +43,10 @@ async function getUsers(): Promise<SerializableUserProfile[]> {
 }
 
 export default async function TasksPage() {
-    const tasks = await getTasks();
+    const session = (await cookies()).get('session');
+    const currentUserId = session?.value || '';
+    const tasks = currentUserId ? await getTasksForUser(currentUserId) : [];
     const users = await getUsers();
-    // This is a placeholder for the actual current user ID from an auth provider
-    const currentUserId = "user1"; 
 
     return <TasksClientPage initialTasks={tasks} users={users} currentUserId={currentUserId} />;
 }

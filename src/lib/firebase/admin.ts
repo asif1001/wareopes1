@@ -1,5 +1,10 @@
 import { getApps, getApp, initializeApp, cert, applicationDefault } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import fs from 'fs';
+import path from 'path';
+// Statically import local service account JSON as a fallback in dev
+// resolveJsonModule is enabled in tsconfig, so JSON imports work in Node runtime
+import serviceAccountJson from '../../../serviceAccount.json';
 
 /**
  * Firebase Admin initialization
@@ -22,13 +27,51 @@ export async function getAdminDb() {
     const g = globalThis as any;
     if (!g.__FIREBASE_ADMIN_INIT_PROMISE) {
       g.__FIREBASE_ADMIN_INIT_PROMISE = (async () => {
+        // Prefer explicit JSON from env
         const credsJson = process.env.FIREBASE_ADMIN_CREDENTIALS;
         if (credsJson) {
-          const serviceAccount = JSON.parse(credsJson);
-          initializeApp({ credential: cert(serviceAccount) });
-        } else {
-          initializeApp({ credential: applicationDefault() });
+          try {
+            const serviceAccount = JSON.parse(credsJson);
+            initializeApp({ credential: cert(serviceAccount) });
+            return;
+          } catch (e) {
+            // Fall through to file-based credentials
+            console.warn('FIREBASE_ADMIN_CREDENTIALS parse failed, attempting file-based credentials.');
+          }
         }
+
+        // Next, try GOOGLE_APPLICATION_CREDENTIALS or a local serviceAccount.json file
+        const credsPathEnv = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+        const candidatePaths = [
+          credsPathEnv ? path.resolve(process.cwd(), credsPathEnv) : '',
+          path.resolve(process.cwd(), 'serviceAccount.json'),
+        ].filter(Boolean);
+
+        for (const p of candidatePaths) {
+          try {
+            if (p && fs.existsSync(p)) {
+              const raw = fs.readFileSync(p, 'utf-8');
+              const serviceAccount = JSON.parse(raw);
+              initializeApp({ credential: cert(serviceAccount) });
+              return;
+            }
+          } catch (e) {
+            // Try next candidate path
+          }
+        }
+
+        // If file lookups failed, use statically imported JSON (dev-friendly)
+        try {
+          if (serviceAccountJson && typeof serviceAccountJson === 'object') {
+            initializeApp({ credential: cert(serviceAccountJson as any) });
+            return;
+          }
+        } catch (_) {
+          // ignore and fall through
+        }
+
+        // Finally, fall back to ADC if available in environment
+        initializeApp({ credential: applicationDefault() });
       })();
     }
 
