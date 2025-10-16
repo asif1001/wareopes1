@@ -1,5 +1,4 @@
 "use server"
-import { generateCustomReport } from "@/ai/flows/generate-custom-report";
 import type { GenerateCustomReportInput, GenerateCustomReportOutput } from "@/ai/flows/generate-custom-report";
 import { getUserByEmployeeNo, bulkAddShipments } from "@/lib/firebase/firestore";
 import type { User, Source, ContainerSize, Department, Branch, UserRole, Shipment } from "@/lib/types";
@@ -31,6 +30,7 @@ export async function generateReportAction(
         preferredChartTypes: formData.get("preferredChartTypes") as string,
       };
 
+      const { generateCustomReport } = await import("@/ai/flows/generate-custom-report");
       const output = await generateCustomReport(input);
 
       return { output, error: null };
