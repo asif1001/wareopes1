@@ -1,8 +1,11 @@
 import { getUserByEmployeeNo } from './firebase/firestore';
+import { getAuth, signInAnonymously } from 'firebase/auth';
+import { app } from './firebase/firebase';
 import type { User } from './types';
 
-// Custom authentication using only Firestore (no Firebase Auth)
-// This approach works for users without email addresses
+// Custom authentication using only Firestore (no Firebase Auth email/password)
+// Rationale: Users log in via employee number + password stored in Users collection.
+// Note: For production, store a password hash, not plaintext.
 
 export interface Session {
   user: User;
@@ -10,15 +13,28 @@ export interface Session {
   createdAt: number;
 }
 
-// Session management
+// Session management (client-only)
+// - We keep a simple localStorage session with expiry for client state.
+// - Server trust is established via a secure HTTP-only cookie created by /api/login.
 const SESSION_KEY = 'wareopes_session';
 
 // Check if we're on the client side
 const isClient = typeof window !== 'undefined';
 
 // Authenticate user with employee number and password
+// Verify credentials against Firestore Users (client path)
 export const authenticateUser = async (employeeNo: string, password: string): Promise<User | null> => {
   try {
+    // Ensure we are authenticated (anonymous is fine per Firestore rules)
+    const auth = getAuth(app);
+    if (!auth.currentUser) {
+      try {
+        await signInAnonymously(auth);
+      } catch (e) {
+        console.warn('Anonymous auth failed; Firestore may reject unauthenticated reads.', e);
+      }
+    }
+
     const user = await getUserByEmployeeNo(employeeNo);
     if (!user) return null;
     

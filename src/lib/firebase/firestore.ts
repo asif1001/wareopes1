@@ -1,27 +1,30 @@
 import { db } from './firebase';
 import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc, query, where, serverTimestamp, orderBy, limit, writeBatch } from 'firebase/firestore';
-import type { Shipment, User, Source, ContainerSize, Department, Branch, ContainerBooking, Container, ClearedContainerSummary, Task } from '@/lib/types';
+import type { Shipment, User, Source, ContainerSize, Department, Branch, ContainerBooking, Container, ClearedContainerSummary } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
 import type { SerializableShipment } from '@/lib/types';
 import { format, subMonths, startOfMonth, parse, compareAsc, subDays } from 'date-fns';
 
 function docToShipment(doc: any): SerializableShipment {
-    const data = doc.data();
-    // Function to convert Firestore Timestamps to ISO strings for serialization
-    const toISOString = (timestamp: any): string | undefined => {
-      if (timestamp instanceof Timestamp) {
-        return timestamp.toDate().toISOString();
-      }
-      return undefined;
-    };
+        const data = typeof doc.data === 'function' ? doc.data() : doc; // support admin and client snapshots
+        // Function to convert Firestore/Admin Timestamps to ISO strings for serialization
+        const toISOString = (timestamp: any): string | undefined => {
+            if (timestamp && typeof timestamp.toDate === 'function') {
+                try { return timestamp.toDate().toISOString(); } catch { return undefined; }
+            }
+            if (timestamp instanceof Date) {
+                return timestamp.toISOString();
+            }
+            return undefined;
+        };
   
     const bookings = data.bookings?.map((b: any) => ({
         ...b,
         bookingDate: toISOString(b.bookingDate)
     })) || [];
 
-    return {
-      id: doc.id,
+        return {
+            id: doc.id || data.id,
       source: data.source,
       invoice: data.invoice,
       billOfLading: data.billOfLading,
@@ -51,6 +54,20 @@ function docToShipment(doc: any): SerializableShipment {
 }
 
 export async function getShipments(): Promise<SerializableShipment[]> {
+    // Server-side: use Admin SDK to bypass Firestore rules
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const shipmentsRef: any = adb.collection('shipments');
+        const fortyFiveDaysAgo = new Date();
+        fortyFiveDaysAgo.setDate(fortyFiveDaysAgo.getDate() - 45);
+        const snap = await shipmentsRef
+            .where('bahrainEta', '>=', fortyFiveDaysAgo)
+            .orderBy('bahrainEta', 'desc')
+            .get();
+        return snap.docs.map((d: any) => docToShipment(d));
+    }
+
     const shipmentsCol = collection(db, 'shipments');
     const fortyFiveDaysAgo = new Date();
     fortyFiveDaysAgo.setDate(fortyFiveDaysAgo.getDate() - 45);
@@ -65,6 +82,18 @@ export async function getShipments(): Promise<SerializableShipment[]> {
 }
 
 export async function getShipmentsByDateRange(from: Date, to: Date): Promise<SerializableShipment[]> {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const shipmentsRef: any = adb.collection('shipments');
+        const snap = await shipmentsRef
+            .where('bahrainEta', '>=', from)
+            .where('bahrainEta', '<=', to)
+            .orderBy('bahrainEta', 'asc')
+            .get();
+        return snap.docs.map((d: any) => docToShipment(d));
+    }
+
     const shipmentsCol = collection(db, 'shipments');
     const q = query(
         shipmentsCol,
@@ -78,34 +107,53 @@ export async function getShipmentsByDateRange(from: Date, to: Date): Promise<Ser
 
 
 export async function getUpcomingShipments(): Promise<SerializableShipment[]> {
-    const shipmentsCol = collection(db, 'shipments');
     const today = new Date();
-    today.setHours(23, 59, 59, 999); // End of today
-
+    today.setHours(23, 59, 59, 999);
     const fifteenDaysAgo = subDays(new Date(), 15);
-    fifteenDaysAgo.setHours(0, 0, 0, 0); // Start of the 15th day ago
+    fifteenDaysAgo.setHours(0, 0, 0, 0);
 
+    // Use Admin SDK on the server to bypass rules
+    if (typeof window === 'undefined') {
+    const { getAdminDb } = await import('./admin');
+    const adb = await getAdminDb();
+        const shipmentsRef: any = adb.collection('shipments');
+        const snap = await shipmentsRef
+            .where('actualClearedDate', '>=', fifteenDaysAgo)
+            .where('actualClearedDate', '<=', today)
+            .orderBy('actualClearedDate', 'desc')
+            .get();
+        return snap.docs.map((d: any) => docToShipment(d));
+    }
+
+    const shipmentsCol = collection(db, 'shipments');
     const q = query(
         shipmentsCol,
-        where("actualClearedDate", ">=", fifteenDaysAgo),
-        where("actualClearedDate", "<=", today),
-        orderBy("actualClearedDate", "desc")
+        where('actualClearedDate', '>=', fifteenDaysAgo),
+        where('actualClearedDate', '<=', today),
+        orderBy('actualClearedDate', 'desc')
     );
-
     const shipmentSnapshot = await getDocs(q);
     return shipmentSnapshot.docs.map(docToShipment);
 }
 
 export async function getClearedShipmentsMonthlySummary(): Promise<{ month: string; domLines: number; bulkLines: number }[]> {
-    const shipmentsCol = collection(db, 'shipments');
-    const q = query(shipmentsCol, where("cleared", "==", true));
-    
-    const shipmentSnapshot = await getDocs(q);
-    
+    let docs: any[] = [];
+    if (typeof window === 'undefined') {
+    const { getAdminDb } = await import('./admin');
+    const adb = await getAdminDb();
+        const snap = await adb.collection('shipments').where('cleared', '==', true).get();
+        docs = snap.docs;
+    } else {
+        const shipmentsCol = collection(db, 'shipments');
+        const qy = query(shipmentsCol, where('cleared', '==', true));
+        const shipmentSnapshot = await getDocs(qy);
+        docs = shipmentSnapshot.docs;
+    }
+
     const monthlySummary: { [key: string]: { domLines: number; bulkLines: number } } = {};
 
-    shipmentSnapshot.docs.forEach(doc => {
-        const data = doc.data();
+    docs.forEach((doc: any) => {
+        const data = typeof doc.data === 'function' ? doc.data() : doc;
         const clearedDate = data.actualClearedDate?.toDate(); 
 
         if (clearedDate) {
@@ -135,16 +183,25 @@ export async function getClearedShipmentsMonthlySummary(): Promise<{ month: stri
 }
 
 export async function getClearedContainerSummary(): Promise<ClearedContainerSummary> {
-    const shipmentsCol = collection(db, 'shipments');
-    const q = query(shipmentsCol, where("cleared", "==", true));
-    const shipmentSnapshot = await getDocs(q);
+    let docs: any[] = [];
+    if (typeof window === 'undefined') {
+    const { getAdminDb } = await import('./admin');
+    const adb = await getAdminDb();
+        const snap = await adb.collection('shipments').where('cleared', '==', true).get();
+        docs = snap.docs;
+    } else {
+        const shipmentsCol = collection(db, 'shipments');
+        const qy = query(shipmentsCol, where('cleared', '==', true));
+        const shipmentSnapshot = await getDocs(qy);
+        docs = shipmentSnapshot.docs;
+    }
 
     const monthlySummary: { [key: string]: number } = {};
     const sourceSummary: { [key: string]: number } = {};
     let totalContainers = 0;
 
-    shipmentSnapshot.docs.forEach(doc => {
-        const data = doc.data();
+    docs.forEach((doc: any) => {
+        const data = typeof doc.data === 'function' ? doc.data() : doc;
         const clearedDate = data.actualClearedDate?.toDate();
         
         // Use bookings array as the source of truth for cleared container counts
@@ -286,36 +343,55 @@ export async function deleteShipment(id: string) {
 
 // User Functions
 export async function getUsers(): Promise<User[]> {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const snap = await adb.collection('Users').get();
+        return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as User));
+    }
     const usersCol = collection(db, 'Users');
     const userSnapshot = await getDocs(usersCol);
-    return userSnapshot.docs.map(doc => {
-        const data = doc.data();
-        // Function to convert Firestore Timestamps to ISO strings for serialization
-        const toISOString = (timestamp: any): string | undefined => {
-            if (timestamp instanceof Timestamp) {
-                return timestamp.toDate().toISOString();
-            }
-            return undefined;
-        };
-        
-        return {
-            id: doc.id,
-            ...data,
-            createdAt: toISOString(data.createdAt),
-            updatedAt: toISOString(data.updatedAt)
-        } as User;
-    });
+    return userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
 }
 
 export async function getUserByEmployeeNo(employeeNo: string): Promise<User | null> {
-    const usersCol = collection(db, 'Users');
-    const q = query(usersCol, where('employeeNo', '==', employeeNo));
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) {
+    const tryQuery = async (colName: string) => {
+        const usersCol = collection(db, colName);
+        const q = query(usersCol, where('employeeNo', '==', employeeNo));
+        return await getDocs(q);
+    };
+
+    try {
+        let snapshot = await tryQuery('Users');
+        if (snapshot.empty) {
+            // Fallback to lowercase collection name
+            try {
+                snapshot = await tryQuery('users');
+            } catch (e) {
+                // ignore, handled below
+            }
+        }
+
+        if (!snapshot.empty) {
+            const userDoc = snapshot.docs[0];
+            return { id: userDoc.id, ...userDoc.data() } as User;
+        }
+
         return null;
+    } catch (e: any) {
+        // Try fallback collection on permission errors or missing
+        try {
+            const snapshot = await tryQuery('users');
+            if (!snapshot.empty) {
+                const userDoc = snapshot.docs[0];
+                return { id: userDoc.id, ...userDoc.data() } as User;
+            }
+            return null;
+        } catch (e2) {
+            // Re-throw the original error for the caller to handle
+            throw e;
+        }
     }
-    const userDoc = snapshot.docs[0];
-    return { id: userDoc.id, ...userDoc.data() } as User;
 }
 
 export async function addUser(user: Omit<User, 'id'>) {
@@ -323,17 +399,7 @@ export async function addUser(user: Omit<User, 'id'>) {
 }
 
 export async function updateUser(id: string, user: Partial<User>) {
-    await updateDoc(doc(db, 'Users', id), {
-        ...user,
-        updatedAt: serverTimestamp()
-    });
-}
-
-export async function updateUserProfile(id: string, profileData: Partial<User>) {
-    await updateDoc(doc(db, 'Users', id), {
-        ...profileData,
-        updatedAt: serverTimestamp()
-    });
+    await updateDoc(doc(db, 'Users', id), user);
 }
 
 export async function deleteUser(id: string) {
@@ -342,6 +408,12 @@ export async function deleteUser(id: string) {
 
 // Source Functions
 export async function getSources(): Promise<Source[]> {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const snap = await adb.collection('Sources').get();
+        return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Source));
+    }
     const sourcesCol = collection(db, 'Sources');
     const sourceSnapshot = await getDocs(sourcesCol);
     return sourceSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Source));
@@ -361,6 +433,12 @@ export async function deleteSource(id: string) {
 
 // ContainerSize Functions
 export async function getContainerSizes(): Promise<ContainerSize[]> {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const snap = await adb.collection('ContainerSizes').get();
+        return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as ContainerSize));
+    }
     const sizesCol = collection(db, 'ContainerSizes');
     const sizeSnapshot = await getDocs(sizesCol);
     return sizeSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ContainerSize));
@@ -381,6 +459,12 @@ export async function deleteContainerSize(id: string) {
 
 // Department Functions
 export async function getDepartments(): Promise<Department[]> {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const snap = await adb.collection('Departments').get();
+        return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Department));
+    }
     const departmentsCol = collection(db, 'Departments');
     const departmentSnapshot = await getDocs(departmentsCol);
     return departmentSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
@@ -400,6 +484,12 @@ export async function deleteDepartment(id: string) {
 
 // Branch Functions
 export async function getBranches(): Promise<Branch[]> {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const snap = await adb.collection('Branches').get();
+        return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Branch));
+    }
     const branchesCol = collection(db, 'Branches');
     const branchSnapshot = await getDocs(branchesCol);
     return branchSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Branch));
@@ -415,154 +505,4 @@ export async function updateBranch(id: string, branch: Partial<Branch>) {
 
 export async function deleteBranch(id: string) {
     await deleteDoc(doc(db, 'Branches', id));
-}
-
-// Task Functions
-export async function getTasksOptimized(options?: {
-  limit?: number;
-  status?: string[];
-  assignedTo?: string[];
-  priority?: string[];
-  fields?: string[];
-}): Promise<Task[]> {
-    const tasksCol = collection(db, 'Tasks');
-    let q = query(tasksCol, orderBy('createdAt', 'desc'));
-    
-    // Apply filters to reduce data transfer
-    if (options?.status && options.status.length > 0) {
-        q = query(q, where('status', 'in', options.status));
-    }
-    if (options?.assignedTo && options.assignedTo.length > 0) {
-        q = query(q, where('assignedTo', 'in', options.assignedTo));
-    }
-    if (options?.priority && options.priority.length > 0) {
-        q = query(q, where('priority', 'in', options.priority));
-    }
-    if (options?.limit) {
-        q = query(q, limit(options.limit));
-    }
-    
-    const taskSnapshot = await getDocs(q);
-    return taskSnapshot.docs.map(doc => {
-        const data = doc.data();
-        const toISOString = (timestamp: any): string | undefined => {
-            if (timestamp instanceof Timestamp) {
-                return timestamp.toDate().toISOString();
-            }
-            return undefined;
-        };
-        
-        // Return only requested fields if specified
-        const task = {
-            id: doc.id,
-            ...data,
-            createdAt: toISOString(data.createdAt) || data.createdAt,
-            updatedAt: toISOString(data.updatedAt) || data.updatedAt,
-            dueDate: toISOString(data.dueDate) || data.dueDate
-        } as Task;
-        
-        // If specific fields requested, return only those
-        if (options?.fields && options.fields.length > 0) {
-            const filteredTask: any = { id: task.id };
-            options.fields.forEach(field => {
-                if (field in task) {
-                    filteredTask[field] = task[field as keyof Task];
-                }
-            });
-            return filteredTask as Task;
-        }
-        
-        return task;
-    });
-}
-
-// Get minimal user data for task assignments (only name, fullName, avatar)
-export async function getUsersMinimal(): Promise<Pick<User, 'id' | 'name' | 'fullName' | 'profilePicture'>[]> {
-    const usersCol = collection(db, 'Users');
-    const userSnapshot = await getDocs(usersCol);
-    return userSnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-            id: doc.id,
-            name: data.name,
-            fullName: data.fullName,
-            profilePicture: data.profilePicture
-        };
-    });
-}
-
-// Get task counts by status (for dashboard stats without full data)
-export async function getTaskCounts(): Promise<{
-    total: number;
-    active: number;
-    completed: number;
-    overdue: number;
-}> {
-    const tasksCol = collection(db, 'Tasks');
-    
-    // Get all tasks with minimal fields for counting
-    const allTasksQuery = query(tasksCol);
-    const snapshot = await getDocs(allTasksQuery);
-    
-    const now = new Date();
-    let total = 0;
-    let active = 0;
-    let completed = 0;
-    let overdue = 0;
-    
-    snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        total++;
-        
-        if (data.status === 'Done' || data.status === 'Completed') {
-            completed++;
-        } else {
-            active++;
-            // Check if overdue
-            const dueDate = data.dueDate instanceof Timestamp ? 
-                data.dueDate.toDate() : new Date(data.dueDate);
-            if (dueDate < now) {
-                overdue++;
-            }
-        }
-    });
-    
-    return { total, active, completed, overdue };
-}
-
-// Batch update multiple tasks (reduces individual update calls)
-export async function batchUpdateTasks(updates: { id: string; data: Partial<Task> }[]): Promise<void> {
-    const batch = writeBatch(db);
-    
-    updates.forEach(({ id, data }) => {
-        const taskRef = doc(db, 'Tasks', id);
-        batch.update(taskRef, {
-            ...data,
-            updatedAt: serverTimestamp()
-        });
-    });
-    
-    await batch.commit();
-}
-
-export async function addTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) {
-    const taskData = {
-        ...task,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-    };
-    const docRef = await addDoc(collection(db, 'Tasks'), taskData);
-    return docRef.id;
-}
-
-export async function updateTask(id: string, task: Partial<Task>) {
-    const taskData = {
-        ...task,
-        updatedAt: serverTimestamp()
-    };
-    await updateDoc(doc(db, 'Tasks', id), taskData);
-}
-
-export async function deleteTask(id: string) {
-    await deleteDoc(doc(db, 'Tasks', id));
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
-import { generateReport } from "@/app/actions";
+import { generateReportAction } from "@/app/actions";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,7 @@ export function ReportGenerator() {
     }, 
     error: null 
   };
-  const [state, formAction] = useActionState(generateReport, initialState);
+  const [state, formAction] = useActionState(generateReportAction, initialState);
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">

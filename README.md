@@ -114,6 +114,37 @@ src/
 - The `.env` file is already included in `.gitignore`
 - Use environment variables for all sensitive configuration
 
+## 👤 Authentication & Sessions
+
+This project uses a custom login flow based on Firestore, not Firebase Auth email/password, to support users identified by employee number.
+
+How it works
+- Client submits employee number + password from the login page (`src/app/page.tsx` → `AuthContext.login`).
+- Server verifies credentials in `/api/login` using the Firebase Admin SDK, querying the `Users` collection:
+	- On success, the route sets a secure HTTP-only `session` cookie with the user id. This cookie is used by middleware to protect `/dashboard/*`.
+	- The user object is returned to the client and stored in a simple local session (localStorage) for UI state.
+- Middleware (`src/middleware.ts`) checks the `session` cookie and redirects non-authenticated users away from `/dashboard/*`.
+
+Why Admin SDK?
+- Admin SDK bypasses Firestore security rules, so login verification doesn’t depend on the client’s auth state.
+- Keeps passwords and verification logic server-side. For production, store hashed passwords instead of plaintext and verify with a hashing library (e.g., bcrypt).
+
+Client queries and rules
+- Some client features read Firestore directly. Firestore rules require `request.auth != null`.
+- `AuthContext` signs the client in anonymously on mount to satisfy rules for reads, without using email/password Firebase Auth.
+
+Environment variables
+- Client SDK: `NEXT_PUBLIC_FIREBASE_*` are required for the Firebase Web SDK.
+- Admin SDK: Provide service account credentials via `FIREBASE_ADMIN_CREDENTIALS` (JSON string) or `GOOGLE_APPLICATION_CREDENTIALS` path.
+
+Key files
+- `src/app/api/login/route.ts` — Server login via Admin SDK and session cookie.
+- `src/contexts/AuthContext.tsx` — Login/logout, anonymous sign-in for client reads, local session hydration.
+- `src/lib/auth.ts` — Client-side authentication helpers and session utilities.
+- `src/lib/firebase/admin.ts` — Admin SDK bootstrap.
+- `src/lib/firebase/firebase.ts` — Client SDK bootstrap.
+- `src/middleware.ts` — Protects `/dashboard/*` via the `session` cookie.
+
 ## 🤝 Contributing
 
 1. Fork the repository

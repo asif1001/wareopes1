@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, CheckCircle, HelpCircle, Mail, Phone, Clock, MessageSquare } from 'lucide-react';
-import { submitSupportTicket } from '@/app/actions';
+import { submitSupportTicketAction as submitSupportTicket } from '@/app/actions';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardHeader } from '@/components/dashboard-header';
 

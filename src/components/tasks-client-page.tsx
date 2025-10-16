@@ -1,0 +1,118 @@
+"use client";
+
+import { useState } from "react";
+import { ListFilter, PlusCircle, LayoutGrid, List, Calendar } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DashboardHeader } from "@/components/dashboard-header";
+import { SerializableTask, SerializableUserProfile } from "@/lib/task-types";
+import { TaskTable } from "./tasks/task-table";
+import { TaskKanban } from "./tasks/task-kanban";
+import { TaskCalendar } from "./tasks/task-calendar";
+import { TaskModal } from "./tasks/task-modal";
+
+type TasksClientPageProps = {
+    initialTasks: SerializableTask[];
+    users: SerializableUserProfile[];
+    currentUserId: string;
+};
+
+type View = "table" | "kanban" | "calendar";
+
+export function TasksClientPage({ initialTasks, users, currentUserId }: TasksClientPageProps) {
+    const [tasks, setTasks] = useState<SerializableTask[]>(initialTasks);
+    const [view, setView] = useState<View>("table");
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedTask, setSelectedTask] = useState<SerializableTask | null>(null);
+
+    const openModal = (task: SerializableTask | null = null) => {
+        setSelectedTask(task);
+        setIsModalOpen(true);
+    };
+
+    const closeModal = () => {
+        setIsModalOpen(false);
+        setSelectedTask(null);
+    };
+
+    const refreshTasks = async () => {
+        try {
+            const response = await fetch('/api/tasks');
+            if (response.ok) {
+                const updatedTasks = await response.json();
+                setTasks(updatedTasks);
+            }
+        } catch (error) {
+            console.error('Failed to refresh tasks:', error);
+        }
+    };
+
+    const myTasks = tasks.filter(task => task.assigneeId === currentUserId || task.reporterId === currentUserId);
+
+    return (
+        <div className="flex flex-col h-full">
+            <DashboardHeader title="Tasks">
+                <div className="ml-auto flex items-center gap-2">
+                    <Button size="sm" className="h-8 gap-1" onClick={() => openModal()}>
+                        <PlusCircle className="h-3.5 w-3.5" />
+                        <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
+                            Add Task
+                        </span>
+                    </Button>
+                </div>
+            </DashboardHeader>
+            <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
+                <Tabs defaultValue="all">
+                    <div className="flex items-center">
+                        <TabsList>
+                            <TabsTrigger value="all">All Tasks</TabsTrigger>
+                            <TabsTrigger value="my-tasks">My Tasks</TabsTrigger>
+                        </TabsList>
+                        <div className="ml-auto flex items-center gap-2">
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm" className="h-8 gap-1">
+                                        <ListFilter className="h-3.5 w-3.5" />
+                                        <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
+                                            Filter
+                                        </span>
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuLabel>Filter by</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuCheckboxItem checked>Status</DropdownMenuCheckboxItem>
+                                    <DropdownMenuCheckboxItem>Priority</DropdownMenuCheckboxItem>
+                                    <DropdownMenuCheckboxItem>Assignee</DropdownMenuCheckboxItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                            <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+                                <Button variant={view === 'table' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setView('table')}>
+                                    <List className="h-4 w-4" />
+                                </Button>
+                                <Button variant={view === 'kanban' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setView('kanban')}>
+                                    <LayoutGrid className="h-4 w-4" />
+                                </Button>
+                                <Button variant={view === 'calendar' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setView('calendar')}>
+                                    <Calendar className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                    <TabsContent value="all" className="mt-4">
+                        {view === 'table' && <TaskTable tasks={tasks} users={users} onEdit={openModal} onDelete={async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); }} />}
+                        {view === 'kanban' && <TaskKanban tasks={tasks} users={users} onEdit={openModal} />}
+                        {view === 'calendar' && <TaskCalendar tasks={tasks} users={users} onEdit={openModal} />}
+                    </TabsContent>
+                    <TabsContent value="my-tasks" className="mt-4">
+                        {view === 'table' && <TaskTable tasks={myTasks} users={users} onEdit={openModal} onDelete={async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); }} />}
+                        {view === 'kanban' && <TaskKanban tasks={myTasks} users={users} onEdit={openModal} />}
+                        {view === 'calendar' && <TaskCalendar tasks={myTasks} users={users} onEdit={openModal} />}
+                    </TabsContent>
+                </Tabs>
+            </main>
+            <TaskModal isOpen={isModalOpen} onClose={closeModal} task={selectedTask} users={users} currentUserId={currentUserId} onTaskSaved={refreshTasks} />
+        </div>
+    );
+}

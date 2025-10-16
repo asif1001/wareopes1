@@ -1,6 +1,7 @@
 import { DashboardHeader } from "@/components/dashboard-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getBranches, getDepartments, getContainerSizes, getSources, getUsers } from "@/lib/firebase/firestore";
+import { makeSerializable } from "@/lib/serialization";
 import { UserForm, SourceForm, ContainerSizeForm, DepartmentForm, BranchForm } from "@/components/settings-forms";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,6 +17,8 @@ import { AdminRoute } from "@/components/AdminRoute";
 async function UsersTable() {
   const users = await getUsers();
   const departments = await getDepartments();
+  const serializableUsers = users.map(makeSerializable);
+  const serializableDepartments = departments.map(makeSerializable);
   return (
     <Card>
       <CardHeader>
@@ -34,7 +37,7 @@ async function UsersTable() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {users.map((user) => (
+            {serializableUsers.map((user) => (
               <TableRow key={user.id}>
                 <TableCell>{user.fullName}</TableCell>
                 <TableCell>{user.employeeNo}</TableCell>
@@ -42,7 +45,7 @@ async function UsersTable() {
                 <TableCell>{user.department}</TableCell>
                 <TableCell>{user.role}</TableCell>
                 <TableCell className="text-right flex justify-end gap-2">
-                    <UserEditForm user={user} departments={departments} />
+                    <UserEditForm user={user} departments={serializableDepartments} />
                     <DeleteConfirmationDialog
                       title="Delete User"
                       description={`Are you sure you want to delete ${user.fullName}? This action cannot be undone.`}
@@ -65,6 +68,7 @@ async function UsersTable() {
 
 async function SourcesTable() {
     const sources = await getSources();
+    const serializableSources = sources.map(makeSerializable);
     return (
         <Card>
             <CardHeader>
@@ -80,7 +84,7 @@ async function SourcesTable() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {sources.map((source) => (
+                        {serializableSources.map((source) => (
                             <TableRow key={source.id}>
                                 <TableCell>{source.shortName}</TableCell>
                                 <TableCell>{source.name}</TableCell>
@@ -104,6 +108,7 @@ async function SourcesTable() {
 
 async function ContainerSizesTable() {
     const containerSizes = await getContainerSizes();
+    const serializableSizes = containerSizes.map(makeSerializable);
     return (
         <Card>
             <CardHeader>
@@ -119,7 +124,7 @@ async function ContainerSizesTable() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {containerSizes.map((size) => (
+                        {serializableSizes.map((size) => (
                             <TableRow key={size.id}>
                                 <TableCell>{size.size}</TableCell>
                                 <TableCell>{size.cmb}</TableCell>
@@ -144,6 +149,8 @@ async function ContainerSizesTable() {
 async function DepartmentsTable() {
     const departments = await getDepartments();
     const branches = await getBranches();
+    const serializableDepartments = departments.map(makeSerializable);
+    const serializableBranches = branches.map(makeSerializable);
     return (
         <Card>
             <CardHeader>
@@ -159,12 +166,12 @@ async function DepartmentsTable() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {departments.map((dept) => (
+                        {serializableDepartments.map((dept) => (
                             <TableRow key={dept.id}>
                                 <TableCell>{dept.name}</TableCell>
                                 <TableCell>{dept.branch}</TableCell>
                                 <TableCell className="text-right flex justify-end gap-2">
-                                    <DepartmentEditForm department={dept} branches={branches} />
+                                    <DepartmentEditForm department={dept} branches={serializableBranches} />
                                     <DeleteConfirmationDialog
                                       title="Delete Department"
                                       description={`Are you sure you want to delete ${dept.name}? This action cannot be undone.`}
@@ -183,6 +190,7 @@ async function DepartmentsTable() {
 
 async function BranchesTable() {
     const branches = await getBranches();
+    const serializableBranches = branches.map(makeSerializable);
     return (
         <Card>
             <CardHeader>
@@ -198,7 +206,7 @@ async function BranchesTable() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {branches.map((branch) => (
+                        {serializableBranches.map((branch) => (
                             <TableRow key={branch.id}>
                                 <TableCell>{branch.name}</TableCell>
                                 <TableCell>{branch.code}</TableCell>
@@ -223,6 +231,8 @@ async function BranchesTable() {
 export default async function SettingsPage() {
   const departments = await getDepartments();
   const branches = await getBranches();
+  const serializableDepartments = departments.map(makeSerializable);
+  const serializableBranches = branches.map(makeSerializable);
 
   return (
     <AdminRoute>
@@ -240,7 +250,7 @@ export default async function SettingsPage() {
             </TabsList>
             <TabsContent value="users">
               <div className="grid lg:grid-cols-2 gap-6">
-                  <UserForm departments={departments} />
+                  <UserForm departments={serializableDepartments} />
                   <UsersTable />
               </div>
             </TabsContent>
@@ -258,7 +268,7 @@ export default async function SettingsPage() {
             </TabsContent>
             <TabsContent value="departments">
               <div className="grid lg:grid-cols-2 gap-6">
-                  <DepartmentForm branches={branches} />
+                  <DepartmentForm branches={serializableBranches} />
                   <DepartmentsTable />
               </div>
             </TabsContent>

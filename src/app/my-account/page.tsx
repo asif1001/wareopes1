@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { AlertCircle, CheckCircle, User, Settings, HelpCircle, LogOut, Bell, Palette, Globe, Shield, Key, Camera, Upload } from 'lucide-react';
-import { updateUserProfile, changePassword, updateNotificationPreferences, submitSupportTicket, logoutUser } from '@/app/actions';
+import { changePasswordClient as changePassword, updateNotificationPreferencesClient as updateNotificationPreferences, submitSupportTicketClient as submitSupportTicket, logoutClient as serverLogout, updateUserProfileClient as updateUserProfileAction } from '@/lib/actions-client';
 import Image from 'next/image';
 import { Sidebar, SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { DashboardNav } from "@/components/dashboard-nav";
@@ -20,7 +20,6 @@ import { DashboardHeader } from '@/components/dashboard-header';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { uploadProfileImage, validateImageFile, deleteProfileImage } from '@/lib/firebase/storage';
-import { updateUserProfileAction } from '@/app/actions';
 
 export default function MyAccountPage() {
   const { user, logout, refreshUser } = useAuth();
@@ -122,7 +121,7 @@ export default function MyAccountPage() {
       };
 
       // Update user profile in Firebase
-      const result = await updateUserProfileAction(user?.id || '', profileData);
+  const result = await updateUserProfileAction(user?.id || '', profileData);
       
       if (result.success) {
         // Update local state
@@ -176,7 +175,7 @@ export default function MyAccountPage() {
         }
       });
 
-      const result = await updateNotificationPreferences(formData);
+  const result = await updateNotificationPreferences(formData);
       
       if (result.success) {
         setPreferences(newPreferences);
@@ -214,15 +213,9 @@ export default function MyAccountPage() {
   const handleLogout = async () => {
     setIsLoading(true);
     try {
-      const result = await logoutUser();
-      
-      if (result.success) {
-        logout(); // Clear auth context
-        // Immediately redirect to login page without delay
-        window.location.href = '/';
-      } else {
-        setMessage({ type: 'error', text: result.error || 'Failed to logout' });
-      }
+      // Use server action redirect and clear local context
+      logout();
+      await serverLogout();
     } catch (error) {
       setMessage({ type: 'error', text: 'Failed to logout. Please try again.' });
     } finally {

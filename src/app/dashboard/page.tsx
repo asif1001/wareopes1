@@ -1,5 +1,6 @@
 
 import { Suspense } from "react";
+export const dynamic = 'force-dynamic';
 import { statCards } from "@/lib/data";
 import { StatCard } from "@/components/stat-card";
 import { OverviewChart } from "@/components/overview-chart";
