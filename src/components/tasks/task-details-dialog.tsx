@@ -154,9 +154,44 @@ export function TaskDetailsDialog({
   };
 
   const handleSave = () => {
+    const currentTime = new Date().toISOString();
+    const changes: string[] = [];
+    const activityHistory = [...(task.activityHistory || [])];
+    
+    // Track changes for activity history
+    if (editedTask.title && editedTask.title !== task.title) {
+      changes.push(`title changed from "${task.title}" to "${editedTask.title}"`);
+    }
+    if (editedTask.description && editedTask.description !== task.description) {
+      changes.push(`description updated`);
+    }
+    if (editedTask.status && editedTask.status !== task.status) {
+      changes.push(`status changed from "${task.status}" to "${editedTask.status}"`);
+    }
+    if (editedTask.priority && editedTask.priority !== task.priority) {
+      changes.push(`priority changed from "${task.priority}" to "${editedTask.priority}"`);
+    }
+    if (editedTask.category && editedTask.category !== task.category) {
+      changes.push(`category changed from "${task.category}" to "${editedTask.category}"`);
+    }
+    
+    // Add activity history entry if there are changes
+    if (changes.length > 0) {
+      activityHistory.push({
+        id: `activity-${Math.random().toString(36).substr(2, 9)}`,
+        type: "updated",
+        description: `Task updated: ${changes.join(', ')}`,
+        timestamp: currentTime,
+        user: "Current User", // In real app, get from auth context
+        userAvatar: "https://picsum.photos/seed/currentuser/40/40"
+      });
+    }
+    
     onUpdateTask(task.id, {
       ...editedTask,
-      updatedAt: new Date().toISOString(),
+      updatedAt: currentTime,
+      completedAt: editedTask.status === "Done" || editedTask.status === "Completed" ? currentTime : task.completedAt,
+      activityHistory
     });
     setIsEditing(false);
     setEditedTask({});
@@ -170,17 +205,30 @@ export function TaskDetailsDialog({
   const handleAddComment = () => {
     if (!newComment.trim()) return;
     
+    const currentTime = new Date().toISOString();
     const comment = {
       id: `comment-${Date.now()}`,
       content: newComment.trim(),
       author: "Current User", // In real app, get from auth context
       authorAvatar: "https://picsum.photos/seed/currentuser/40/40",
-      createdAt: new Date().toISOString(),
+      createdAt: currentTime,
     };
+
+    // Add activity history entry for the comment
+    const activityHistory = [...(task.activityHistory || [])];
+    activityHistory.push({
+      id: `activity-${Math.random().toString(36).substr(2, 9)}`,
+      type: "comment_added",
+      description: "Added a comment",
+      timestamp: currentTime,
+      user: "Current User",
+      userAvatar: "https://picsum.photos/seed/currentuser/40/40"
+    });
 
     onUpdateTask(task.id, {
       comments: [...(task.comments || []), comment],
-      updatedAt: new Date().toISOString(),
+      updatedAt: currentTime,
+      activityHistory
     });
     
     setNewComment("");

@@ -23,7 +23,7 @@ export default function LoginPage() {
     // Redirect if already logged in
     useEffect(() => {
         if (user) {
-            router.push('/dashboard');
+            router.replace('/dashboard');
         }
     }, [user, router]);
 
@@ -37,7 +37,7 @@ export default function LoginPage() {
             const result = await login(employeeNo, password);
             if (result.success) {
                 setSuccess('Login successful! Redirecting...');
-                router.push('/dashboard');
+                router.replace('/dashboard');
             } else {
                 setError(result.error || 'Login failed');
             }

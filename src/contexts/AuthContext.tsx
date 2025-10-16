@@ -65,9 +65,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(session.user);
           // Refresh session to extend expiry
           refreshSession();
+        } else {
+          // Ensure user is null if no valid session
+          setUser(null);
         }
       } catch (error) {
         console.error('Error loading session:', error);
+        setUser(null);
         authLogout();
       } finally {
         setIsLoading(false);
@@ -75,7 +79,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    checkSession();
+    // Add a small delay to prevent race conditions
+    const timeoutId = setTimeout(checkSession, 100);
+    return () => clearTimeout(timeoutId);
   }, []);
 
   const login = async (employeeNo: string, password: string) => {
@@ -127,8 +133,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     authLogout();
     setUser(null);
-    // Force a page reload to ensure clean state
-    window.location.href = '/';
+    setIsLoading(false);
+    // Use Next.js router instead of hard reload to prevent issues
+    if (typeof window !== 'undefined') {
+      window.location.replace('/');
+    }
   };
 
   const refreshUser = async () => {

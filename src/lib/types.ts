@@ -137,6 +137,9 @@ export type Task = {
   reminderEnabled?: boolean;
   reminderInterval?: number; // in hours
   completedAt?: string;
+  // Dual-filter metadata for UI distinction
+  isCreatedByCurrentUser?: boolean;
+  isAssignedToCurrentUser?: boolean;
 };
 
 export type Feedback = {
