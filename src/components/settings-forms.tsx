@@ -1,13 +1,13 @@
 "use client"
 import { useFormStatus } from "react-dom";
-import { addUserAction, addSourceAction, addContainerSizeAction, addDepartmentAction, addBranchAction } from "@/app/actions";
+import { addUserAction, addSourceAction, addContainerSizeAction, addDepartmentAction, addBranchAction, addRoleAction } from "@/app/actions";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Department, Branch, userRoles } from "@/lib/types";
-import { useEffect, useRef, useActionState } from "react";
+import { useEffect, useRef, useActionState, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 function SubmitButton({ text = "Save" }: { text?: string }) {
@@ -259,4 +259,81 @@ export function BranchForm() {
             </form>
         </Card>
     );
+}
+
+export function RoleForm() {
+  const [state, formAction] = useActionState(addRoleAction, { message: "" });
+  const formRef = useRef<HTMLFormElement>(null);
+  const { toast } = useToast();
+  const [permInput, setPermInput] = useState("");
+  const [permissions, setPermissions] = useState<string[]>([]);
+
+  const addPerm = () => {
+    const p = permInput.trim();
+    if (!p) return;
+    if (permissions.includes(p)) return;
+    setPermissions(prev => [...prev, p]);
+    setPermInput("");
+  };
+  const removePerm = (p: string) => {
+    setPermissions(prev => prev.filter(x => x !== p));
+  };
+
+  useEffect(() => {
+    if (state?.message) {
+      if (state.message.includes("success")) {
+        toast({ title: "Success", description: state.message });
+        formRef.current?.reset();
+        setPermissions([]);
+        setPermInput("");
+      } else {
+        toast({ title: "Error", description: state.message, variant: "destructive" });
+      }
+    }
+  }, [state, toast]);
+
+  return (
+    <Card>
+      <form action={formAction} ref={formRef}>
+        <CardHeader>
+          <CardTitle>Create Role</CardTitle>
+          <CardDescription>Define a role name and optional permissions.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="name">Role Name</Label>
+            <Input id="name" name="name" required />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="permissionInput">Permissions</Label>
+            <div className="flex gap-2">
+              <Input
+                id="permissionInput"
+                value={permInput}
+                onChange={(e) => setPermInput(e.target.value)}
+                placeholder="e.g. manage_users"
+              />
+              <Button type="button" onClick={addPerm}>Add</Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {permissions.map(p => (
+                <div key={p} className="flex items-center gap-2 border rounded px-2 py-1 text-sm">
+                  <span>{p}</span>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => removePerm(p)}>Remove</Button>
+                  <input type="hidden" name="permissions" value={p} />
+                </div>
+              ))}
+              {permissions.length === 0 && (
+                <p className="text-xs text-muted-foreground">Add permissions or leave empty.</p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+        <CardFooter>
+          <SubmitButton />
+        </CardFooter>
+      </form>
+    </Card>
+  );
 }

@@ -1,6 +1,6 @@
 import { db } from './firebase';
 import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc, query, where, serverTimestamp, orderBy, limit, writeBatch } from 'firebase/firestore';
-import type { Shipment, User, Source, ContainerSize, Department, Branch, ContainerBooking, Container, ClearedContainerSummary } from '@/lib/types';
+import type { Shipment, User, Source, ContainerSize, Department, Branch, ContainerBooking, Container, ClearedContainerSummary, Role } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
 import type { SerializableShipment } from '@/lib/types';
 import { format, subMonths, startOfMonth, parse, compareAsc, subDays } from 'date-fns';
@@ -355,43 +355,33 @@ export async function getUsers(): Promise<User[]> {
 }
 
 export async function getUserByEmployeeNo(employeeNo: string): Promise<User | null> {
-    const tryQuery = async (colName: string) => {
+    const tryQuery = async (colName: string, value: string | number) => {
         const usersCol = collection(db, colName);
-        const q = query(usersCol, where('employeeNo', '==', employeeNo));
+        const q = query(usersCol, where('employeeNo', '==', value));
         return await getDocs(q);
     };
 
-    try {
-        let snapshot = await tryQuery('Users');
-        if (snapshot.empty) {
-            // Fallback to lowercase collection name
-            try {
-                snapshot = await tryQuery('users');
-            } catch (e) {
-                // ignore, handled below
-            }
-        }
+    const maybeNum = Number(employeeNo);
+    const candidates: Array<{ col: string; val: string | number }> = [
+        { col: 'Users', val: employeeNo },
+        ...(Number.isNaN(maybeNum) ? [] : [{ col: 'Users', val: maybeNum }]),
+        { col: 'users', val: employeeNo },
+        ...(Number.isNaN(maybeNum) ? [] : [{ col: 'users', val: maybeNum }]),
+    ];
 
-        if (!snapshot.empty) {
-            const userDoc = snapshot.docs[0];
-            return { id: userDoc.id, ...userDoc.data() } as User;
-        }
-
-        return null;
-    } catch (e: any) {
-        // Try fallback collection on permission errors or missing
+    for (const c of candidates) {
         try {
-            const snapshot = await tryQuery('users');
+            const snapshot = await tryQuery(c.col, c.val);
             if (!snapshot.empty) {
                 const userDoc = snapshot.docs[0];
                 return { id: userDoc.id, ...userDoc.data() } as User;
             }
-            return null;
-        } catch (e2) {
-            // Re-throw the original error for the caller to handle
-            throw e;
+        } catch {
+            // ignore and continue to next candidate
         }
     }
+
+    return null;
 }
 
 export async function addUser(user: Omit<User, 'id'>) {
@@ -505,4 +495,26 @@ export async function updateBranch(id: string, branch: Partial<Branch>) {
 
 export async function deleteBranch(id: string) {
     await deleteDoc(doc(db, 'Branches', id));
+}
+
+// Roles Functions
+export async function getRoles(): Promise<Role[]> {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const snap = await adb.collection('Roles').get();
+        return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Role));
+    }
+    const rolesCol = collection(db, 'Roles');
+    const rolesSnapshot = await getDocs(rolesCol);
+    return rolesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Role));
+}
+
+export async function addRole(role: Omit<Role, 'id'>) {
+    const docRef = await addDoc(collection(db, 'Roles'), role);
+    return { id: docRef.id, ...role } as Role;
+}
+
+export async function deleteRole(id: string) {
+    await deleteDoc(doc(db, 'Roles', id));
 }

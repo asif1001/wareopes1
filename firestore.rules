@@ -36,6 +36,19 @@ service cloud.firestore {
     match /Tasks/{taskId} {
       allow read, write: if request.auth != null;
     }
+
+    // Role-based dynamic forms
+    // FormTemplates: readable by authenticated clients; writes via Admin SDK only
+    match /FormTemplates/{templateId} {
+      allow read: if request.auth != null;
+      allow write: if false; // prevent client writes; admins use server actions
+    }
+
+    // FormSubmissions: readable by authenticated clients; writes via Admin SDK only
+    match /FormSubmissions/{submissionId} {
+      allow read: if request.auth != null;
+      allow write: if false; // prevent direct client writes
+    }
     
     // Default rule - deny all other access
     match /{document=**} {

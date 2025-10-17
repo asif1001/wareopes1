@@ -23,10 +23,34 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Employee number and password are required.' }, { status: 400 });
         }
 
-    // Verify via Firebase Admin (bypasses security rules)
-    const { getAdminDb } = await import('@/lib/firebase/admin');
-    const adminDb = await getAdminDb();
-    const snap = await adminDb.collection('Users').where('employeeNo', '==', employeeNo).limit(1).get();
+        // Verify via Firebase Admin (bypasses security rules)
+        const { getAdminDb } = await import('@/lib/firebase/admin');
+        const adminDb = await getAdminDb();
+
+        const tryQuery = async (col: string, val: string | number) =>
+            adminDb.collection(col).where('employeeNo', '==', val).limit(1).get();
+
+        let snap = await tryQuery('Users', employeeNo);
+        if (snap.empty) {
+            const maybeNum = Number(employeeNo);
+            if (!Number.isNaN(maybeNum)) {
+                snap = await tryQuery('Users', maybeNum);
+            }
+        }
+        if (snap.empty) {
+            try {
+                snap = await tryQuery('users', employeeNo);
+                if (snap.empty) {
+                    const maybeNum = Number(employeeNo);
+                    if (!Number.isNaN(maybeNum)) {
+                        snap = await tryQuery('users', maybeNum);
+                    }
+                }
+            } catch (_) {
+                // ignore collection access errors and continue to invalid response
+            }
+        }
+
         if (snap.empty) {
             return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
         }

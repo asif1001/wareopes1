@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from './client';
 import { 
   getTasksOptimizedAction, 
-  getAllTasksAction,
+  // getAllTasksAction, // removed: not exported
   getUsersMinimalAction, 
   getTaskCountsAction,
   updateTaskAction,
@@ -51,7 +51,7 @@ export function useAllTasks(options?: {
   return useQuery({
     queryKey: queryKeys.tasks.list({ ...options, currentUserId: user?.id, userTasks: true }),
     queryFn: async () => {
-      const result = await getAllTasksAction({ ...options, currentUserId: user?.id });
+      const result = await getTasksOptimizedAction({ ...options, currentUserId: user?.id, userTasks: true });
       if (!result.success) {
         throw new Error(result.error);
       }
@@ -138,7 +138,7 @@ export function useTaskCounts() {
   return useQuery({
     queryKey: queryKeys.tasks.counts(user?.id),
     queryFn: async () => {
-      const result = await getTaskCountsAction(user?.id);
+      const result = await getTaskCountsAction();
       if (!result.success) {
         throw new Error(result.error);
       }
@@ -156,7 +156,7 @@ export function useUpdateTask() {
   
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<Task> }) => {
-      const result = await updateTaskAction(id, data, user?.id);
+      const result = await updateTaskAction(id, data);
       if (!result.success) {
         throw new Error(result.error);
       }
@@ -201,7 +201,7 @@ export function useDeleteTask() {
   
   return useMutation({
     mutationFn: async (id: string) => {
-      const result = await deleteTaskAction(id, user?.id);
+      const result = await deleteTaskAction(id);
       if (!result.success) {
         throw new Error(result.error);
       }
@@ -245,7 +245,7 @@ export function useCreateTask() {
   
   return useMutation({
     mutationFn: async (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => {
-      const result = await createTaskAction(taskData, user?.id);
+      const result = await createTaskAction(taskData);
       if (!result.success) {
         throw new Error(result.error);
       }

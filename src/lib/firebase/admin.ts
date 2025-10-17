@@ -25,11 +25,15 @@ export async function getAdminDb() {
     if (!g.__FIREBASE_ADMIN_INIT_PROMISE) {
       g.__FIREBASE_ADMIN_INIT_PROMISE = (async () => {
         // Prefer explicit JSON from env
+        const envProjectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
         const credsJson = process.env.FIREBASE_ADMIN_CREDENTIALS;
         if (credsJson) {
           try {
             const serviceAccount = JSON.parse(credsJson);
-            initializeApp({ credential: cert(serviceAccount) });
+            initializeApp({
+              credential: cert(serviceAccount),
+              projectId: (serviceAccount.project_id as string) || envProjectId,
+            });
             return;
           } catch (e) {
             // Fall through to file-based credentials
@@ -49,7 +53,10 @@ export async function getAdminDb() {
             if (p && fs.existsSync(p)) {
               const raw = fs.readFileSync(p, 'utf-8');
               const serviceAccount = JSON.parse(raw);
-              initializeApp({ credential: cert(serviceAccount) });
+              initializeApp({
+                credential: cert(serviceAccount),
+                projectId: (serviceAccount.project_id as string) || envProjectId,
+              });
               return;
             }
           } catch (e) {
@@ -61,7 +68,10 @@ export async function getAdminDb() {
         // Rely on FIREBASE_ADMIN_CREDENTIALS or ADC in production environments.
 
         // Finally, fall back to ADC if available in environment
-        initializeApp({ credential: applicationDefault() });
+        initializeApp({
+          credential: applicationDefault(),
+          projectId: envProjectId,
+        });
       })();
     }
 
