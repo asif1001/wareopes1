@@ -1,7 +1,7 @@
 "use server"
 import type { GenerateCustomReportInput, GenerateCustomReportOutput } from "@/ai/flows/generate-custom-report";
 import { getUserByEmployeeNo, bulkAddShipments } from "@/lib/firebase/firestore";
-import type { User, Source, ContainerSize, Department, Branch, UserRole, Shipment } from "@/lib/types";
+import type { User, Source, ContainerSize, Department, Branch, UserRole, Shipment, Role } from "@/lib/types";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { cookies } from 'next/headers';
@@ -86,18 +86,31 @@ export async function updateUserProfileAction(userId: string, profile: Partial<U
 // Add Actions
 export async function addUserAction(prevState: any, formData: FormData) {
     try {
+        const employeeNoRaw = String(formData.get("employeeNo") || "").trim();
+        if (!employeeNoRaw) {
+            return { message: "Employee No/CPR No is required." };
+        }
+
+        const { getAdminDb } = await import('@/lib/firebase/admin');
+        const adb = await getAdminDb();
+
+        // Uniqueness check for employeeNo/CPR
+        const existing = await adb.collection('Users').where('employeeNo', '==', employeeNoRaw).limit(1).get();
+        if (!existing.empty) {
+            return { message: "Employee No/CPR No already exists." };
+        }
+
         const newUser: Omit<User, 'id'> = {
             fullName: formData.get("fullName") as string,
-            employeeNo: formData.get("employeeNo") as string,
+            employeeNo: employeeNoRaw,
             password: formData.get("password") as string, // Note: In a real app, hash this!
             email: formData.get("email") as string,
             department: formData.get("department") as string,
             role: formData.get("role") as UserRole,
         };
-        const { getAdminDb } = await import('@/lib/firebase/admin');
-        const adb = await getAdminDb();
+
         await adb.collection('Users').add(newUser);
-        revalidatePath("/dashboard/settings");
+        try { revalidatePath("/dashboard/settings"); } catch {}
         return { message: "User added successfully." };
     } catch (e: any) {
         return { message: e.message || "Failed to add user." };
@@ -168,7 +181,66 @@ export async function addBranchAction(prevState: any, formData: FormData) {
     }
 }
 
-// Delete Actions
+// Role Actions
+async function ensureAdmin(): Promise<{ id: string } | null> {
+  const me = await (async () => {
+    try {
+      const c = await cookies();
+      const id = c.get('session')?.value;
+      if (!id) return null;
+      const { getAdminDb } = await import('@/lib/firebase/admin');
+      const adb = await getAdminDb();
+      const snap = await adb.collection('Users').doc(id).get();
+      const role = (snap.exists ? (snap.data() as any)?.role : undefined) || undefined;
+      if (role !== 'Admin') return null;
+      return { id };
+    } catch { return null; }
+  })();
+  return me;
+}
+
+export async function addRoleAction(prevState: any, formData: FormData): Promise<{ message: string }>{
+  try {
+    const admin = await ensureAdmin();
+    if (!admin) return { message: 'Forbidden: Admin only' };
+
+    const name = String(formData.get('name') || '').trim();
+    const permissions = formData.getAll('permissions').map(String).filter(Boolean);
+    if (!name) return { message: 'Role name is required' };
+
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+
+    // Unique check on name
+    const existing = await adb.collection('Roles').where('name', '==', name).limit(1).get();
+    if (!existing.empty) return { message: 'Role name already exists' };
+
+    await adb.collection('Roles').add({ name, permissions });
+    try { revalidatePath('/dashboard/settings'); } catch {}
+    return { message: 'Role added successfully.' };
+  } catch (e: any) {
+    return { message: e?.message || 'Failed to add role.' };
+  }
+}
+
+export async function deleteRoleAction(prevState: any, formData: FormData): Promise<{ message: string }>{
+  try {
+    const admin = await ensureAdmin();
+    if (!admin) return { message: 'Forbidden: Admin only' };
+
+    const id = String(formData.get('id') || '');
+    if (!id) return { message: 'Missing role id' };
+
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+    await adb.collection('Roles').doc(id).delete();
+    try { revalidatePath('/dashboard/settings'); } catch {}
+    return { message: 'Role deleted successfully.' };
+  } catch (e: any) {
+    return { message: e?.message || 'Failed to delete role.' };
+  }
+}
+
 // Delete actions: support both direct call with id (used programmatically)
 // and form-based server action signature (prevState, formData) used by UI forms.
 export async function deleteUserAction(prevState: any, formData: FormData): Promise<{ message: string }> {
@@ -358,26 +430,73 @@ export async function getTaskCountsAction() {
     return { success: true, data: {} };
 }
 
+// Helper to convert task data to FormData for dashboard saveTask APIs
+function buildTaskFormData(input: any, id?: string): FormData {
+  const fd = new FormData();
+  if (id) fd.set('id', String(id));
+  if (input?.title) fd.set('title', String(input.title));
+  if (input?.description !== undefined) fd.set('description', String(input.description ?? ''));
+  if (input?.status) fd.set('status', String(input.status));
+  if (input?.priority) fd.set('priority', String(input.priority));
+  if (input?.labels) fd.set('labels', JSON.stringify(input.labels));
+  if (input?.startDate) fd.set('startDate', String(input.startDate));
+  if (input?.dueDate) fd.set('dueDate', String(input.dueDate));
+  if (input?.assigneeId !== undefined) fd.set('assigneeId', input.assigneeId === null ? '' : String(input.assigneeId));
+  if (input?.reporterId) fd.set('reporterId', String(input.reporterId));
+  if (input?.watchers) fd.set('watchers', JSON.stringify(input.watchers));
+  if (input?.branch) fd.set('branch', String(input.branch));
+  if (input?.subtasks) {
+    const simplified = Array.isArray(input.subtasks)
+      ? input.subtasks.map((s: any) => ({ title: s.title, isComplete: !!s.isComplete }))
+      : [];
+    fd.set('subtasks', JSON.stringify(simplified));
+  }
+  return fd;
+}
+
 export async function updateTaskAction(id: string, data: any) {
     const mod = await import('./dashboard/tasks/actions').catch(() => null);
-    // If dashboard provides a saveTaskAction or saveTask, adapt to update
     try {
-        if (mod && (mod as any).saveTaskAction) {
-            // saveTaskAction expects (prevState, formData) - call the programmatic saveTask if available
-            if ((mod as any).saveTask) {
-                const result = await (mod as any).saveTask({ id, ...data });
-                return { success: result?.success ?? false, data: result };
-            }
-            return { success: false, error: 'saveTask wrapper not available' };
+        if (mod && (mod as any).saveTask) {
+            const formData = buildTaskFormData(data, id);
+            const result = await (mod as any).saveTask(formData);
+            return { success: !!(result as any)?.success, data: result };
         }
-        // If there's a direct updateTask exported
+        if (mod && (mod as any).saveTaskAction) {
+            const formData = buildTaskFormData(data, id);
+            const result = await (mod as any).saveTaskAction({ success: false, error: null }, formData);
+            return { success: !!(result as any)?.success, data: result, error: (result as any)?.error ?? undefined };
+        }
         if (mod && (mod as any).updateTask) {
-            const result = await (mod as any).updateTask(id, data);
-            return { success: true, data: result };
+            const res = await (mod as any).updateTask(id, data);
+            return { success: true, data: res };
         }
         return { success: false, error: 'Not implemented' };
     } catch (err: any) {
         return { success: false, error: err?.message || 'Failed to update task.' };
+    }
+}
+
+export async function createTaskAction(data: any) {
+    const mod = await import('./dashboard/tasks/actions').catch(() => null);
+    try {
+        if (mod && (mod as any).saveTask) {
+            const formData = buildTaskFormData(data);
+            const result = await (mod as any).saveTask(formData);
+            return { success: !!(result as any)?.success, data: result };
+        }
+        if (mod && (mod as any).saveTaskAction) {
+            const formData = buildTaskFormData(data);
+            const result = await (mod as any).saveTaskAction({ success: false, error: null }, formData);
+            return { success: !!(result as any)?.success, data: result, error: (result as any)?.error ?? undefined };
+        }
+        if (mod && (mod as any).createTask) {
+            const res = await (mod as any).createTask(data);
+            return { success: true, data: res };
+        }
+        return { success: false, error: 'Not implemented' };
+    } catch (err: any) {
+        return { success: false, error: err?.message || 'Failed to create task.' };
     }
 }
 
@@ -480,4 +599,291 @@ export async function bulkAddShipmentsAction(prevState: any, formData: FormData)
         console.error("Bulk import error:", e);
         return { error: e.message || "An unexpected error occurred during bulk import." };
     }
+}
+
+
+// Role-based form templates and submissions actions
+import type { FormTemplate, FormField, FormSubmission } from '@/lib/types';
+
+function sanitizeSlug(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .replace(/_{2,}/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+async function getCurrentUserServer(): Promise<{ id: string; role?: string } | null> {
+  try {
+    const c = await cookies();
+    const id = c.get('session')?.value;
+    if (!id) return null;
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+    const snap = await adb.collection('Users').doc(id).get();
+    if (!snap.exists) return { id };
+    const data = snap.data() as any;
+    return { id, role: data?.role };
+  } catch {
+    return null;
+  }
+}
+
+export async function getFormTemplatesAction(): Promise<{ success: boolean; data?: FormTemplate[]; error?: string }>{
+  try {
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+    const q = await adb.collection('FormTemplates').orderBy('slug').get();
+    const data: FormTemplate[] = q.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+    return { success: true, data };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Failed to fetch form templates' };
+  }
+}
+
+export async function getFormTemplateBySlugAction(slug: string): Promise<{ success: boolean; data?: FormTemplate; error?: string }>{
+  try {
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+    const q = await adb.collection('FormTemplates').where('slug', '==', slug).limit(1).get();
+    if (q.empty) return { success: false, error: 'Form template not found' };
+    const d = q.docs[0];
+    return { success: true, data: { id: d.id, ...(d.data() as any) } };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Failed to fetch form template' };
+  }
+}
+
+export async function createFormTemplateAction(input: { slug: string; displayName: string; allowedRoles: string[]; autoRedirectForRoles?: string[]; fields: FormField[] }): Promise<{ success: boolean; id?: string; error?: string }>{
+  try {
+    const me = await getCurrentUserServer();
+    if (!me?.id) return { success: false, error: 'Not authenticated' };
+    if (me.role !== 'Admin') return { success: false, error: 'Forbidden: Admin only' };
+
+    const slug = sanitizeSlug(input.slug);
+    if (!slug) return { success: false, error: 'Invalid slug' };
+    if (!Array.isArray(input.fields) || input.fields.length === 0) return { success: false, error: 'At least one field is required' };
+
+    const now = new Date().toISOString();
+    const doc: Omit<FormTemplate, 'id'> = {
+      slug,
+      displayName: input.displayName || slug,
+      allowedRoles: input.allowedRoles?.length ? input.allowedRoles : ['Warehouse Associate', 'Driver', 'Manager', 'Supervisor', 'Team Leader', 'Contract Staff'],
+      autoRedirectForRoles: input.autoRedirectForRoles || [],
+      fields: input.fields,
+      createdBy: me.id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+
+    // Ensure unique slug
+    const existing = await adb.collection('FormTemplates').where('slug', '==', slug).limit(1).get();
+    if (!existing.empty) return { success: false, error: 'Slug already exists' };
+
+    const ref = await adb.collection('FormTemplates').add(doc);
+    try { revalidatePath('/dashboard/settings'); } catch {}
+    return { success: true, id: ref.id };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Failed to create template' };
+  }
+}
+
+export async function updateFormTemplateAction(id: string, updates: Partial<FormTemplate>): Promise<{ success: boolean; error?: string }>{
+  try {
+    const me = await getCurrentUserServer();
+    if (!me?.id) return { success: false, error: 'Not authenticated' };
+    if (me.role !== 'Admin') return { success: false, error: 'Forbidden: Admin only' };
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+    const safe: any = { ...updates };
+    if (safe.slug) safe.slug = sanitizeSlug(safe.slug);
+    safe.updatedAt = new Date().toISOString();
+    safe.updatedBy = me.id;
+    await adb.collection('FormTemplates').doc(id).update(safe);
+    try { revalidatePath('/dashboard/settings'); } catch {}
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Failed to update template' };
+  }
+}
+
+export async function deleteFormTemplateAction(id: string): Promise<{ success: boolean; error?: string }>{
+  try {
+    const me = await getCurrentUserServer();
+    if (!me?.id) return { success: false, error: 'Not authenticated' };
+    if (me.role !== 'Admin') return { success: false, error: 'Forbidden: Admin only' };
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+    await adb.collection('FormTemplates').doc(id).delete();
+    try { revalidatePath('/dashboard/settings'); } catch {}
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Failed to delete template' };
+  }
+}
+
+function zodForField(field: FormField): z.ZodTypeAny {
+  switch (field.type) {
+    case 'text': {
+      let s = z.string();
+      if (field.pattern) {
+        try { s = s.regex(new RegExp(field.pattern)); } catch {}
+      }
+      return field.required ? s.min(1) : s.optional();
+    }
+    case 'textarea': {
+      let s = z.string();
+      return field.required ? s.min(1) : s.optional();
+    }
+    case 'number': {
+      let s = z.coerce.number();
+      if (typeof field.min === 'number') s = s.min(field.min);
+      if (typeof field.max === 'number') s = s.max(field.max);
+      return field.required ? s : s.optional();
+    }
+    case 'dropdown': {
+      const options = Array.isArray(field.options) ? field.options : [];
+      if (options.length > 0) {
+        const enumSchema = z.enum(options as [string, ...string[]]);
+        return field.required ? enumSchema : enumSchema.optional();
+      }
+      let s = z.string();
+      return field.required ? s.min(1) : s.optional();
+    }
+    case 'checkbox': {
+      return field.required ? z.literal(true) : z.coerce.boolean().optional();
+    }
+    case 'date': {
+      const base = z.string();
+      const s = field.required ? base.min(1) : base.optional();
+      return s.refine((v) => {
+        if (v === undefined) return true; // optional
+        if (v === null) return true; // allow nullable handled upstream
+        if (typeof v !== 'string') return false;
+        const trimmed = v.trim();
+        if (!trimmed) return !field.required;
+        return !isNaN(Date.parse(trimmed));
+      }, { message: 'Invalid date' });
+    }
+    default:
+      return z.any();
+  }
+}
+
+// Create form template from FormData (used by admin UI builder)
+export async function createFormTemplateFromFormAction(_prev: any, formData: FormData): Promise<{ message: string }>{
+  try {
+    const slugRaw = String(formData.get('slug') || '');
+    const displayName = String(formData.get('displayName') || slugRaw);
+    const allowedRolesStr = String(formData.get('allowedRoles') || '');
+    const autoRedirectStr = String(formData.get('autoRedirectForRoles') || '');
+    const fieldsJson = String(formData.get('fieldsJson') || '[]');
+    const fields: FormField[] = JSON.parse(fieldsJson);
+
+    const slug = sanitizeSlug(slugRaw || displayName);
+    const allowedRoles = allowedRolesStr ? allowedRolesStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const autoRedirectForRoles = autoRedirectStr ? autoRedirectStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    const res = await createFormTemplateAction({ slug, displayName, allowedRoles, autoRedirectForRoles, fields });
+    if (res.success) return { message: `Template ${displayName} (${slug}) created.` };
+    return { message: `Failed: ${res.error || 'Unknown error'}` };
+  } catch (e: any) {
+    return { message: `Failed: ${e?.message || 'Invalid form data'}` };
+  }
+}
+
+// Submit dynamic form answers (server-side validation and storage)
+export async function submitFormAction(_prev: any, formData: FormData): Promise<{ success: boolean; message?: string; error?: string }>{
+  try {
+    const me = await getCurrentUserServer();
+    if (!me?.id) return { success: false, error: 'Not authenticated' };
+
+    const templateSlug = String(formData.get('templateSlug') || '');
+    const answersJson = String(formData.get('answersJson') || '{}');
+    const answers: Record<string, any> = JSON.parse(answersJson);
+
+    const tplRes = await getFormTemplateBySlugAction(templateSlug);
+    if (!tplRes.success || !tplRes.data) return { success: false, error: 'Template not found' };
+    const tpl = tplRes.data;
+
+    // Role-based access check
+    const role = me.role || 'Unknown';
+    if (tpl.allowedRoles && tpl.allowedRoles.length && !tpl.allowedRoles.includes(role)) {
+      return { success: false, error: 'Access denied for your role' };
+    }
+
+    // Fetch user details for denormalized fields
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+    let userFullName: string | undefined = undefined;
+    let userEmployeeNo: string | undefined = undefined;
+    try {
+      const uSnap = await adb.collection('Users').doc(me.id).get();
+      const uData = uSnap.data() as any;
+      userFullName = uData?.fullName || uData?.name;
+      userEmployeeNo = uData?.employeeNo;
+    } catch {}
+
+    // Server-side validation
+    const shape: Record<string, any> = {};
+    for (const f of tpl.fields) {
+      shape[f.id] = zodForField(f);
+    }
+    const schema = z.object(shape);
+    const parsed = schema.safeParse(answers);
+    if (!parsed.success) {
+      const msg = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
+      return { success: false, error: `Validation failed: ${msg}` };
+    }
+
+    const now = new Date().toISOString();
+    const submission: Omit<FormSubmission, 'id'> = {
+      templateId: tpl.id,
+      templateSlug: tpl.slug,
+      userId: me.id,
+      userRole: role,
+      submittedAt: now,
+      answers: parsed.data,
+      // Denormalized fields
+      userFullName,
+      userEmployeeNo,
+      templateDisplayName: tpl.displayName,
+    };
+
+    const ref = await adb.collection('FormSubmissions').add(submission);
+    // Also store under template subcollection for convenient queries
+    await adb.collection('FormTemplates').doc(tpl.id).collection('Submissions').doc(ref.id).set(submission);
+
+    try { revalidatePath(`/forms/${tpl.slug}`); } catch {}
+    return { success: true, message: 'Form submitted successfully.' };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Failed to submit form' };
+  }
+}
+
+// Find auto-redirect form for a given role
+export async function findAutoRedirectFormForRoleAction(role: string): Promise<{ success: boolean; slug?: string; error?: string }>{
+  try {
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+    // Priority 1: explicit auto-redirect mapping
+    const q = await adb.collection('FormTemplates').where('autoRedirectForRoles', 'array-contains', role).limit(1).get();
+    if (!q.empty) {
+      const d = q.docs[0];
+      const data = d.data() as any;
+      return { success: true, slug: data.slug };
+    }
+    // Fallback: slug match to sanitized role string
+    const slug = sanitizeSlug(role);
+    const q2 = await adb.collection('FormTemplates').where('slug', '==', slug).limit(1).get();
+    if (!q2.empty) {
+      return { success: true, slug };
+    }
+    return { success: false, error: 'No matching form for role' };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Failed to find redirect form' };
+  }
 }

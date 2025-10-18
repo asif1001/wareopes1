@@ -63,7 +63,7 @@ Create the following collections in your Firestore database:
 - `shipments` - For shipment data
 - `inventory` - For inventory items
 - `analytics` - For analytics data
-- `users` - For user management
+- `Users` - For user management (canonical; app also falls back to `users`)
 
 ### 5. Start the Development Server
 

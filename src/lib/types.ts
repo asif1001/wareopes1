@@ -175,6 +175,13 @@ export const userRoles = [
 
 export type UserRole = typeof userRoles[number];
 
+// Role entity for database-backed role management
+export type Role = {
+  id: string;
+  name: string; // e.g., 'Admin'
+  permissions?: string[]; // optional permissions assigned to this role
+};
+
 export type User = {
     id: string;
     fullName: string;
@@ -219,3 +226,44 @@ export type ClearedContainerSummary = {
     monthlyData: { month: string; containers: number }[];
     sourceData: { [key: string]: number };
 }
+
+export type FormFieldType = 'text' | 'number' | 'textarea' | 'dropdown' | 'checkbox' | 'date';
+
+export type FormField = {
+  id: string; // stable id for answers mapping
+  label: string;
+  type: FormFieldType;
+  required?: boolean;
+  placeholder?: string;
+  options?: string[]; // for dropdown
+  min?: number; // for number
+  max?: number; // for number
+  pattern?: string; // regex string for text
+};
+
+export type FormTemplate = {
+  id: string;
+  slug: string; // e.g., "forklift_operator"
+  displayName: string; // human-readable
+  allowedRoles: string[]; // which roles can access
+  autoRedirectForRoles?: string[]; // roles auto-redirected to this form
+  fields: FormField[];
+  createdBy: string; // admin user id
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: string; // last admin user id who updated
+};
+
+export type FormSubmission = {
+  id: string;
+  templateId: string;
+  templateSlug: string;
+  userId: string;
+  userRole: string;
+  submittedAt: string;
+  answers: Record<string, any>; // key = field.id, value depends on type
+  // Extra metadata for reporting
+  userFullName?: string;
+  userEmployeeNo?: string;
+  templateDisplayName?: string;
+};

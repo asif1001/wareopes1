@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Department, Branch, User, Source, ContainerSize, userRoles } from "@/lib/types";
+import { Department, Branch, User, Source, ContainerSize, Role, userRoles } from "@/lib/types";
 import { useEffect, useState, useRef, useActionState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Edit } from "lucide-react";
@@ -39,8 +39,10 @@ function useEditFormState(action: any, initialState: any) {
     return { formAction, open, setOpen };
 }
 
-export function UserEditForm({ user, departments }: { user: User; departments: Department[] }) {
+export function UserEditForm({ user, departments, roles }: { user: User; departments: Department[]; roles: Role[] }) {
     const { formAction, open, setOpen } = useEditFormState(updateUserAction, { message: "" });
+    // Derive role options from dynamic roles with fallback to static roles
+    const roleOptions = (roles && roles.length > 0) ? roles.map(r => r.name) : userRoles;
     
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -85,7 +87,7 @@ export function UserEditForm({ user, departments }: { user: User; departments: D
                                     <SelectValue placeholder="Select a role" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {userRoles.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}
+                                    {roleOptions.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}
                                 </SelectContent>
                             </Select>
                         </div>

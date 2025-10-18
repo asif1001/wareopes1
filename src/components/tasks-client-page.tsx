@@ -11,6 +11,7 @@ import { TaskTable } from "./tasks/task-table";
 import { TaskKanban } from "./tasks/task-kanban";
 import { TaskCalendar } from "./tasks/task-calendar";
 import { TaskModal } from "./tasks/task-modal";
+import { TaskFilterBar } from "./tasks/task-filter-bar";
 
 type TasksClientPageProps = {
     initialTasks: SerializableTask[];
@@ -22,6 +23,7 @@ type View = "table" | "kanban" | "calendar";
 
 export function TasksClientPage({ initialTasks, users, currentUserId }: TasksClientPageProps) {
     const [tasks, setTasks] = useState<SerializableTask[]>(initialTasks);
+    const [filteredTasks, setFilteredTasks] = useState<SerializableTask[]>(initialTasks);
     const [view, setView] = useState<View>("table");
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedTask, setSelectedTask] = useState<SerializableTask | null>(null);
@@ -48,7 +50,7 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
         }
     };
 
-    const myTasks = tasks.filter(task => task.assigneeId === currentUserId || task.reporterId === currentUserId);
+    const myTasks = filteredTasks.filter(task => task.assigneeId === currentUserId || task.reporterId === currentUserId);
 
     return (
         <div className="flex flex-col h-full">
@@ -70,23 +72,7 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
                             <TabsTrigger value="my-tasks">My Tasks</TabsTrigger>
                         </TabsList>
                         <div className="ml-auto flex items-center gap-2">
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" size="sm" className="h-8 gap-1">
-                                        <ListFilter className="h-3.5 w-3.5" />
-                                        <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
-                                            Filter
-                                        </span>
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuLabel>Filter by</DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuCheckboxItem checked>Status</DropdownMenuCheckboxItem>
-                                    <DropdownMenuCheckboxItem>Priority</DropdownMenuCheckboxItem>
-                                    <DropdownMenuCheckboxItem>Assignee</DropdownMenuCheckboxItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                            {/* Filter bar replaces dropdown menu */}
                             <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
                                 <Button variant={view === 'table' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setView('table')} data-testid="view-table">
                                     <List className="h-4 w-4" />
@@ -100,10 +86,15 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
                             </div>
                         </div>
                     </div>
+
+                    <div className="mt-3">
+                        <TaskFilterBar tasks={tasks} users={users} onFilteredTasksChange={setFilteredTasks} />
+                    </div>
+
                     <TabsContent value="all" className="mt-4">
-                        {view === 'table' && <TaskTable tasks={tasks} users={users} onEdit={openModal} onDelete={async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); }} />}
-                        {view === 'kanban' && <TaskKanban tasks={tasks} users={users} onEdit={openModal} />}
-                        {view === 'calendar' && <TaskCalendar tasks={tasks} users={users} onEdit={openModal} />}
+                        {view === 'table' && <TaskTable tasks={filteredTasks} users={users} onEdit={openModal} onDelete={async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); }} />}
+                        {view === 'kanban' && <TaskKanban tasks={filteredTasks} users={users} onEdit={openModal} />}
+                        {view === 'calendar' && <TaskCalendar tasks={filteredTasks} users={users} onEdit={openModal} />}
                     </TabsContent>
                     <TabsContent value="my-tasks" className="mt-4">
                         {view === 'table' && <TaskTable tasks={myTasks} users={users} onEdit={openModal} onDelete={async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); }} />}
