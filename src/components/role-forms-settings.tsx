@@ -9,10 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Trash2, Edit, PlusCircle } from "lucide-react";
-import type { FormTemplate, FormField, FormFieldType } from "@/lib/types";
-import { userRoles } from "@/lib/types";
+import type { FormTemplate, FormField, FormFieldType, Role } from "@/lib/types";
 import { createFormTemplateFromFormAction, deleteFormTemplateAction } from "@/app/actions";
 import { useToast } from "@/hooks/use-toast";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 
 function sanitizeSlug(input: string) {
   return input
@@ -133,7 +134,7 @@ function FormPreview({ fields }: { fields: FormField[] }) {
   );
 }
 
-export function RoleFormsSettings({ initialTemplates }: { initialTemplates: FormTemplate[] }) {
+export function RoleFormsSettings({ initialTemplates, roles }: { initialTemplates: FormTemplate[]; roles: Role[] }) {
   const { toast } = useToast();
 
   const [slug, setSlug] = useState("");
@@ -142,6 +143,7 @@ export function RoleFormsSettings({ initialTemplates }: { initialTemplates: Form
   const [autoRedirectForRoles, setAutoRedirectForRoles] = useState<string[]>([]);
   const [fields, setFields] = useState<FormField[]>([]);
   const [templates, setTemplates] = useState<FormTemplate[]>(initialTemplates || []);
+  const roleOptions = useMemo(() => (roles || []).map((r) => r.name), [roles]);
 
   const addField = () => {
     const newField: FormField = {
@@ -224,26 +226,74 @@ export function RoleFormsSettings({ initialTemplates }: { initialTemplates: Form
 
             <div>
               <Label>Allowed Roles</Label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
-                {userRoles.map(role => (
-                  <label key={role} className="flex items-center gap-2 p-2 border rounded">
-                    <input type="checkbox" checked={allowedRoles.includes(role)} onChange={() => setAllowedRoles(toggleRole(allowedRoles, role))} />
-                    <span>{role}</span>
-                  </label>
-                ))}
-              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="mt-2 w-full justify-between">
+                    <span>
+                      {allowedRoles.length > 0 ? `${allowedRoles.length} selected` : "Select roles"}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Choose allowed roles</span>
+                    <Button variant="ghost" size="sm" onClick={() => setAllowedRoles([])}>Reset</Button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-1">
+                    {roleOptions.map((role) => (
+                      <label key={role} className="flex items-center gap-2 p-1">
+                        <Checkbox
+                          checked={allowedRoles.includes(role)}
+                          onCheckedChange={(checked) =>
+                            setAllowedRoles((prev) =>
+                              checked
+                                ? [...prev, role]
+                                : prev.filter((r) => r !== role)
+                            )
+                          }
+                        />
+                        <span className="text-sm">{role}</span>
+                      </label>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div>
               <Label>Auto-Redirect Roles</Label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
-                {userRoles.map(role => (
-                  <label key={role} className="flex items-center gap-2 p-2 border rounded">
-                    <input type="checkbox" checked={autoRedirectForRoles.includes(role)} onChange={() => setAutoRedirectForRoles(toggleRole(autoRedirectForRoles, role))} />
-                    <span>{role}</span>
-                  </label>
-                ))}
-              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="mt-2 w-full justify-between">
+                    <span>
+                      {autoRedirectForRoles.length > 0 ? `${autoRedirectForRoles.length} selected` : "Select roles"}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Choose auto-redirect roles</span>
+                    <Button variant="ghost" size="sm" onClick={() => setAutoRedirectForRoles([])}>Reset</Button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-1">
+                    {roleOptions.map((role) => (
+                      <label key={role} className="flex items-center gap-2 p-1">
+                        <Checkbox
+                          checked={autoRedirectForRoles.includes(role)}
+                          onCheckedChange={(checked) =>
+                            setAutoRedirectForRoles((prev) =>
+                              checked
+                                ? [...prev, role]
+                                : prev.filter((r) => r !== role)
+                            )
+                          }
+                        />
+                        <span className="text-sm">{role}</span>
+                      </label>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-3">

@@ -86,18 +86,31 @@ export async function updateUserProfileAction(userId: string, profile: Partial<U
 // Add Actions
 export async function addUserAction(prevState: any, formData: FormData) {
     try {
+        const employeeNoRaw = String(formData.get("employeeNo") || "").trim();
+        if (!employeeNoRaw) {
+            return { message: "Employee No/CPR No is required." };
+        }
+
+        const { getAdminDb } = await import('@/lib/firebase/admin');
+        const adb = await getAdminDb();
+
+        // Uniqueness check for employeeNo/CPR
+        const existing = await adb.collection('Users').where('employeeNo', '==', employeeNoRaw).limit(1).get();
+        if (!existing.empty) {
+            return { message: "Employee No/CPR No already exists." };
+        }
+
         const newUser: Omit<User, 'id'> = {
             fullName: formData.get("fullName") as string,
-            employeeNo: formData.get("employeeNo") as string,
+            employeeNo: employeeNoRaw,
             password: formData.get("password") as string, // Note: In a real app, hash this!
             email: formData.get("email") as string,
             department: formData.get("department") as string,
             role: formData.get("role") as UserRole,
         };
-        const { getAdminDb } = await import('@/lib/firebase/admin');
-        const adb = await getAdminDb();
+
         await adb.collection('Users').add(newUser);
-        revalidatePath("/dashboard/settings");
+        try { revalidatePath("/dashboard/settings"); } catch {}
         return { message: "User added successfully." };
     } catch (e: any) {
         return { message: e.message || "Failed to add user." };

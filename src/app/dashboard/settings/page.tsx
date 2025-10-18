@@ -18,56 +18,22 @@ import type { User, Source, ContainerSize, Department, Branch, Role } from "@/li
 import { AdminRoute } from "@/components/AdminRoute";
 import { getFormTemplatesAction } from "@/app/actions";
 import { RoleFormsSettings } from "@/components/role-forms-settings";
+import { ExistingUsersCard } from "@/components/settings-users-table";
 
 async function UsersTable() {
   const users = await getUsers();
   const departments = await getDepartments();
-  const serializableUsers = users.map(makeSerializable);
-  const serializableDepartments = departments.map(makeSerializable);
+  const roles = await getRoles();
+  const serializableUsers = JSON.parse(JSON.stringify(users));
+  const serializableDepartments = JSON.parse(JSON.stringify(departments));
+  const serializableRoles = JSON.parse(JSON.stringify(roles));
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Existing Users</CardTitle>
-      </CardHeader>
-      <CardContent className="max-h-96 overflow-y-auto relative">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Full Name</TableHead>
-              <TableHead>Employee No</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {serializableUsers.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>{user.fullName}</TableCell>
-                <TableCell>{user.employeeNo}</TableCell>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>{user.department}</TableCell>
-                <TableCell>{user.role}</TableCell>
-                <TableCell className="text-right flex justify-end gap-2">
-                    <UserEditForm user={user} departments={serializableDepartments} />
-                    <DeleteConfirmationDialog
-                      title="Delete User"
-                      description={`Are you sure you want to delete ${user.fullName}? This action cannot be undone.`}
-                      itemId={user.id}
-                      deleteAction={deleteUserAction}
-                    />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {/* Bottom scroll indicator */}
-        <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-background/80 to-transparent pointer-events-none flex items-end justify-center pb-1">
-          <div className="w-8 h-1 bg-muted-foreground/30 rounded-full"></div>
-        </div>
-      </CardContent>
-    </Card>
+    <ExistingUsersCard
+      users={serializableUsers}
+      departments={serializableDepartments}
+      roles={serializableRoles}
+    />
   );
 }
 
@@ -275,8 +241,10 @@ async function RolesTable() {
 export default async function SettingsPage() {
   const departments = await getDepartments();
   const branches = await getBranches();
+  const roles = await getRoles();
   const serializableDepartments = departments.map(makeSerializable);
   const serializableBranches = branches.map(makeSerializable);
+  const serializableRoles = roles.map(makeSerializable);
   const formsResult = await getFormTemplatesAction();
   const initialTemplates = formsResult.success && formsResult.data ? formsResult.data.map(makeSerializable) : [];
 
@@ -297,7 +265,7 @@ export default async function SettingsPage() {
             </TabsList>
             <TabsContent value="users">
               <div className="grid lg:grid-cols-2 gap-6">
-                  <UserForm departments={serializableDepartments} />
+                  <UserForm departments={serializableDepartments} roles={serializableRoles} />
                   <UsersTable />
               </div>
             </TabsContent>
@@ -326,7 +294,7 @@ export default async function SettingsPage() {
               </div>
             </TabsContent>
             <TabsContent value="role-forms">
-              <RoleFormsSettings initialTemplates={initialTemplates} />
+              <RoleFormsSettings initialTemplates={initialTemplates} roles={serializableRoles} />
             </TabsContent>
             <TabsContent value="roles">
               <div className="grid lg:grid-cols-2 gap-6">

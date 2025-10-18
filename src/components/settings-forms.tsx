@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Department, Branch, userRoles } from "@/lib/types";
+import { Department, Branch, Role, userRoles } from "@/lib/types";
 import { useEffect, useRef, useActionState, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -19,10 +19,15 @@ function SubmitButton({ text = "Save" }: { text?: string }) {
     );
 }
 
-export function UserForm({ departments }: { departments: Department[] }) {
+export function UserForm({ departments, roles }: { departments: Department[]; roles: Role[] }) {
     const [state, formAction] = useActionState(addUserAction, { message: "" });
     const formRef = useRef<HTMLFormElement>(null);
+    const employeeNoRef = useRef<HTMLInputElement>(null);
+    const passwordRef = useRef<HTMLInputElement>(null);
     const { toast } = useToast();
+
+    // Derive role options from dynamic roles with fallback to static roles
+    const roleOptions = (roles && roles.length > 0) ? roles.map(r => r.name) : userRoles;
 
     useEffect(() => {
         if (state?.message) {
@@ -31,6 +36,8 @@ export function UserForm({ departments }: { departments: Department[] }) {
                 formRef.current?.reset();
             } else {
                  toast({ title: "Error", description: state.message, variant: "destructive" });
+                 if (employeeNoRef.current) employeeNoRef.current.value = "";
+                 if (passwordRef.current) passwordRef.current.value = "";
             }
         }
     }, [state, toast]);
@@ -49,11 +56,11 @@ export function UserForm({ departments }: { departments: Department[] }) {
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="employeeNo">Employee No/CPR No</Label>
-                        <Input id="employeeNo" name="employeeNo" type="number" required />
+                        <Input id="employeeNo" name="employeeNo" type="number" required autoComplete="off" ref={employeeNoRef} />
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="password">Password</Label>
-                        <Input id="password" name="password" type="password" required />
+                        <Input id="password" name="password" type="password" required autoComplete="new-password" ref={passwordRef} />
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="email">Email ID (Optional)</Label>
@@ -77,7 +84,7 @@ export function UserForm({ departments }: { departments: Department[] }) {
                                 <SelectValue placeholder="Select a role" />
                             </SelectTrigger>
                             <SelectContent>
-                                {userRoles.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}
+                                {roleOptions.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}
                             </SelectContent>
                         </Select>
                     </div>
