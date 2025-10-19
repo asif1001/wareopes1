@@ -248,40 +248,73 @@ export async function getClearedContainerSummary(): Promise<ClearedContainerSumm
 
 
 export async function isInvoiceUnique(invoice: string, currentId?: string): Promise<boolean> {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const q = await adb.collection('shipments').where('invoice', '==', invoice.toUpperCase()).get();
+        if (q.empty) return true;
+        if (currentId) return q.docs.every((d: any) => d.id === currentId);
+        return false;
+    }
     const shipmentsCol = collection(db, 'shipments');
     const q = query(shipmentsCol, where('invoice', '==', invoice.toUpperCase()));
     const snapshot = await getDocs(q);
-    if (snapshot.empty) {
-        return true;
-    }
-    // If we're editing, we need to make sure the found invoice is not the one we're currently editing
-    if (currentId) {
-        return snapshot.docs.every(doc => doc.id === currentId);
-    }
+    if (snapshot.empty) return true;
+    if (currentId) return snapshot.docs.every(doc => doc.id === currentId);
     return false;
 }
 
 export async function addShipment(shipment: Omit<Shipment, 'id' | 'createdAt' | 'updatedAt' | 'bookings'>) {
-    const shipmentData: any = {
+    const baseData: any = {
         ...shipment,
         invoice: shipment.invoice.toUpperCase(),
         billOfLading: shipment.billOfLading.toUpperCase(),
         source: shipment.source.toUpperCase(),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
     };
+    const serverData: any = { ...baseData, createdAt: new Date(), updatedAt: new Date() };
+    const clientData: any = { ...baseData, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
     if (shipment.cleared && shipment.actualClearedDate) {
-        shipmentData.monthYear = format(shipment.actualClearedDate, 'MMM yy');
+        const m = format(shipment.actualClearedDate, 'MMM yy');
+        serverData.monthYear = m;
+        clientData.monthYear = m;
     }
-    await addDoc(collection(db, 'shipments'), shipmentData);
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        await adb.collection('shipments').add(serverData);
+        return;
+    }
+    await addDoc(collection(db, 'shipments'), clientData);
 }
 
 export async function bulkAddShipments(shipments: Omit<Shipment, 'id' | 'createdAt' | 'updatedAt' | 'bookings'>[]) {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const batch = adb.batch();
+        const shipmentsCol = adb.collection('shipments');
+        for (const shipment of shipments) {
+            const shipmentData: any = {
+                ...shipment,
+                invoice: shipment.invoice.toUpperCase(),
+                billOfLading: shipment.billOfLading.toUpperCase(),
+                source: shipment.source.toUpperCase(),
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            };
+            if (shipment.cleared && shipment.actualClearedDate) {
+                shipmentData.monthYear = format(shipment.actualClearedDate, 'MMM yy');
+            }
+            const newDocRef = shipmentsCol.doc();
+            batch.set(newDocRef, shipmentData);
+        }
+        await batch.commit();
+        return;
+    }
     const batch = writeBatch(db);
     const shipmentsCol = collection(db, 'shipments');
-
     for (const shipment of shipments) {
-         const shipmentData: any = {
+        const shipmentData: any = {
             ...shipment,
             invoice: shipment.invoice.toUpperCase(),
             billOfLading: shipment.billOfLading.toUpperCase(),
@@ -300,25 +333,44 @@ export async function bulkAddShipments(shipments: Omit<Shipment, 'id' | 'created
 
 
 export async function updateShipment(id: string, shipment: Partial<Omit<Shipment, 'id' | 'createdAt' | 'updatedAt' | 'bookings'>>) {
-    const shipmentData: any = {
+    const baseUpdate: any = {
         ...shipment,
         ...(shipment.invoice && { invoice: shipment.invoice.toUpperCase() }),
         ...(shipment.billOfLading && { billOfLading: shipment.billOfLading.toUpperCase() }),
         ...(shipment.source && { source: shipment.source.toUpperCase() }),
-        updatedAt: serverTimestamp(),
     };
-
     if (shipment.cleared && shipment.actualClearedDate) {
-        shipmentData.monthYear = format(shipment.actualClearedDate, 'MMM yy');
+        baseUpdate.monthYear = format(shipment.actualClearedDate, 'MMM yy');
     } else if (shipment.cleared === false) {
-        shipmentData.monthYear = null;
+        baseUpdate.monthYear = null;
     }
-
-    await updateDoc(doc(db, 'shipments', id), shipmentData);
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        await adb.collection('shipments').doc(id).update({
+            ...baseUpdate,
+            updatedAt: new Date(),
+        });
+        return;
+    }
+    await updateDoc(doc(db, 'shipments', id), { ...baseUpdate, updatedAt: serverTimestamp() });
 }
 
 export async function updateShipmentBookings(id: string, bookings: ContainerBooking[]) {
     const clearedDate = new Date();
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        await adb.collection('shipments').doc(id).update({
+            bookings,
+            cleared: true,
+            actualClearedDate: clearedDate,
+            actualBahrainEta: clearedDate,
+            monthYear: format(clearedDate, 'MMM yy'),
+            updatedAt: new Date(),
+        });
+        return;
+    }
     await updateDoc(doc(db, 'shipments', id), {
         bookings,
         cleared: true,
@@ -330,6 +382,15 @@ export async function updateShipmentBookings(id: string, bookings: ContainerBook
 }
 
 export async function updateShipmentBookingsOnly(id: string, bookings: ContainerBooking[]) {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        await adb.collection('shipments').doc(id).update({
+            bookings,
+            updatedAt: new Date(),
+        });
+        return;
+    }
     await updateDoc(doc(db, 'shipments', id), {
         bookings,
         updatedAt: serverTimestamp(),
@@ -337,6 +398,12 @@ export async function updateShipmentBookingsOnly(id: string, bookings: Container
 }
 
 export async function deleteShipment(id: string) {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        await adb.collection('shipments').doc(id).delete();
+        return;
+    }
     await deleteDoc(doc(db, 'shipments', id));
 }
 
