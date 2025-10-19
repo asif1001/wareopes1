@@ -15,6 +15,7 @@ import { Ship, CalendarIcon, Loader2, AlertCircle } from "lucide-react";
 import type { SerializableShipment } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useRouter } from "next/navigation";
 
 type BookingFormData = {
     bookings: {
@@ -67,6 +68,7 @@ export function ContainerBookingModal({ shipment }: { shipment: SerializableShip
     const [submitError, setSubmitError] = useState<string | null>(null);
     const { toast } = useToast();
     const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+    const router = useRouter();
 
     const expanded = expandContainers(shipment);
     
@@ -136,6 +138,7 @@ export function ContainerBookingModal({ shipment }: { shipment: SerializableShip
             const result = await response.json();
             toast({ title: "Container bookings saved successfully!" });
             setOpen(false);
+            router.refresh();
         } catch (error) {
             setSubmitError(error instanceof Error ? error.message : 'An unexpected error occurred');
         } finally {
