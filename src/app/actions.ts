@@ -576,6 +576,7 @@ export async function bulkAddShipmentsAction(prevState: any, formData: FormData)
                 containers: data.containers, // Ensure containers is always present
                 numContainers: data.containers.reduce((acc: number, c: any) => acc + c.quantity, 0),
                 totalLines: data.domLines + data.bulkLines,
+                status: 'Not Arrived' as const, // Add default status for bulk imports
                 createdBy: "bulk-import",
                 updatedBy: "bulk-import",
             });

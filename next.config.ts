@@ -2,10 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   typescript: {
-    ignoreBuildErrors: true,
+    // Only ignore build errors in development
+    ignoreBuildErrors: process.env.NODE_ENV === 'development',
   },
   eslint: {
-    ignoreDuringBuilds: true,
+    // Only ignore during builds in development
+    ignoreDuringBuilds: process.env.NODE_ENV === 'development',
   },
   images: {
     remotePatterns: [
@@ -23,18 +25,22 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Remove localhost-specific headers for production
   async headers() {
-    return [
-      {
-        source: '/dashboard/:path*',
-        headers: [
-          {
-            key: 'x-forwarded-host',
-            value: 'localhost:3001',
-          },
-        ],
-      },
-    ];
+    if (process.env.NODE_ENV === 'development') {
+      return [
+        {
+          source: '/dashboard/:path*',
+          headers: [
+            {
+              key: 'x-forwarded-host',
+              value: 'localhost:3001',
+            },
+          ],
+        },
+      ];
+    }
+    return [];
   },
 };
 
