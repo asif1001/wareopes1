@@ -30,6 +30,9 @@ function docToShipment(doc: any): SerializableShipment {
       billOfLading: data.billOfLading,
       numContainers: data.numContainers,
       containers: data.containers,
+      // Status & Branch
+      status: (data.status as any) || 'Not Arrived',
+      branch: data.branch || undefined,
       bahrainEta: toISOString(data.bahrainEta)!,
       originalDocumentReceiptDate: toISOString(data.originalDocumentReceiptDate) || null,
       actualBahrainEta: toISOString(data.actualBahrainEta) || null,
@@ -364,6 +367,7 @@ export async function updateShipmentBookings(id: string, bookings: ContainerBook
         await adb.collection('shipments').doc(id).update({
             bookings,
             cleared: true,
+            status: 'Arrived',
             actualClearedDate: clearedDate,
             actualBahrainEta: clearedDate,
             monthYear: format(clearedDate, 'MMM yy'),
@@ -374,6 +378,7 @@ export async function updateShipmentBookings(id: string, bookings: ContainerBook
     await updateDoc(doc(db, 'shipments', id), {
         bookings,
         cleared: true,
+        status: 'Arrived',
         actualClearedDate: clearedDate,
         actualBahrainEta: clearedDate,
         monthYear: format(clearedDate, 'MMM yy'),

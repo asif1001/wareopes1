@@ -19,12 +19,15 @@ const shipmentSchema = z.object({
     lastStorageDay: z.string().optional().nullable(),
     whEtaRequestedByParts: z.string().optional().nullable(),
     whEtaConfirmedByLogistics: z.string().optional().nullable(),
+    // Status & Branch
+    status: z.enum(['Not Arrived','Arrived','WIP','Completed']).default('Not Arrived'),
+    branch: z.string().optional(),
     cleared: z.string().transform(val => val === 'true'),
     actualClearedDate: z.string().optional().nullable(),
     totalCases: z.coerce.number().int().min(0, "Total Cases must be a non-negative number."),
     domLines: z.coerce.number().int().min(0, "DOM Lines must be a non-negative number."),
     bulkLines: z.coerce.number().int().min(0, "Bulk Lines must be a non-negative number."),
-    generalRemark: z.string().min(1, "General Remark is required"),
+    generalRemark: z.string().optional().default(''),
     remark: z.string().optional(),
 }).refine(data => {
     if (data.cleared && !data.actualClearedDate) {
@@ -80,6 +83,11 @@ export async function saveShipmentAction(
             createdBy: "current-user",
             updatedBy: "current-user",
         };
+
+        // Automatically set status to Arrived only on initial assignment
+        if (shipmentData.cleared && (shipmentData.status === 'Not Arrived' || !shipmentData.status)) {
+            shipmentData.status = 'Arrived';
+        }
 
         if (shipmentId) {
             await updateShipment(shipmentId, shipmentData);

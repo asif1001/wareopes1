@@ -21,31 +21,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PlusCircle, Edit, CalendarIcon, Trash2, Loader2, AlertCircle } from "lucide-react";
-import type { SerializableShipment, Source, ContainerSize } from "@/lib/types";
+import type { SerializableShipment, Source, ContainerSize, Branch, ShipmentStatus } from "@/lib/types";
 import { saveShipmentAction, deleteShipmentAction } from "@/app/dashboard/shipments/actions";
 import { cn } from "@/lib/utils";
 import { useFormStatus } from "react-dom";
 
-type ShipmentFormData = {
-    id?: string;
-    source: string;
-    invoice: string;
-    billOfLading: string;
-    containers: { id: string; size: string; quantity: number }[];
-    bahrainEta?: Date;
-    originalDocumentReceiptDate?: Date | null;
-    actualBahrainEta?: Date | null;
-    lastStorageDay?: Date | null;
-    whEtaRequestedByParts?: Date | null;
-    whEtaConfirmedByLogistics?: Date | null;
-    cleared: boolean;
-    actualClearedDate?: Date | null;
-    totalCases: number | '';
-    domLines: number | '';
-    bulkLines: number | '';
-    generalRemark: string;
-    remark?: string;
-}
 
 function DatePickerField({ name, control, label, required }: { name: any, control: any, label: string, required?: boolean }) {
     const [open, setOpen] = useState(false);
@@ -113,6 +93,8 @@ const parseShipmentData = (shipment?: SerializableShipment): ShipmentFormData | 
         bulkLines: shipment.bulkLines,
         generalRemark: shipment.generalRemark,
         remark: shipment.remark || '',
+        status: shipment.status,
+        branch: shipment.branch || '',
     };
 }
 
@@ -172,12 +154,13 @@ function DeleteButton({ shipmentId, onDeleted }: { shipmentId: string, onDeleted
 
 
 export function ShipmentForm({
-    shipment, isEditMode = false, sources, containerSizes
+    shipment, isEditMode = false, sources, containerSizes, branches
 }: {
     shipment?: SerializableShipment;
     isEditMode?: boolean;
     sources: Source[];
     containerSizes: ContainerSize[];
+    branches: Branch[];
 }) {
     const [open, setOpen] = useState(false);
     const [actionState, formAction] = useActionState(saveShipmentAction, { success: false, error: null });
@@ -190,11 +173,13 @@ export function ShipmentForm({
             billOfLading: '',
             containers: [{ id: '1', size: "40ft", quantity: 1 }],
             cleared: false,
-            totalCases: '',
-            domLines: '',
-            bulkLines: '',
+            totalCases: 0,
+            domLines: 0,
+            bulkLines: 0,
             generalRemark: '',
             remark: '',
+            status: 'Not Arrived',
+            branch: '',
         },
     });
 
@@ -209,6 +194,7 @@ export function ShipmentForm({
     const watchBulkLines = form.watch("bulkLines", 0);
     const totalLines = (Number(watchDomLines) || 0) + (Number(watchBulkLines) || 0);
     const watchCleared = form.watch("cleared");
+    const watchStatus = form.watch("status");
 
     useEffect(() => {
         if (actionState.success) {
@@ -221,6 +207,13 @@ export function ShipmentForm({
         }
     }, [actionState, isEditMode, toast, form]);
 
+    // Auto-set status to Arrived only if current status is Not Arrived
+    useEffect(() => {
+        if (watchCleared && watchStatus === 'Not Arrived') {
+            form.setValue('status', 'Arrived');
+        }
+    }, [watchCleared, watchStatus, form]);
+
      useEffect(() => {
         if (open) {
             actionState.error = null;
@@ -231,11 +224,13 @@ export function ShipmentForm({
                 billOfLading: '',
                 containers: [{ id: '1', size: "40ft", quantity: 1 }],
                 cleared: false,
-                totalCases: '',
-                domLines: '',
-                bulkLines: '',
+                totalCases: 0,
+                domLines: 0,
+                bulkLines: 0,
                 generalRemark: '',
                 remark: '',
+                status: 'Not Arrived',
+                branch: '',
             };
             form.reset(defaultValues);
         }
@@ -255,10 +250,10 @@ export function ShipmentForm({
                 {isEditMode ? (
                     <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
                 ) : (
-                    <Button size="sm" className="h-8 gap-1">
-                        <PlusCircle className="h-3.5 w-3.5" />
-                        <span className="sr-only sm:not-sr-only sm:whitespace-rap">
-                            Add Shipment
+                    <Button variant="default" size="lg" className="gap-2 rounded-lg shadow-sm hover:shadow-md">
+                        <PlusCircle className="h-5 w-5" />
+                        <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
+                            Create Shipment
                         </span>
                     </Button>
                 )}
@@ -293,6 +288,10 @@ export function ShipmentForm({
                     <input type="hidden" name="whEtaConfirmedByLogistics" value={getISODateString(form.watch('whEtaConfirmedByLogistics'))} />
                     <input type="hidden" name="actualClearedDate" value={getISODateString(form.watch('actualClearedDate'))} />
 
+                    <input type="hidden" name="source" value={form.watch('source') || ''} />
+                    <input type="hidden" name="status" value={form.watch('status') || 'Not Arrived'} />
+                    <input type="hidden" name="branch" value={form.watch('branch') || ''} />
+
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
                         <div className="space-y-4">
@@ -310,6 +309,7 @@ export function ShipmentForm({
                                             </Select>
                                         )} />
                                     </div>
+
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-2">
                                             <Label htmlFor="invoice">Invoice*</Label>
@@ -358,15 +358,15 @@ export function ShipmentForm({
                                 <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="totalCases">Total Cases*</Label>
-                                        <Input id="totalCases" type="number" {...form.register("totalCases")} />
+                                        <Input id="totalCases" type="number" {...form.register("totalCases", { valueAsNumber: true })} />
                                     </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="domLines">DOM Lines*</Label>
-                                        <Input id="domLines" type="number" {...form.register("domLines")} />
+                                        <Input id="domLines" type="number" {...form.register("domLines", { valueAsNumber: true })} />
                                     </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="bulkLines">Bulk Lines*</Label>
-                                        <Input id="bulkLines" type="number" {...form.register("bulkLines")} />
+                                        <Input id="bulkLines" type="number" {...form.register("bulkLines", { valueAsNumber: true })} />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Total Lines</Label>
@@ -393,6 +393,33 @@ export function ShipmentForm({
                                                 <SelectContent>
                                                     <SelectItem value="true">Yes</SelectItem>
                                                     <SelectItem value="false">No</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        )} />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label>Status*</Label>
+                                        <Controller name="status" control={form.control} render={({ field }) => (
+                                            <Select onValueChange={field.onChange} defaultValue={field.value} name={field.name}>
+                                                <SelectTrigger><SelectValue placeholder="Select a status" /></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="Not Arrived">Not Arrived</SelectItem>
+                                                    <SelectItem value="Arrived">Arrived</SelectItem>
+                                                    <SelectItem value="WIP">WIP</SelectItem>
+                                                    <SelectItem value="Completed">Completed</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        )} />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="branch">Branch</Label>
+                                        <Controller name="branch" control={form.control} render={({ field }) => (
+                                            <Select onValueChange={field.onChange} defaultValue={field.value} name={field.name}>
+                                                <SelectTrigger><SelectValue placeholder="Select a branch" /></SelectTrigger>
+                                                <SelectContent>
+                                                    {branches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name} ({b.code})</SelectItem>)}
                                                 </SelectContent>
                                             </Select>
                                         )} />
@@ -431,3 +458,26 @@ export function ShipmentForm({
         </Dialog>
     );
 }
+
+export type ShipmentFormData = {
+  id?: string;
+  source: string;
+  invoice: string;
+  billOfLading: string;
+  containers: { id: string; size: string; quantity: number }[];
+  bahrainEta?: Date;
+  originalDocumentReceiptDate?: Date | null;
+  actualBahrainEta?: Date | null;
+  lastStorageDay?: Date | null;
+  whEtaRequestedByParts?: Date | null;
+  whEtaConfirmedByLogistics?: Date | null;
+  cleared: boolean;
+  actualClearedDate?: Date | null;
+  totalCases: number;
+  domLines: number;
+  bulkLines: number;
+  generalRemark: string;
+  remark: string;
+  status: ShipmentStatus;
+  branch?: string;
+};

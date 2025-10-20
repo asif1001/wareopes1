@@ -16,6 +16,8 @@ export type Container = {
   quantity: number; // e.g., 2
 };
 
+export type ShipmentStatus = 'Not Arrived' | 'Arrived' | 'WIP' | 'Completed';
+
 export type ContainerBooking = {
     containerNo: string;
     bookingDate: Date;
@@ -27,6 +29,9 @@ export type Shipment = {
     source: string; // from sources collection
     invoice: string;
     billOfLading: string;
+    // Status & Branch
+    status: ShipmentStatus;
+    branch?: string;
     // Containers
     numContainers: number;
     containers: Container[];

@@ -6,7 +6,7 @@ import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { QueryProvider } from '@/components/providers/QueryProvider';
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'WAREOPS',

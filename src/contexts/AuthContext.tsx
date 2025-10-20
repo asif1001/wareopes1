@@ -53,7 +53,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         // Ensure Firebase Auth is signed in (anonymous is fine for Firestore rules)
         const auth = getAuth(app);
-        if (!auth.currentUser) {
+        const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+        const shouldInitAnonymousAuth = pathname.startsWith('/dashboard');
+
+        if (!auth.currentUser && shouldInitAnonymousAuth) {
           try {
             await signInAnonymously(auth);
           } catch (e) {
@@ -80,9 +83,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Add a small delay to prevent race conditions
-    const timeoutId = setTimeout(checkSession, 100);
-    return () => clearTimeout(timeoutId);
+    // Run immediately; remove artificial delay to improve first paint
+    checkSession();
   }, []);
 
   const login = async (employeeNo: string, password: string): Promise<{ success: boolean; user?: User; error?: string }> => {

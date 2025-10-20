@@ -40,8 +40,9 @@ import { ShipmentForm } from "@/components/shipment-form";
 import { format, differenceInDays, startOfDay } from "date-fns";
 import { ContainerBookingModal } from "@/components/container-booking-modal";
 import { cn } from "@/lib/utils";
-import type { SerializableShipment, Source, ContainerSize } from "@/lib/types";
-import { ExportDialog } from "@/components/export-dialog";
+import type { SerializableShipment, Source, ContainerSize, Branch } from "@/lib/types";
+
+// Export option removed from toolbar
 
 const getDateColorClass = (dateString: string | null, today: Date) => {
   if (!dateString) {
@@ -69,7 +70,7 @@ const getDateColorClass = (dateString: string | null, today: Date) => {
   return "";
 };
 
-function ShipmentTable({ shipments, sources, containerSizes, today }: { shipments: SerializableShipment[], sources: any[], containerSizes: any[], today: Date }) {
+function ShipmentTable({ shipments, sources, containerSizes, today, branches }: { shipments: SerializableShipment[], sources: any[], containerSizes: any[], today: Date, branches: Branch[] }) {
     if (shipments.length === 0) {
         return <div className="text-center p-8 text-muted-foreground">No shipments found.</div>
     }
@@ -107,6 +108,7 @@ function ShipmentTable({ shipments, sources, containerSizes, today }: { shipment
                                 shipment={shipment}
                                 sources={sources}
                                 containerSizes={containerSizes}
+                                branches={branches}
                                 isEditMode={true}
                             />
                         </TableCell>
@@ -121,10 +123,12 @@ export function ShipmentsClientPage({
     shipments,
     sources,
     containerSizes,
+    branches,
 }: {
     shipments: SerializableShipment[];
     sources: Source[];
     containerSizes: ContainerSize[];
+    branches: Branch[];
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
@@ -151,6 +155,8 @@ export function ShipmentsClientPage({
   
   const clearedShipments = filteredShipments.filter(s => s.cleared);
   const notClearedShipments = filteredShipments.filter(s => !s.cleared);
+  const wipShipments = filteredShipments.filter(s => s.status === 'WIP');
+  const completedShipments = filteredShipments.filter(s => s.status === 'Completed');
 
   if (!today) {
     return null; // or a loading skeleton
@@ -166,8 +172,10 @@ export function ShipmentsClientPage({
               <TabsTrigger value="all">All ({filteredShipments.length})</TabsTrigger>
               <TabsTrigger value="cleared">Cleared ({clearedShipments.length})</TabsTrigger>
               <TabsTrigger value="not-cleared">Not Cleared ({notClearedShipments.length})</TabsTrigger>
+              <TabsTrigger value="wip">WIP ({wipShipments.length})</TabsTrigger>
+              <TabsTrigger value="completed">Completed ({completedShipments.length})</TabsTrigger>
             </TabsList>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-3">
               <div className="relative">
                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                  <Input
@@ -200,8 +208,7 @@ export function ShipmentsClientPage({
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <ExportDialog />
-              <ShipmentForm sources={sources} containerSizes={containerSizes} />
+              <ShipmentForm sources={sources} containerSizes={containerSizes} branches={branches} />
             </div>
           </div>
           <TabsContent value="all">
@@ -213,7 +220,7 @@ export function ShipmentsClientPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ShipmentTable shipments={filteredShipments} sources={sources} containerSizes={containerSizes} today={today} />
+                <ShipmentTable shipments={filteredShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -226,7 +233,7 @@ export function ShipmentsClientPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                 <ShipmentTable shipments={clearedShipments} sources={sources} containerSizes={containerSizes} today={today} />
+                 <ShipmentTable shipments={clearedShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -239,7 +246,33 @@ export function ShipmentsClientPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                 <ShipmentTable shipments={notClearedShipments} sources={sources} containerSizes={containerSizes} today={today} />
+                 <ShipmentTable shipments={notClearedShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="wip">
+            <Card>
+              <CardHeader>
+                <CardTitle>WIP Shipments</CardTitle>
+                <CardDescription>
+                  Shipments currently in Work In Progress.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                 <ShipmentTable shipments={wipShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="completed">
+            <Card>
+              <CardHeader>
+                <CardTitle>Completed Shipments</CardTitle>
+                <CardDescription>
+                  Shipments with status Completed.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                 <ShipmentTable shipments={completedShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
               </CardContent>
             </Card>
           </TabsContent>

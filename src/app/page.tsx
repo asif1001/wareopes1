@@ -9,127 +9,130 @@ import { useState, useEffect } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { getRoleDashboardRoute } from '@/lib/role-utils';
 
 export default function LoginPage() {
-    const [employeeNo, setEmployeeNo] = useState('');
-    const [password, setPassword] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState('');
-    
-    const router = useRouter();
-    const { login, user } = useAuth();
+  const [employeeNo, setEmployeeNo] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState('');
 
-    // Redirect if already logged in
-    useEffect(() => {
-        if (user) {
-            router.replace('/forms/auto');
-        }
-    }, [user, router]);
+  const router = useRouter();
+  const { login, user } = useAuth();
 
-    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        setIsLoading(true);
-        setError('');
-        setSuccess('');
+  // Redirect if already logged in with role-based routing
+  useEffect(() => {
+    if (user) {
+      const dashboardRoute = getRoleDashboardRoute(user.role);
+      router.replace(dashboardRoute);
+    }
+  }, [user, router]);
 
-        try {
-            const result = await login(employeeNo, password);
-            if (result.success) {
-                setSuccess('Login successful! Redirecting...');
-                router.replace('/forms/auto');
-            } else {
-                setError(result.error || 'Login failed');
-            }
-        } catch (err) {
-            setError('An unexpected error occurred');
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
 
-    return (
-        <div className="w-full lg:grid lg:min-h-screen lg:grid-cols-2 xl:min-h-screen">
-            <div className="flex items-center justify-center py-12">
-                <div className="mx-auto grid w-[350px] gap-6">
-                    <div className="grid gap-2 text-center">
-                        <div className="flex items-center justify-center gap-2 mb-4">
-                            <Boxes className="h-8 w-8 text-primary" />
-                            <h1 className="text-3xl font-bold font-headline">WAREOPS</h1>
-                        </div>
-                        <p className="text-balance text-muted-foreground">
-                            Enter your credentials below to login to your account
-                        </p>
-                    </div>
-                    <Card>
-                        <form onSubmit={handleSubmit}>
-                            <CardHeader>
-                                <CardTitle className="text-2xl">Login</CardTitle>
-                                <CardDescription>
-                                    Use your Employee No / CPR No and password to sign in.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {error && (
-                                    <Alert variant="destructive" className="mb-4">
-                                        <AlertCircle className="h-4 w-4" />
-                                        <AlertTitle>Login Failed</AlertTitle>
-                                        <AlertDescription>{error}</AlertDescription>
-                                    </Alert>
-                                )}
-                                {success && (
-                                    <Alert className="mb-4">
-                                        <AlertTitle>Success</AlertTitle>
-                                        <AlertDescription>{success}</AlertDescription>
-                                    </Alert>
-                                )}
-                                <div className="grid gap-4">
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="employeeNo">Employee No / CPR No</Label>
-                                        <Input 
-                                            id="employeeNo" 
-                                            name="employeeNo" 
-                                            placeholder="e.g., 123456789" 
-                                            value={employeeNo}
-                                            onChange={(e) => setEmployeeNo(e.target.value)}
-                                            required 
-                                        />
-                                    </div>
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="password">Password</Label>
-                                        <Input 
-                                            id="password" 
-                                            name="password" 
-                                            type="password" 
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            required 
-                                        />
-                                    </div>
-                                    <Button type="submit" className="w-full" disabled={isLoading}>
-                                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                        Login
-                                    </Button>
-                                </div>
-                            </CardContent>
-                        </form>
-                    </Card>
-                </div>
+    try {
+      const result = await login(employeeNo, password);
+      if (result.success && result.user) {
+        setSuccess('Login successful! Redirecting...');
+        const dashboardRoute = getRoleDashboardRoute(result.user.role);
+        router.replace(dashboardRoute);
+      } else {
+        setError(result.error || 'Login failed');
+      }
+    } catch (err) {
+      setError('An unexpected error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="w-full lg:grid lg:min-h-screen lg:grid-cols-2 xl:min-h-screen">
+      <div className="flex items-center justify-center py-12">
+        <div className="mx-auto grid w-[350px] gap-6">
+          <div className="grid gap-2 text-center">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <Boxes className="h-8 w-8 text-primary" />
+              <h1 className="text-3xl font-bold font-headline">WAREOPS</h1>
             </div>
-            <div className="hidden bg-muted lg:flex items-center justify-center p-8">
-                <div className="relative w-full h-full">
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/30 to-background z-10" />
-                    <Warehouse className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 h-3/4 text-primary/10 z-0" />
-                    <div className="relative z-20 flex flex-col justify-end h-full">
-                        <div className="bg-background/50 backdrop-blur-sm p-6 rounded-lg shadow-xl">
-                            <h2 className="text-3xl font-bold font-headline">Streamline Your Warehouse Operations</h2>
-                            <p className="text-muted-foreground mt-2">
-                                Gain real-time insights, track shipments, and manage tasks with unparalleled efficiency. WAREOPS is the all-in-one solution for modern logistics.
-                            </p>
-                        </div>
-                    </div>
+            <p className="text-balance text-muted-foreground">
+              Enter your credentials below to login to your account
+            </p>
+          </div>
+          <Card>
+            <form onSubmit={handleSubmit}>
+              <CardHeader>
+                <CardTitle className="text-2xl">Login</CardTitle>
+                <CardDescription>
+                  Use your Employee No / CPR No and password to sign in.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {error && (
+                  <Alert variant="destructive" className="mb-4">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Login Failed</AlertTitle>
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+                {success && (
+                  <Alert className="mb-4">
+                    <AlertTitle>Success</AlertTitle>
+                    <AlertDescription>{success}</AlertDescription>
+                  </Alert>
+                )}
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="employeeNo">Employee No / CPR No</Label>
+                    <Input
+                      id="employeeNo"
+                      name="employeeNo"
+                      placeholder="e.g., 123456789"
+                      value={employeeNo}
+                      onChange={(e) => setEmployeeNo(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      id="password"
+                      name="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Login
+                  </Button>
                 </div>
-            </div>
+              </CardContent>
+            </form>
+          </Card>
         </div>
-    );
+      </div>
+      <div className="hidden bg-muted lg:flex items-center justify-center p-8">
+        <div className="relative w-full h-full">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/30 to-background z-10" />
+          <Warehouse className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 h-3/4 text-primary/10 z-0" />
+          <div className="relative z-20 flex flex-col justify-end h-full">
+            <div className="bg-background/50 backdrop-blur-sm p-6 rounded-lg shadow-xl">
+              <h2 className="text-3xl font-bold font-headline">Streamline Your Warehouse Operations</h2>
+              <p className="text-muted-foreground mt-2">
+                Gain real-time insights, track shipments, and manage tasks with unparalleled efficiency. WAREOPS is the all-in-one solution for modern logistics.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

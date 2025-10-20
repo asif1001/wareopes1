@@ -176,28 +176,3 @@ If you encounter any issues or have questions, please open an issue on GitHub.
 ---
 
 Built with ❤️ using Next.js and Firebase
-
-## 🚀 Vercel Deployment
-
-Configure environment variables in your Vercel project settings (Project → Settings → Environment Variables). Add both client and server values:
-
-Client (browser)
-- `NEXT_PUBLIC_FIREBASE_API_KEY`
-- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
-- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-- `NEXT_PUBLIC_FIREBASE_APP_ID`
-- `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` (optional)
-
-Server (Admin SDK)
-- `FIREBASE_ADMIN_CREDENTIALS` — paste the full JSON for a Firebase service account (create from Firebase Console → Project Settings → Service Accounts → Generate new private key). Keep it private.
-
-Notes
-- The app now falls back to `FIREBASE_*` when `NEXT_PUBLIC_FIREBASE_*` are missing, but you should still set the `NEXT_PUBLIC_` variants for clarity.
-- You do not need to upload a credential file; use the JSON string in `FIREBASE_ADMIN_CREDENTIALS`.
-- After saving variables, trigger a redeploy.
-
-Verify
-- Visit `https://<your-vercel-domain>/api/debug-env-lite` to confirm the presence of env vars (returns simple booleans).
-- Test login from the homepage using your employee number and password.

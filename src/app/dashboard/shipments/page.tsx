@@ -1,20 +1,33 @@
 
-import { getShipments, getSources, getContainerSizes } from "@/lib/firebase/firestore";
+import { getShipments, getSources, getContainerSizes, getBranches } from "@/lib/firebase/firestore";
 import { ShipmentsClientPage } from "@/components/shipments-client-page";
 import { Suspense } from "react";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { Skeleton } from "@/components/ui/skeleton";
 
 async function Shipments() {
+  console.time('getShipments');
   const shipments = await getShipments();
+  console.timeEnd('getShipments');
+
+  console.time('getSources');
   const sources = await getSources();
+  console.timeEnd('getSources');
+
+  console.time('getContainerSizes');
   const containerSizes = await getContainerSizes();
+  console.timeEnd('getContainerSizes');
+
+  console.time('getBranches');
+  const branches = await getBranches();
+  console.timeEnd('getBranches');
   
   return (
     <ShipmentsClientPage
         shipments={shipments}
         sources={sources}
         containerSizes={containerSizes}
+        branches={branches}
     />
   );
 }
