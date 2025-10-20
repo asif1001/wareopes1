@@ -13,6 +13,24 @@ import path from 'path';
  * Use Admin for server-only code paths (API routes, server components) to bypass Firestore rules
  * and keep sensitive operations off the client.
  */
+
+// Retry configuration for connection issues
+const MAX_RETRIES = 3;
+const INITIAL_DELAY = 1000; // 1 second
+const MAX_DELAY = 5000; // 5 seconds
+
+// Exponential backoff with jitter
+function getRetryDelay(attempt: number): number {
+  const baseDelay = Math.min(INITIAL_DELAY * Math.pow(2, attempt), MAX_DELAY);
+  const jitter = Math.random() * 0.1 * baseDelay; // 10% jitter
+  return baseDelay + jitter;
+}
+
+// Sleep utility
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export async function getAdminDb() {
   // First, if an app already exists, return its Firestore instance.
   try {
@@ -27,51 +45,81 @@ export async function getAdminDb() {
         // Prefer explicit JSON from env
         const envProjectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
         const credsJson = process.env.FIREBASE_ADMIN_CREDENTIALS;
-        if (credsJson) {
+        
+        let lastError: any;
+        
+        // Retry initialization with exponential backoff
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
           try {
-            const serviceAccount = JSON.parse(credsJson);
-            initializeApp({
-              credential: cert(serviceAccount),
-              projectId: (serviceAccount.project_id as string) || envProjectId,
-            });
-            return;
-          } catch (e) {
-            // Fall through to file-based credentials
-            console.warn('FIREBASE_ADMIN_CREDENTIALS parse failed, attempting file-based credentials.');
-          }
-        }
-
-        // Next, try GOOGLE_APPLICATION_CREDENTIALS or a local serviceAccount.json file
-        const credsPathEnv = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-        const candidatePaths = [
-          credsPathEnv ? path.resolve(process.cwd(), credsPathEnv) : '',
-          path.resolve(process.cwd(), 'serviceAccount.json'),
-        ].filter(Boolean);
-
-        for (const p of candidatePaths) {
-          try {
-            if (p && fs.existsSync(p)) {
-              const raw = fs.readFileSync(p, 'utf-8');
-              const serviceAccount = JSON.parse(raw);
-              initializeApp({
-                credential: cert(serviceAccount),
-                projectId: (serviceAccount.project_id as string) || envProjectId,
-              });
-              return;
+            if (credsJson) {
+              try {
+                const serviceAccount = JSON.parse(credsJson);
+                initializeApp({
+                  credential: cert(serviceAccount),
+                  projectId: (serviceAccount.project_id as string) || envProjectId,
+                });
+                return;
+              } catch (e) {
+                // Fall through to file-based credentials
+                console.warn('FIREBASE_ADMIN_CREDENTIALS parse failed, attempting file-based credentials.');
+              }
             }
-          } catch (e) {
-            // Try next candidate path
+
+            // Next, try GOOGLE_APPLICATION_CREDENTIALS or a local serviceAccount.json file
+            const credsPathEnv = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+            const candidatePaths = [
+              credsPathEnv ? path.resolve(process.cwd(), credsPathEnv) : '',
+              path.resolve(process.cwd(), 'serviceAccount.json'),
+            ].filter(Boolean);
+
+            for (const p of candidatePaths) {
+              try {
+                if (p && fs.existsSync(p)) {
+                  const raw = fs.readFileSync(p, 'utf-8');
+                  const serviceAccount = JSON.parse(raw);
+                  initializeApp({
+                    credential: cert(serviceAccount),
+                    projectId: (serviceAccount.project_id as string) || envProjectId,
+                  });
+                  return;
+                }
+              } catch (e) {
+                // Try next candidate path
+              }
+            }
+
+            // If file lookups failed, do not attempt static JSON import.
+            // Rely on FIREBASE_ADMIN_CREDENTIALS or ADC in production environments.
+
+            // Finally, fall back to ADC if available in environment
+            initializeApp({
+              credential: applicationDefault(),
+              projectId: envProjectId,
+            });
+            return; // Success, exit retry loop
+            
+          } catch (error: any) {
+            lastError = error;
+            
+            // Check if it's a connection/DNS error that might benefit from retry
+            const isRetryableError = error.message?.includes('UNAVAILABLE') || 
+                                   error.message?.includes('Name resolution failed') ||
+                                   error.message?.includes('ENOTFOUND') ||
+                                   error.message?.includes('ECONNREFUSED') ||
+                                   error.code === 14; // gRPC UNAVAILABLE
+            
+            if (!isRetryableError || attempt === MAX_RETRIES - 1) {
+              throw error; // Don't retry non-connection errors or if max retries reached
+            }
+            
+            const delay = getRetryDelay(attempt);
+            console.warn(`Firebase Admin initialization failed (attempt ${attempt + 1}/${MAX_RETRIES}), retrying in ${Math.round(delay)}ms:`, error.message);
+            await sleep(delay);
           }
         }
-
-        // If file lookups failed, do not attempt static JSON import.
-        // Rely on FIREBASE_ADMIN_CREDENTIALS or ADC in production environments.
-
-        // Finally, fall back to ADC if available in environment
-        initializeApp({
-          credential: applicationDefault(),
-          projectId: envProjectId,
-        });
+        
+        // If we get here, all retries failed
+        throw lastError;
       })();
     }
 
@@ -79,8 +127,8 @@ export async function getAdminDb() {
       // Wait for the initialization promise to settle. If initializeApp
       // threw because an app was concurrently created, getting the app
       // here will succeed and we can return its Firestore instance.
-  await g.__FIREBASE_ADMIN_INIT_PROMISE;
-  return getFirestore();
+      await g.__FIREBASE_ADMIN_INIT_PROMISE;
+      return getFirestore();
     } catch (initErr: any) {
       try {
         getApp();

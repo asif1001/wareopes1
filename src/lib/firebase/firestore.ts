@@ -422,33 +422,35 @@ export async function getUsers(): Promise<User[]> {
 }
 
 export async function getUserByEmployeeNo(employeeNo: string): Promise<User | null> {
-    const tryQuery = async (colName: string, value: string | number) => {
-        const usersCol = collection(db, colName);
-        const q = query(usersCol, where('employeeNo', '==', value));
-        return await getDocs(q);
-    };
+    return withRetry(async () => {
+        const tryQuery = async (colName: string, value: string | number) => {
+            const usersCol = collection(db, colName);
+            const q = query(usersCol, where('employeeNo', '==', value));
+            return await getDocs(q);
+        };
 
-    const maybeNum = Number(employeeNo);
-    const candidates: Array<{ col: string; val: string | number }> = [
-        { col: 'Users', val: employeeNo },
-        ...(Number.isNaN(maybeNum) ? [] : [{ col: 'Users', val: maybeNum }]),
-        { col: 'users', val: employeeNo },
-        ...(Number.isNaN(maybeNum) ? [] : [{ col: 'users', val: maybeNum }]),
-    ];
+        const maybeNum = Number(employeeNo);
+        const candidates: Array<{ col: string; val: string | number }> = [
+            { col: 'Users', val: employeeNo },
+            ...(Number.isNaN(maybeNum) ? [] : [{ col: 'Users', val: maybeNum }]),
+            { col: 'users', val: employeeNo },
+            ...(Number.isNaN(maybeNum) ? [] : [{ col: 'users', val: maybeNum }]),
+        ];
 
-    for (const c of candidates) {
-        try {
-            const snapshot = await tryQuery(c.col, c.val);
-            if (!snapshot.empty) {
-                const userDoc = snapshot.docs[0];
-                return { id: userDoc.id, ...userDoc.data() } as User;
+        for (const c of candidates) {
+            try {
+                const snapshot = await tryQuery(c.col, c.val);
+                if (!snapshot.empty) {
+                    const userDoc = snapshot.docs[0];
+                    return { id: userDoc.id, ...userDoc.data() } as User;
+                }
+            } catch {
+                // ignore and continue to next candidate
             }
-        } catch {
-            // ignore and continue to next candidate
         }
-    }
 
-    return null;
+        return null;
+    });
 }
 
 export async function addUser(user: Omit<User, 'id'>) {
@@ -584,4 +586,54 @@ export async function addRole(role: Omit<Role, 'id'>) {
 
 export async function deleteRole(id: string) {
     await deleteDoc(doc(db, 'Roles', id));
+}
+
+
+// ...
+
+// Add test connection function for connection monitoring
+export async function testConnection(): Promise<boolean> {
+  try {
+    // Simple operation to test Firestore connectivity
+    const testQuery = query(collection(db, 'Users'), limit(1));
+    await getDocs(testQuery);
+    return true;
+  } catch (error) {
+    console.warn('Firestore connection test failed:', error);
+    return false;
+  }
+}
+
+// Enhanced error handling wrapper for Firestore operations
+function withRetry<T>(operation: () => Promise<T>, maxRetries: number = 2): Promise<T> {
+  return new Promise(async (resolve, reject) => {
+    let lastError: any;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await operation();
+        resolve(result);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        
+        // Check if it's a retryable error
+        const isRetryable = error.code === 'unavailable' || 
+                           error.code === 'deadline-exceeded' ||
+                           error.message?.includes('Could not reach Cloud Firestore backend') ||
+                           error.message?.includes('Name resolution failed');
+        
+        if (!isRetryable || attempt === maxRetries) {
+          reject(lastError);
+          return;
+        }
+        
+        // Wait before retry with exponential backoff
+        const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    reject(lastError);
+  });
 }

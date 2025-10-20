@@ -1,127 +1,101 @@
 "use client";
 
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { MoreHorizontal } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SerializableTask, SerializableUserProfile } from "@/lib/task-types";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import { format } from 'date-fns';
 
-type TaskTableProps = {
-    tasks: SerializableTask[];
-    users: SerializableUserProfile[];
-    onEdit: (task: SerializableTask) => void;
-    onDelete: (task: SerializableTask) => void;
-};
+interface TaskTableProps {
+  tasks: SerializableTask[];
+  users: SerializableUserProfile[];
+  onEdit: (task: SerializableTask) => void;
+  onDelete?: (task: SerializableTask) => Promise<void> | void;
+}
 
-const getPriorityVariant = (priority: string) => {
-    switch (priority) {
-        case 'High':
-        case 'Urgent':
-            return 'destructive';
-        case 'Medium':
-            return 'secondary';
-        case 'Low':
-        case 'No Priority':
-            return 'outline';
-        default:
-            return 'default';
-    }
-};
+// Color scale and sorting helpers
+function getDueMeta(dueDate?: string | null) {
+  if (!dueDate) {
+    return { days: null as number | null, rowClass: "", textClass: "text-muted-foreground" };
+  }
+  const now = new Date();
+  const todayUTC = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const due = new Date(dueDate);
+  const dueUTC = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  const msDiff = dueUTC.getTime() - todayUTC.getTime();
+  const days = Math.round(msDiff / 86400000);
 
-const getStatusVariant = (status: string) => {
-    switch (status) {
-        case 'Done':
-            return 'default';
-        case 'In Progress':
-            return 'secondary';
-        case 'Blocked':
-            return 'destructive';
-        case 'To Do':
-        case 'Backlog':
-        case 'On Hold':
-        case 'Review':
-            return 'outline';
-        default:
-            return 'default';
-    }
-};
+  let rowClass = "";
+  let textClass = "";
+  if (days < 0) {
+    rowClass = "bg-red-50";
+    textClass = "text-red-700";
+  } else if (days === 0) {
+    rowClass = "bg-orange-50";
+    textClass = "text-orange-700";
+  } else if (days <= 3) {
+    rowClass = "bg-amber-50";
+    textClass = "text-amber-700";
+  } else if (days <= 7) {
+    rowClass = "bg-yellow-50";
+    textClass = "text-yellow-700";
+  } else {
+    rowClass = "bg-green-50";
+    textClass = "text-green-700";
+  }
 
-const getUserById = (users: SerializableUserProfile[], userId: string | null | undefined) => {
-    if (!userId) return null;
-    return users.find(u => u.id === userId) || null;
-};
+  return { days, rowClass, textClass };
+}
+
+function compareByDueDate(a: SerializableTask, b: SerializableTask) {
+  const aTime = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+  const bTime = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+  return aTime - bTime;
+}
 
 export function TaskTable({ tasks, users, onEdit, onDelete }: TaskTableProps) {
-    return (
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Assignee</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead><span className="sr-only">Actions</span></TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {tasks.map((task) => {
-                    const assignee = getUserById(users, task.assigneeId);
-                    return (
-                        <TableRow key={task.id}>
-                            <TableCell className="font-medium">{task.title}</TableCell>
-                            <TableCell>
-                                <Badge variant="outline">{task.status}</Badge>
-                            </TableCell>
-                            <TableCell>
-                                <Badge variant={getPriorityVariant(task.priority)}>{task.priority}</Badge>
-                            </TableCell>
-                            <TableCell>
-                                {assignee ? (
-                                    <div className="flex items-center gap-2">
-                                        <Avatar className="h-6 w-6">
-                                            <AvatarImage src={assignee.avatarUrl} />
-                                            <AvatarFallback>{assignee.name.charAt(0)}</AvatarFallback>
-                                        </Avatar>
-                                        <span>{assignee.name}</span>
-                                    </div>
-                                ) : (
-                                    <span className="text-muted-foreground">Unassigned</span>
-                                )}
-                            </TableCell>
-                            <TableCell>
-                                {task.dueDate ? format(new Date(task.dueDate), 'MMM d, yyyy') : <span className="text-muted-foreground">N/A</span>}
-                            </TableCell>
-                            <TableCell>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button aria-haspopup="true" size="icon" variant="ghost">
-                                            <MoreHorizontal className="h-4 w-4" />
-                                            <span className="sr-only">Toggle menu</span>
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                        <DropdownMenuItem onSelect={() => onEdit(task)}>Edit</DropdownMenuItem>
-                                        <DropdownMenuItem onSelect={() => onDelete(task)}>Delete</DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            </TableCell>
-                        </TableRow>
-                    );
-                })}
-            </TableBody>
-        </Table>
-    );
+  const sortedTasks = [...tasks].sort(compareByDueDate);
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Title</TableHead>
+          <TableHead>Assignee</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Priority</TableHead>
+          <TableHead>Due Date</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sortedTasks.map((task) => {
+          const dueMeta = getDueMeta(task.dueDate);
+          const assignee = users.find(u => u.id === task.assigneeId);
+          return (
+            <TableRow key={task.id} className={cn("border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted", dueMeta.rowClass)}>
+              <TableCell>{task.title}</TableCell>
+              <TableCell>{assignee ? assignee.name : "Unassigned"}</TableCell>
+              <TableCell><Badge variant="outline">{task.status}</Badge></TableCell>
+              <TableCell>{task.priority}</TableCell>
+              <TableCell>
+                {task.dueDate ? (
+                  <span className={dueMeta.textClass}>{format(new Date(task.dueDate), "MMM d, yyyy")}</span>
+                ) : (
+                  <span className="text-muted-foreground">N/A</span>
+                )}
+              </TableCell>
+              <TableCell className="text-right space-x-2">
+                <Button size="sm" variant="secondary" onClick={() => onEdit(task)}>Edit</Button>
+                {onDelete && (
+                  <Button size="sm" variant="destructive" onClick={() => onDelete(task)}>Delete</Button>
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
 }

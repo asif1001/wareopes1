@@ -26,7 +26,8 @@ import {
   login as authLogin, 
   logout as authLogout,
   isAdmin as checkIsAdmin,
-  refreshSession
+  refreshSession,
+  createSession
 } from '@/lib/auth';
 import { getUsers } from '@/lib/firebase/firestore';
 
@@ -84,48 +85,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timeoutId);
   }, []);
 
-  const login = async (employeeNo: string, password: string) => {
-    try {
-      // Prefer server-side verification via Admin SDK (no client permissions required)
-      try {
-        const res = await fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ employeeNo, password })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.user) {
-            // Create client session and update context
-            const { createSession } = await import('@/lib/auth');
-            createSession(data.user);
-            setUser(data.user);
-            return { success: true, user: data.user };
-          }
-        } else {
-          const text = await res.text();
-          console.warn('Server login failed:', text);
-        }
-      } catch (e) {
-        console.warn('Server login call failed, falling back to client:', e);
-      }
+  const login = async (employeeNo: string, password: string): Promise<{ success: boolean; user?: User; error?: string }> => {
+    setIsLoading(true);
 
-      // Fallback: client-side Firestore verification (requires anonymous auth enabled)
-      const result = await authLogin(employeeNo, password);
-      if (result.success && result.user) {
-        // Best effort: set cookie for middleware via server using login-session
-        try {
-          const userId = encodeURIComponent(result.user.id);
-          await fetch(`/api/login-session?userId=${userId}`, {
-            method: 'GET',
-          });
-        } catch {}
-        setUser(result.user);
+    try {
+      // First, try server-side login (preferred for security)
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeNo, password }),
+      });
+
+      if (response.ok) {
+        const sessionData = await response.json();
+        const userObj: User = {
+          id: sessionData.id,
+          employeeNo: String(sessionData.employeeNo),
+          fullName: sessionData.fullName || sessionData.name || '',
+          name: sessionData.name,
+          role: sessionData.role,
+          department: sessionData.department,
+          email: sessionData.email,
+        };
+
+        setUser(userObj);
+        // Mirror server cookie with local session for client context
+        createSession(userObj);
+        return { success: true, user: userObj };
+      } else if (response.status === 401) {
+        return { success: false, error: 'Invalid employee number or password' };
+      } else {
+        // Server error - fall back to client-side authentication
+        console.warn('Server-side login failed, attempting client-side authentication');
+        const result = await authLogin(employeeNo, password);
+        if (result.success && result.user) {
+          setUser(result.user);
+        }
+        return result;
       }
-      return result;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
-      return { success: false, error: 'Login failed' };
+      // Handle network/connection errors specifically
+      if (error.message?.includes('fetch') || error.name === 'TypeError') {
+        return { success: false, error: 'Network connection issue. Please check your internet connection and try again.' };
+      }
+      return { success: false, error: 'An unexpected error occurred. Please try again.' };
+    } finally {
+      setIsLoading(false);
     }
   };
 

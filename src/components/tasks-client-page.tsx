@@ -51,6 +51,7 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
     };
 
     const myTasks = filteredTasks.filter(task => task.assigneeId === currentUserId || task.reporterId === currentUserId);
+    const activeTasks = filteredTasks.filter(task => !['Done', 'Blocked', 'On Hold'].includes(task.status));
 
     return (
         <div className="flex flex-col h-full">
@@ -65,9 +66,10 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
                 </div>
             </DashboardHeader>
             <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
-                <Tabs defaultValue="all">
+                <Tabs defaultValue="active">
                     <div className="flex items-center">
                         <TabsList>
+                            <TabsTrigger value="active">Active</TabsTrigger>
                             <TabsTrigger value="all">All Tasks</TabsTrigger>
                             <TabsTrigger value="my-tasks">My Tasks</TabsTrigger>
                         </TabsList>
@@ -90,6 +92,12 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
                     <div className="mt-3">
                         <TaskFilterBar tasks={tasks} users={users} onFilteredTasksChange={setFilteredTasks} />
                     </div>
+
+                    <TabsContent value="active" className="mt-4">
+                        {view === 'table' && <TaskTable tasks={activeTasks} users={users} onEdit={openModal} onDelete={async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); }} />}
+                        {view === 'kanban' && <TaskKanban tasks={activeTasks} users={users} onEdit={openModal} />}
+                        {view === 'calendar' && <TaskCalendar tasks={activeTasks} users={users} onEdit={openModal} />}
+                    </TabsContent>
 
                     <TabsContent value="all" className="mt-4">
                         {view === 'table' && <TaskTable tasks={filteredTasks} users={users} onEdit={openModal} onDelete={async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); }} />}

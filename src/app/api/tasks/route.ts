@@ -151,7 +151,17 @@ export async function GET(request: NextRequest) {
         // Identify current user from secure session cookie
         const { cookies } = await import('next/headers');
         const sessionCookie = (await cookies()).get('session');
-        const currentUserId = sessionCookie?.value;
+
+        let currentUserId: string | null = null;
+        if (sessionCookie?.value) {
+            try {
+                const sessionData = JSON.parse(sessionCookie.value);
+                currentUserId = sessionData?.id || null;
+            } catch {
+                // Fallback for legacy plain string cookies
+                currentUserId = sessionCookie.value;
+            }
+        }
 
         if (!currentUserId) {
             return NextResponse.json({ error: 'Unauthorized: no session' }, { status: 401 });
@@ -217,7 +227,15 @@ export async function POST(request: NextRequest) {
         }
 
         const { id, ...taskData } = parsed.data;
-        const currentUserId = "user1"; // Placeholder for actual auth user
+        const { cookies } = await import('next/headers');
+        const sessionCookie = (await cookies()).get('session');
+        let currentUserId = 'unknown';
+        try {
+            const sessionData = sessionCookie?.value ? JSON.parse(sessionCookie.value) : null;
+            currentUserId = sessionData?.id || (sessionCookie?.value || 'unknown');
+        } catch {
+            currentUserId = sessionCookie?.value || 'unknown';
+        }
 
         // Compute bucket name used for uploads (for error reporting)
         const envBucket = (process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '').replace(/^gs:\/\//, '');

@@ -43,8 +43,16 @@ async function getUsers(): Promise<SerializableUserProfile[]> {
 }
 
 export default async function TasksPage() {
-    const session = (await cookies()).get('session');
-    const currentUserId = session?.value || '';
+    const sessionCookie = (await cookies()).get('session');
+    let currentUserId = '';
+    try {
+        const sessionData = sessionCookie?.value ? JSON.parse(sessionCookie.value) : null;
+        currentUserId = sessionData?.id || '';
+    } catch {
+        // Fallback for legacy plain string cookies
+        currentUserId = sessionCookie?.value || '';
+    }
+
     const tasks = currentUserId ? await getTasksForUser(currentUserId) : [];
     const users = await getUsers();
 
