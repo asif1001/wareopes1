@@ -186,8 +186,21 @@ async function ensureAdmin(): Promise<{ id: string } | null> {
   const me = await (async () => {
     try {
       const c = await cookies();
-      const id = c.get('session')?.value;
+      const rawSession = c.get('session')?.value;
+      if (!rawSession) return null;
+
+      // Support both plain userId and JSON session cookie
+      let id: string = '';
+      try {
+        const parsed = JSON.parse(rawSession);
+        id = typeof parsed?.id === 'string' ? parsed.id : '';
+      } catch {
+        // Not JSON; treat as userId
+        id = rawSession;
+      }
+
       if (!id) return null;
+
       const { getAdminDb } = await import('@/lib/firebase/admin');
       const adb = await getAdminDb();
       const snap = await adb.collection('Users').doc(id).get();

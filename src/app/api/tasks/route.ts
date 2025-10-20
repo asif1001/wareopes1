@@ -1,3 +1,4 @@
+export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Task, TaskPriority, TaskStatus, AuditLog, SerializableTask, Attachment } from "@/lib/task-types";

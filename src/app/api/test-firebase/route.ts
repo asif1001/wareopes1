@@ -1,3 +1,4 @@
+export const runtime = 'nodejs';
 import { NextResponse } from 'next/server';
 // Dynamically import admin helper to avoid bundling firebase-admin into the Next.js client build
 import { db, app } from '@/lib/firebase/firebase';
