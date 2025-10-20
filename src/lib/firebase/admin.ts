@@ -8,6 +8,7 @@ import path from 'path';
  *
  * Credentials
  * - Reads FIREBASE_ADMIN_CREDENTIALS (JSON string) from environment.
+ * - Reads FIREBASE_ADMIN_CREDENTIALS_BASE64 (base64 JSON) when provided.
  * - Falls back to Application Default Credentials (GOOGLE_APPLICATION_CREDENTIALS) when not provided.
  *
  * Use Admin for server-only code paths (API routes, server components) to bypass Firestore rules
@@ -45,12 +46,29 @@ export async function getAdminDb() {
         // Prefer explicit JSON from env
         const envProjectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
         const credsJson = process.env.FIREBASE_ADMIN_CREDENTIALS;
+        const credsB64 = process.env.FIREBASE_ADMIN_CREDENTIALS_BASE64;
         
         let lastError: any;
         
         // Retry initialization with exponential backoff
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
           try {
+            // First, try base64-encoded credentials if present
+            if (credsB64) {
+              try {
+                const decoded = Buffer.from(credsB64, 'base64').toString('utf-8');
+                const serviceAccount = JSON.parse(decoded);
+                initializeApp({
+                  credential: cert(serviceAccount),
+                  projectId: (serviceAccount.project_id as string) || envProjectId,
+                });
+                return;
+              } catch (e) {
+                console.warn('FIREBASE_ADMIN_CREDENTIALS_BASE64 decode/parse failed, attempting JSON env credentials.');
+              }
+            }
+
+            // Next, try plain JSON from env
             if (credsJson) {
               try {
                 const serviceAccount = JSON.parse(credsJson);
