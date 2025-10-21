@@ -266,7 +266,7 @@ export type FormSubmission = {
   userId: string;
   userRole: string;
   submittedAt: string;
-  answers: Record<string, any>; // key = field.id, value depends on type
+  answers: Record<string, unknown>; // key = field.id, value depends on type
   // Extra metadata for reporting
   userFullName?: string;
   userEmployeeNo?: string;
