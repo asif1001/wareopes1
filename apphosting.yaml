@@ -14,3 +14,42 @@ runConfig:
   env:
     - variable: NODE_ENV
       value: production
+    # Firebase Configuration (server-side)
+    - variable: FIREBASE_API_KEY
+      value: AIzaSyDqi_NLPG6qQfPDNv4q2EagXk7kyhsFLbU
+    - variable: FIREBASE_AUTH_DOMAIN
+      value: expotracker-6e353.firebaseapp.com
+    - variable: FIREBASE_DATABASE_URL
+      value: https://expotracker-6e353-default-rtdb.firebaseio.com
+    - variable: FIREBASE_PROJECT_ID
+      value: expotracker-6e353
+    - variable: FIREBASE_STORAGE_BUCKET
+      value: expotracker-6e353.firebasestorage.app
+    - variable: FIREBASE_MESSAGING_SENDER_ID
+      value: "980879059261"
+    - variable: FIREBASE_APP_ID
+      value: 1:980879059261:web:b1086110b963ee190dfd54
+    - variable: FIREBASE_MEASUREMENT_ID
+      value: G-LG7KRYCFHQ
+    # Firebase Configuration (client-side, exposed to browser)
+    - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+      value: AIzaSyDqi_NLPG6qQfPDNv4q2EagXk7kyhsFLbU
+    - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+      value: expotracker-6e353.firebaseapp.com
+    - variable: NEXT_PUBLIC_FIREBASE_DATABASE_URL
+      value: https://expotracker-6e353-default-rtdb.firebaseio.com
+    - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+      value: expotracker-6e353
+    - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+      value: expotracker-6e353.firebasestorage.app
+    - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+      value: "980879059261"
+    - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+      value: 1:980879059261:web:b1086110b963ee190dfd54
+    - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+      value: G-LG7KRYCFHQ
+    # Server Actions
+    - variable: SERVER_ACTIONS_ALLOWED_ORIGINS
+      value: https://wareopes--expotracker-6e353.us-central1.hosted.app
+    # Firebase Admin SDK will use the default service account in App Hosting
+    # No need to set FIREBASE_ADMIN_CREDENTIALS_BASE64 as App Hosting provides this automatically
