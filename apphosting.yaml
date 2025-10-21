@@ -4,4 +4,13 @@
 runConfig:
   # Increase this value if you'd like to automatically spin up
   # more instances in response to increased traffic.
-  maxInstances: 1
+  maxInstances: 3
+  # Minimum instances to keep warm
+  minInstances: 0
+  # CPU and memory allocation
+  cpu: 1
+  memoryMiB: 512
+  # Environment variables
+  env:
+    - variable: NODE_ENV
+      value: production
