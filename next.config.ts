@@ -10,9 +10,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: process.env.NODE_ENV === 'development',
   },
   // Optimize for Firebase App Hosting
-  experimental: {
-    serverComponentsExternalPackages: ['firebase-admin'],
-  },
+  serverExternalPackages: ['firebase-admin'],
   images: {
     remotePatterns: [
       {

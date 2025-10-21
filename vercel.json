@@ -1,4 +1,0 @@
-{
-  "deprecated": true,
-  "note": "Vercel config not used. Firebase App Hosting manages deployments."
-}

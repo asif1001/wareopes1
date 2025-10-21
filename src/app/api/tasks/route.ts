@@ -100,9 +100,12 @@ async function uploadFile(file: File, taskId: string): Promise<Attachment> {
             metadata: {
                 firebaseStorageDownloadTokens: downloadToken,
             },
+            cacheControl: 'public, max-age=31536000',
         },
-        resumable: false,
         public: false,
+        validation: false,
+        gzip: false,
+        highWaterMark: 1024 * 1024,
     });
 
     const encodedPath = encodeURIComponent(storagePath);
