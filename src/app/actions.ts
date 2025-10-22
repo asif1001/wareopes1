@@ -1,11 +1,12 @@
 "use server"
 import type { GenerateCustomReportInput, GenerateCustomReportOutput } from "@/ai/flows/generate-custom-report";
 import { getUserByEmployeeNo, bulkAddShipments } from "@/lib/firebase/firestore";
-import type { User, Source, ContainerSize, Department, Branch, UserRole, Shipment, Role } from "@/lib/types";
+import type { User, Source, ContainerSize, Department, Branch, UserRole, Shipment, Role, UserPermissions } from "@/lib/types";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { APP_PAGES, PERMISSION_ACTIONS } from "@/lib/role-utils";
 
 export async function logoutAction() {
     (await cookies()).delete('session');
@@ -100,6 +101,25 @@ export async function addUserAction(prevState: any, formData: FormData) {
             return { message: "Employee No/CPR No already exists." };
         }
 
+        // Parse permissions from checkbox inputs `perm:<page>:<action>`
+        const pages = APP_PAGES;
+        const actions = PERMISSION_ACTIONS;
+        const permissions: UserPermissions = {};
+        let anyPerm = false;
+        for (const p of pages) {
+            const selected: string[] = [];
+            for (const a of actions) {
+                const v = formData.get(`perm:${p}:${a}`);
+                if (v !== null && v !== undefined) selected.push(a);
+            }
+            if (selected.length) {
+                (permissions as any)[p] = selected;
+                anyPerm = true;
+            }
+        }
+
+        const redirectPage = formData.get("redirectPage") as string;
+        
         const newUser: Omit<User, 'id'> = {
             fullName: formData.get("fullName") as string,
             employeeNo: employeeNoRaw,
@@ -107,6 +127,8 @@ export async function addUserAction(prevState: any, formData: FormData) {
             email: formData.get("email") as string,
             department: formData.get("department") as string,
             role: formData.get("role") as UserRole,
+            permissions: anyPerm ? permissions : undefined,
+            redirectPage: redirectPage && redirectPage !== "" ? redirectPage : undefined,
         };
 
         await adb.collection('Users').add(newUser);
@@ -306,12 +328,36 @@ export async function deleteBranchAction(prevState: any, formData: FormData): Pr
 export async function updateUserAction(prevState: any, formData: FormData) {
     try {
         const id = formData.get("id") as string;
+
+        // Parse permissions from checkbox inputs `perm:<page>:<action>`
+        const pages = APP_PAGES;
+        const actions = PERMISSION_ACTIONS;
+        const permissions: UserPermissions = {};
+        let anyPerm = false;
+        for (const p of pages) {
+            const selected: string[] = [];
+            for (const a of actions) {
+                const v = formData.get(`perm:${p}:${a}`);
+                if (v !== null && v !== undefined) selected.push(a);
+            }
+            if (selected.length) {
+                (permissions as any)[p] = selected;
+                anyPerm = true;
+            }
+        }
+
+        const redirectPage = formData.get("redirectPage") as string;
+        const newPassword = String(formData.get("newPassword") || "").trim();
+        
         const updatedUser: Partial<User> = {
             fullName: formData.get("fullName") as string,
             employeeNo: formData.get("employeeNo") as string,
             email: formData.get("email") as string,
             department: formData.get("department") as string,
             role: formData.get("role") as UserRole,
+            permissions: anyPerm ? permissions : undefined,
+            redirectPage: redirectPage && redirectPage !== "" ? redirectPage : undefined,
+            ...(newPassword ? { password: newPassword } : {}),
         };
         const { getAdminDb } = await import('@/lib/firebase/admin');
         const adb = await getAdminDb();

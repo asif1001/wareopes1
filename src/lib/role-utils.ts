@@ -1,83 +1,49 @@
-import type { UserRole } from '@/lib/types';
+import { AppPageKey, PermissionAction } from "./types";
 
-/**
- * Get the appropriate dashboard route based on user role
- */
-export function getRoleDashboardRoute(role: UserRole | string | undefined): string {
-  if (!role) {
-    return '/dashboard'; // Default dashboard
+// Centralized lists of pages and actions used across forms and server actions
+export const APP_PAGES: AppPageKey[] = ["shipments", "tasks", "settings"];
+export const PERMISSION_ACTIONS: PermissionAction[] = ["view", "add", "edit", "delete"];
+
+// Existing utilities
+export function getDashboardRouteForRole(role: string, user?: { redirectPage?: string }): string {
+  // Check if user has a custom redirect page preference
+  if (user?.redirectPage) {
+    return user.redirectPage;
   }
-
-  const normalizedRole = role.toLowerCase();
   
-  switch (normalizedRole) {
-    case 'admin':
-    case 'administrator':
-      return '/dashboard/admin';
-    
-    case 'manager':
-    case 'supervisor':
-      return '/dashboard/manager';
-    
-    case 'employee':
-    case 'staff':
-    case 'worker':
-      return '/dashboard/employee';
-    
+  // Fall back to role-based defaults
+  switch (role) {
+    case "admin":
+      return "/dashboard/settings";
+    case "manager":
+      return "/dashboard/tasks";
     default:
-      return '/dashboard'; // Default dashboard for unknown roles
+      return "/dashboard/shipments";
   }
 }
 
-/**
- * Check if a user has admin privileges
- */
-export function isAdminRole(role: UserRole | string | undefined): boolean {
-  if (!role) return false;
-  
-  const normalizedRole = role.toLowerCase();
-  return normalizedRole === 'admin' || normalizedRole === 'administrator';
+// Backward-compatible alias used by legacy callers
+export function getRoleDashboardRoute(role: string): string {
+  return getDashboardRouteForRole(String(role).toLowerCase());
 }
 
-/**
- * Check if a user has manager privileges
- */
-export function isManagerRole(role: UserRole | string | undefined): boolean {
-  if (!role) return false;
-  
-  const normalizedRole = role.toLowerCase();
-  return normalizedRole === 'manager' || normalizedRole === 'supervisor' || isAdminRole(role);
+export function isAdminRole(role: string): boolean {
+  return role === "admin";
 }
 
-/**
- * Get user role display name
- */
-export function getRoleDisplayName(role: UserRole | string | undefined): string {
-  if (!role) return 'User';
-  
-  const normalizedRole = role.toLowerCase();
-  
-  switch (normalizedRole) {
-    case 'admin':
-    case 'administrator':
-      return 'Administrator';
-    
-    case 'manager':
-      return 'Manager';
-    
-    case 'supervisor':
-      return 'Supervisor';
-    
-    case 'employee':
-      return 'Employee';
-    
-    case 'staff':
-      return 'Staff';
-    
-    case 'worker':
-      return 'Worker';
-    
+export function isManagerRole(role: string): boolean {
+  return role === "manager" || role === "admin";
+}
+
+export function getRoleDisplayName(role: string): string {
+  switch (role) {
+    case "admin":
+      return "Administrator";
+    case "manager":
+      return "Manager";
+    case "operator":
+      return "Operator";
     default:
-      return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+      return role;
   }
 }

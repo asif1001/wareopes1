@@ -29,14 +29,16 @@ const nextConfig: NextConfig = {
   },
   // Remove localhost-specific headers for production
   async headers() {
-    if (process.env.NODE_ENV === 'development') {
+    // Gate dev forwarded host behind an env var to avoid chunk mismatches
+    const devForwardedHost = process.env.DEV_X_FORWARDED_HOST;
+    if (process.env.NODE_ENV === 'development' && devForwardedHost) {
       return [
         {
           source: '/dashboard/:path*',
           headers: [
             {
               key: 'x-forwarded-host',
-              value: 'localhost:3001',
+              value: devForwardedHost,
             },
           ],
         },

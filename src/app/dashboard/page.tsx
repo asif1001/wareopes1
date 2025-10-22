@@ -3,12 +3,10 @@ import { Suspense } from "react";
 export const dynamic = 'force-dynamic';
 import { statCards } from "@/lib/data";
 import { StatCard } from "@/components/stat-card";
-import { OverviewChart } from "@/components/overview-chart";
-import { RecentShipments } from "@/components/recent-shipments";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { getUpcomingShipments, getClearedShipmentsMonthlySummary, getClearedContainerSummary } from "@/lib/firebase/firestore";
-import { ContainerOverview } from "@/components/container-overview";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DashboardClient } from "@/components/dashboard-client";
 
 function StatCards() {
   return (
@@ -21,22 +19,20 @@ function StatCards() {
 }
 
 async function AsyncDashboard() {
-  const upcomingShipments = await getUpcomingShipments();
-  const shipmentLinesData = await getClearedShipmentsMonthlySummary();
-  const containerData = await getClearedContainerSummary();
+  const [upcomingShipments, shipmentLinesData, containerData] = await Promise.all([
+    getUpcomingShipments(),
+    getClearedShipmentsMonthlySummary(),
+    getClearedContainerSummary(),
+  ]);
 
   return (
     <>
       <StatCards />
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-5">
-        <div className="xl:col-span-3 grid gap-4">
-          <OverviewChart data={shipmentLinesData} />
-          <ContainerOverview data={containerData} />
-        </div>
-        <div className="xl:col-span-2">
-          <RecentShipments shipments={upcomingShipments} />
-        </div>
-      </div>
+      <DashboardClient
+        shipmentLinesData={shipmentLinesData}
+        containerData={containerData}
+        upcomingShipments={upcomingShipments}
+      />
     </>
   )
 }

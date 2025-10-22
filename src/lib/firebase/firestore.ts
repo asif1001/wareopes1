@@ -140,15 +140,27 @@ export async function getUpcomingShipments(): Promise<SerializableShipment[]> {
 }
 
 export async function getClearedShipmentsMonthlySummary(): Promise<{ month: string; domLines: number; bulkLines: number }[]> {
+    const twelveMonthsAgo = subMonths(new Date(), 12);
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
     let docs: any[] = [];
     if (typeof window === 'undefined') {
-    const { getAdminDb } = await import('./admin');
-    const adb = await getAdminDb();
-        const snap = await adb.collection('shipments').where('cleared', '==', true).get();
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const snap = await adb
+            .collection('shipments')
+            .where('actualClearedDate', '>=', twelveMonthsAgo)
+            .where('actualClearedDate', '<=', today)
+            .get();
         docs = snap.docs;
     } else {
         const shipmentsCol = collection(db, 'shipments');
-        const qy = query(shipmentsCol, where('cleared', '==', true));
+        const qy = query(
+            shipmentsCol,
+            where('actualClearedDate', '>=', twelveMonthsAgo),
+            where('actualClearedDate', '<=', today)
+        );
         const shipmentSnapshot = await getDocs(qy);
         docs = shipmentSnapshot.docs;
     }
@@ -157,11 +169,11 @@ export async function getClearedShipmentsMonthlySummary(): Promise<{ month: stri
 
     docs.forEach((doc: any) => {
         const data = typeof doc.data === 'function' ? doc.data() : doc;
-        const clearedDate = data.actualClearedDate?.toDate(); 
+        const clearedDate = data.actualClearedDate?.toDate();
 
         if (clearedDate) {
-            const monthYear = format(clearedDate, "MMM yy"); 
-            
+            const monthYear = format(clearedDate, "MMM yy");
+
             if (!monthlySummary[monthYear]) {
                 monthlySummary[monthYear] = { domLines: 0, bulkLines: 0 };
             }
@@ -176,25 +188,35 @@ export async function getClearedShipmentsMonthlySummary(): Promise<{ month: stri
         return compareAsc(dateA, dateB);
     });
 
-    const result = sortedMonths.map(month => ({
+    return sortedMonths.map(month => ({
         month,
         domLines: monthlySummary[month].domLines,
         bulkLines: monthlySummary[month].bulkLines,
     }));
-
-    return result;
 }
 
 export async function getClearedContainerSummary(): Promise<ClearedContainerSummary> {
+    const twelveMonthsAgo = subMonths(new Date(), 12);
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
     let docs: any[] = [];
     if (typeof window === 'undefined') {
-    const { getAdminDb } = await import('./admin');
-    const adb = await getAdminDb();
-        const snap = await adb.collection('shipments').where('cleared', '==', true).get();
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const snap = await adb
+            .collection('shipments')
+            .where('actualClearedDate', '>=', twelveMonthsAgo)
+            .where('actualClearedDate', '<=', today)
+            .get();
         docs = snap.docs;
     } else {
         const shipmentsCol = collection(db, 'shipments');
-        const qy = query(shipmentsCol, where('cleared', '==', true));
+        const qy = query(
+            shipmentsCol,
+            where('actualClearedDate', '>=', twelveMonthsAgo),
+            where('actualClearedDate', '<=', today)
+        );
         const shipmentSnapshot = await getDocs(qy);
         docs = shipmentSnapshot.docs;
     }
@@ -206,27 +228,22 @@ export async function getClearedContainerSummary(): Promise<ClearedContainerSumm
     docs.forEach((doc: any) => {
         const data = typeof doc.data === 'function' ? doc.data() : doc;
         const clearedDate = data.actualClearedDate?.toDate();
-        
-        // Use bookings array as the source of truth for cleared container counts
+
         if (clearedDate && data.bookings && data.bookings.length > 0) {
             const monthYear = format(clearedDate, "MMM yy");
-            
             const numContainersInShipment = data.bookings.length;
-            
-            // Monthly aggregation
+
             if (!monthlySummary[monthYear]) {
                 monthlySummary[monthYear] = 0;
             }
             monthlySummary[monthYear] += numContainersInShipment;
 
-            // Source aggregation
             const source = data.source || 'Unknown';
             if (!sourceSummary[source]) {
                 sourceSummary[source] = 0;
             }
             sourceSummary[source] += numContainersInShipment;
 
-            // Total aggregation
             totalContainers += numContainersInShipment;
         }
     });
@@ -418,12 +435,59 @@ export async function getUsers(): Promise<User[]> {
     if (typeof window === 'undefined') {
         const { getAdminDb } = await import('./admin');
         const adb = await getAdminDb();
-        const snap = await adb.collection('Users').get();
-        return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as User));
+        const [usersSnap, rolesSnap] = await Promise.all([
+          adb.collection('Users').get(),
+          adb.collection('Roles').get()
+        ]);
+        const roleMap = new Map<string, any>();
+        rolesSnap.docs.forEach((d: any) => {
+          const data = d.data ? d.data() : d;
+          roleMap.set(String(data?.name || ''), data);
+        });
+        return usersSnap.docs.map((d: any) => {
+          const raw = (d.data ? d.data() : d) as any;
+          let permissions = raw?.permissions as any | undefined;
+          if (!permissions && raw?.role) {
+            const role = roleMap.get(String(raw.role));
+            const arr = Array.isArray(role?.permissions) ? role.permissions : [];
+            const normalized: any = {};
+            for (const item of arr) {
+              if (typeof item !== 'string') continue;
+              const [page, action] = item.split(':');
+              if (!page || !action) continue;
+              (normalized[page] ||= []).push(action);
+            }
+            permissions = Object.keys(normalized).length ? normalized : undefined;
+          }
+          return { id: d.id, ...raw, ...(permissions ? { permissions } : {}) } as User;
+        });
     }
-    const usersCol = collection(db, 'Users');
-    const userSnapshot = await getDocs(usersCol);
-    return userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    const [usersSnap, rolesSnap] = await Promise.all([
+      getDocs(collection(db, 'Users')),
+      getDocs(collection(db, 'Roles'))
+    ]);
+    const roleMap = new Map<string, any>();
+    rolesSnap.docs.forEach((d: any) => {
+      const data = d.data();
+      roleMap.set(String(data?.name || ''), data);
+    });
+    return usersSnap.docs.map(doc => {
+      const raw = doc.data() as any;
+      let permissions = raw?.permissions as any | undefined;
+      if (!permissions && raw?.role) {
+        const role = roleMap.get(String(raw.role));
+        const arr = Array.isArray(role?.permissions) ? role.permissions : [];
+        const normalized: any = {};
+        for (const item of arr) {
+          if (typeof item !== 'string') continue;
+          const [page, action] = item.split(':');
+          if (!page || !action) continue;
+          (normalized[page] ||= []).push(action);
+        }
+        permissions = Object.keys(normalized).length ? normalized : undefined;
+      }
+      return { id: doc.id, ...raw, ...(permissions ? { permissions } : {}) } as User;
+    });
 }
 
 export async function getUserByEmployeeNo(employeeNo: string): Promise<User | null> {
@@ -447,7 +511,24 @@ export async function getUserByEmployeeNo(employeeNo: string): Promise<User | nu
                 const snapshot = await tryQuery(c.col, c.val);
                 if (!snapshot.empty) {
                     const userDoc = snapshot.docs[0];
-                    return { id: userDoc.id, ...userDoc.data() } as User;
+                    const raw = userDoc.data() as any;
+                    // If explicit permissions are absent, hydrate from Role permissions
+                    if (!raw?.permissions && raw?.role) {
+                        const rolesSnap = await getDocs(query(collection(db, 'Roles'), where('name', '==', String(raw.role))));
+                        if (!rolesSnap.empty) {
+                            const roleData = rolesSnap.docs[0].data() as any;
+                            const arr = Array.isArray(roleData?.permissions) ? roleData.permissions : [];
+                            const normalized: any = {};
+                            for (const item of arr) {
+                                if (typeof item !== 'string') continue;
+                                const [page, action] = item.split(':');
+                                if (!page || !action) continue;
+                                (normalized[page] ||= []).push(action);
+                            }
+                            if (Object.keys(normalized).length) raw.permissions = normalized;
+                        }
+                    }
+                    return { id: userDoc.id, ...raw } as User;
                 }
             } catch {
                 // ignore and continue to next candidate

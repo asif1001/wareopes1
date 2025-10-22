@@ -47,8 +47,9 @@ export const authenticateUser = async (employeeNo: string, password: string): Pr
         fullName: user.fullName,
         role: user.role,
         department: user.department,
-        email: user.email
-      };
+        email: user.email,
+        redirectPage: (user as any).redirectPage,
+      } as User;
     }
     
     return null;

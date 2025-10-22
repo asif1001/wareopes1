@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Department, Branch, Role, userRoles } from "@/lib/types";
+import { APP_PAGES, PERMISSION_ACTIONS } from "@/lib/role-utils";
 import { useEffect, useRef, useActionState, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -87,6 +88,50 @@ export function UserForm({ departments, roles }: { departments: Department[]; ro
                                 {roleOptions.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}
                             </SelectContent>
                         </Select>
+                    </div>
+                    {/* Redirect Page Selection */}
+                    <div className="grid gap-2">
+                        <Label htmlFor="redirectPage">Default Redirect Page (Optional)</Label>
+                        <Select name="redirectPage">
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select default page after login" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {/* Removed empty-value item per Radix Select API */}
+                                <SelectItem value="/dashboard">Dashboard</SelectItem>
+                                <SelectItem value="/dashboard/admin">Admin Dashboard</SelectItem>
+                                <SelectItem value="/dashboard/manager">Manager Dashboard</SelectItem>
+                                <SelectItem value="/dashboard/employee">Employee Dashboard</SelectItem>
+                                <SelectItem value="/dashboard/shipments">Shipments</SelectItem>
+                                <SelectItem value="/dashboard/tasks">Tasks</SelectItem>
+                                <SelectItem value="/dashboard/feedback">Feedback</SelectItem>
+                                <SelectItem value="/dashboard/reports">Reports</SelectItem>
+                                <SelectItem value="/dashboard/settings">Settings</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <p className="text-sm text-muted-foreground">
+                            If not set, user will be redirected based on their role default
+                        </p>
+                    </div>
+                    {/* Permissions grid */}
+                    <div className="space-y-2">
+                        <Label>Permissions</Label>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {APP_PAGES.map(page => (
+                                <div key={page} className="border rounded-md p-3">
+                                    <div className="font-medium mb-2 capitalize">{page}</div>
+                                    <div className="flex flex-wrap gap-3">
+                                        {PERMISSION_ACTIONS.map(action => (
+                                            <label key={action} className="flex items-center gap-2">
+                                                <input type="checkbox" name={`perm:${page}:${action}`} />
+                                                <span className="capitalize">{action}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">If left blank, role-based defaults apply.</p>
                     </div>
                 </CardContent>
                 <CardFooter>

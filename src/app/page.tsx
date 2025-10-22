@@ -9,7 +9,7 @@ import { useState, useEffect } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getRoleDashboardRoute } from '@/lib/role-utils';
+import { getDashboardRouteForRole } from '@/lib/role-utils';
 
 export default function LoginPage() {
   const [employeeNo, setEmployeeNo] = useState('');
@@ -24,7 +24,8 @@ export default function LoginPage() {
   // Redirect if already logged in with role-based routing
   useEffect(() => {
     if (user) {
-      const dashboardRoute = getRoleDashboardRoute(user.role);
+      const normalizedRole = String(user.role).toLowerCase();
+      const dashboardRoute = getDashboardRouteForRole(normalizedRole, user);
       router.replace(dashboardRoute);
     }
   }, [user, router]);
@@ -39,7 +40,8 @@ export default function LoginPage() {
       const result = await login(employeeNo, password);
       if (result.success && result.user) {
         setSuccess('Login successful! Redirecting...');
-        const dashboardRoute = getRoleDashboardRoute(result.user.role);
+        const normalizedRole = String(result.user.role).toLowerCase();
+        const dashboardRoute = getDashboardRouteForRole(normalizedRole, result.user);
         router.replace(dashboardRoute);
       } else {
         setError(result.error || 'Login failed');

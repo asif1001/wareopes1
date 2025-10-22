@@ -176,3 +176,142 @@ If you encounter any issues or have questions, please open an issue on GitHub.
 ---
 
 Built with ❤️ using Next.js and Firebase
+
+## 📣 Recent Changes (2025-10-22)
+- Navigation now filters by explicit `view` permissions using `pageKey` in `src/components/dashboard-nav.tsx`.
+- `AuthContext` exposes `permissions` and refreshes user via `/api/me` on session restore and post-login for up-to-date nav rendering.
+- Added `PermissionRoute` for client-side gating and implemented server-side gates on Shipments and Tasks pages.
+- Settings page gate requires `settings:view` (admin alone does not grant view).
+
+- New `GET /api/me` endpoint at `src/app/api/me/route.ts`:
+  - Reads `session` cookie to identify the current user.
+  - Fetches user via Admin SDK and returns normalized permissions (explicit user permissions or fallback from `Roles`).
+  - Response includes: `id`, `employeeNo`, `fullName`, `name`, `role`, `department`, `email`, `redirectPage`, `permissions`.
+
+- `AuthContext.refreshUser` now uses `/api/me` instead of client Firestore:
+  - Avoids client-side Firestore reads for refresh.
+  - Updates local session (`wareopes_session`) with server-sourced user and permissions.
+  - File: `src/contexts/AuthContext.tsx`.
+
+- Server-side permission gate on Settings page:
+  - In `src/app/dashboard/settings/page.tsx`, access requires `admin` role or `settings:view` permission.
+  - The gate reads the `session` cookie, loads the user via Admin SDK, normalizes permissions from `Roles` when explicit permissions are missing, and redirects unauthorized users to `/dashboard`.
+  - Client `<AdminRoute>` remains for defense-in-depth.
+
+- Shipments page data flow confirmed:
+  - `src/app/dashboard/shipments/page.tsx` loads data server-side and passes props to client; no direct client Firestore calls for initial load.
+
+- Dev server note:
+  - If port `3000` is busy, the dev server runs on `http://localhost:3001`.
+
+### Testing the Changes
+- Start dev server: `npm run dev`, then open `http://localhost:3001` (or `3000` if free).
+- Verify `/dashboard/settings` redirects when unauthorized and loads when authorized (`admin` or `settings:view`).
+- In the UI, trigger a user refresh (e.g., navigate to dashboard); the client should reflect server-normalized permissions and profile from `/api/me`.
+
+### Implementation References
+- API: `src/app/api/me/route.ts`
+- Auth: `src/contexts/AuthContext.tsx`, `src/lib/auth.ts`
+- Permissions: `src/lib/role-utils.ts`, `src/app/dashboard/shipments/actions.ts`
+- Settings: `src/app/dashboard/settings/page.tsx`
+
+## Permissions & Navigation
+- Permission model: `UserPermissions` maps a page key (`shipments`, `tasks`, `settings`) to actions (`view`, `add`, `edit`, `delete`). See `src/lib/types.ts`.
+- Navigation visibility: the sidebar only shows items when the user has explicit `view` permission for that page.
+- Implementation: `src/components/dashboard-nav.tsx` adds `pageKey` to nav items and filters using `useAuth().permissions`.
+- Page protection: use `PermissionRoute` for client-side gating, and server-side gates in page components for defense-in-depth.
+
+### Usage: PermissionRoute
+```tsx
+// Client component usage (inside a page component)
+import { PermissionRoute } from "@/components/PermissionRoute";
+
+export default function Shipments() {
+  return (
+    <PermissionRoute pageKey="shipments" action="view">
+      {/* shipments UI here */}
+    </PermissionRoute>
+  );
+}
+```
+
+### Server-side Gates (Next.js App Router)
+```tsx
+// Example: tasks page gate (simplified)
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+export default async function TasksPage() {
+  const c = await cookies();
+  const raw = c.get("session")?.value;
+  const userId = raw ? JSON.parse(raw)?.id ?? raw : null;
+  if (!userId) redirect("/");
+
+  const { getAdminDb } = await import("@/lib/firebase/admin");
+  const adb = await getAdminDb();
+  const snap = await adb.collection("Users").doc(userId).get();
+  const udata = snap.exists ? (snap.data() as any) : {};
+
+  // Normalize permissions (explicit or from Roles)
+  let permissions = udata?.permissions as any | undefined;
+  if (!permissions && udata?.role) {
+    const rolesSnap = await adb.collection("Roles").where("name", "==", String(udata.role)).get();
+    const arr = rolesSnap.empty ? [] : (rolesSnap.docs[0].data()?.permissions ?? []);
+    const normalized: any = {};
+    for (const item of arr) {
+      const [page, action] = String(item).split(":");
+      if (page && action) (normalized[page] ||= []).push(action);
+    }
+    permissions = Object.keys(normalized).length ? normalized : undefined;
+  }
+
+  const canView = Array.isArray(permissions?.tasks) && permissions.tasks.includes("view");
+  if (!canView) redirect("/dashboard");
+
+  // render page... 
+}
+```
+
+### AuthContext & Permissions Hydration
+- `src/contexts/AuthContext.tsx` now exposes `permissions` via `useAuth()`.
+- On session restore and after successful login, the context calls `/api/me` to hydrate the latest user object including `permissions`.
+- This ensures navigation renders correctly without a hard refresh.
+
+### Troubleshooting Sidebar Visibility
+- If the sidebar only shows Dashboard/Feedback/Reports:
+  - Confirm the user has `view` permission for Shipments/Tasks/Settings.
+  - Refresh the page or log out and back in to hydrate permissions.
+  - Check localStorage key `wareopes_session` includes `user.permissions`.
+  - Verify `/api/me` responds with `permissions` for the current user.
+
+- New `GET /api/me` endpoint at `src/app/api/me/route.ts`:
+  - Reads `session` cookie to identify the current user.
+  - Fetches user via Admin SDK and returns normalized permissions (explicit user permissions or fallback from `Roles`).
+  - Response includes: `id`, `employeeNo`, `fullName`, `name`, `role`, `department`, `email`, `redirectPage`, `permissions`.
+
+- `AuthContext.refreshUser` now uses `/api/me` instead of client Firestore:
+  - Avoids client-side Firestore reads for refresh.
+  - Updates local session (`wareopes_session`) with server-sourced user and permissions.
+  - File: `src/contexts/AuthContext.tsx`.
+
+- Server-side permission gate on Settings page:
+  - In `src/app/dashboard/settings/page.tsx`, access requires `admin` role or `settings:view` permission.
+  - The gate reads the `session` cookie, loads the user via Admin SDK, normalizes permissions from `Roles` when explicit permissions are missing, and redirects unauthorized users to `/dashboard`.
+  - Client `<AdminRoute>` remains for defense-in-depth.
+
+- Shipments page data flow confirmed:
+  - `src/app/dashboard/shipments/page.tsx` loads data server-side and passes props to client; no direct client Firestore calls for initial load.
+
+- Dev server note:
+  - If port `3000` is busy, the dev server runs on `http://localhost:3001`.
+
+### Testing the Changes
+- Start dev server: `npm run dev`, then open `http://localhost:3001` (or `3000` if free).
+- Verify `/dashboard/settings` redirects when unauthorized and loads when authorized (`admin` or `settings:view`).
+- In the UI, trigger a user refresh (e.g., navigate to dashboard); the client should reflect server-normalized permissions and profile from `/api/me`.
+
+### Implementation References
+- API: `src/app/api/me/route.ts`
+- Auth: `src/contexts/AuthContext.tsx`, `src/lib/auth.ts`
+- Permissions: `src/lib/role-utils.ts`, `src/app/dashboard/shipments/actions.ts`
+- Settings: `src/app/dashboard/settings/page.tsx`

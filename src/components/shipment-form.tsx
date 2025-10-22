@@ -25,6 +25,7 @@ import type { SerializableShipment, Source, ContainerSize, Branch, ShipmentStatu
 import { saveShipmentAction, deleteShipmentAction } from "@/app/dashboard/shipments/actions";
 import { cn } from "@/lib/utils";
 import { useFormStatus } from "react-dom";
+import { useAuth } from '@/contexts/AuthContext';
 
 
 function DatePickerField({ name, control, label, required }: { name: any, control: any, label: string, required?: boolean }) {
@@ -165,6 +166,16 @@ export function ShipmentForm({
     const [open, setOpen] = useState(false);
     const [actionState, formAction] = useActionState(saveShipmentAction, { success: false, error: null });
     const { toast } = useToast();
+    const { user, refreshUser } = useAuth();
+
+    useEffect(() => {
+        if (user && !(user as any).permissions) {
+            // Ensure we have latest permissions after login/role changes
+            refreshUser().catch(() => {});
+        }
+    }, [user, refreshUser]);
+
+    const canDelete = !!(user && (user as any).permissions && Array.isArray((user as any).permissions.shipments) && (user as any).permissions.shipments.includes('delete'));
 
     const form = useForm<ShipmentFormData>({
         defaultValues: parseShipmentData(shipment) || {
@@ -444,7 +455,7 @@ export function ShipmentForm({
                     </div>
                  <DialogFooter className="mt-4 sticky bottom-0 bg-background pt-4 flex justify-between w-full">
                     <div>
-                         {isEditMode && shipment?.id && <DeleteButton shipmentId={shipment.id} onDeleted={handleDeleted} />}
+                        {isEditMode && shipment?.id && canDelete && <DeleteButton shipmentId={shipment.id} onDeleted={handleDeleted} />}
                     </div>
                     <div className="flex gap-2">
                         <DialogClose asChild>

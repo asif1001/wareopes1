@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
             role: userData.role,
             department: userData.department,
             branch: userData.branch,
+            redirectPage: userData.redirectPage, // propagate user redirect preference
         };
 
         const response = NextResponse.json(sessionData);

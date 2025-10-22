@@ -35,6 +35,7 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAdmin: boolean;
+  permissions: import('@/lib/types').UserPermissions | null;
   login: (employeeNo: string, password: string) => Promise<{ success: boolean; user?: User; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -58,9 +59,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (!auth.currentUser && shouldInitAnonymousAuth) {
           try {
-            await signInAnonymously(auth);
+            // Fire-and-forget anonymous auth to avoid blocking initial UI
+            signInAnonymously(auth).catch((e) => {
+              console.warn('Anonymous auth failed (continuing):', e);
+            });
           } catch (e) {
-            console.warn('Anonymous auth failed (continuing):', e);
+            console.warn('Anonymous auth init error (continuing):', e);
           }
         }
 
@@ -69,6 +73,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(session.user);
           // Refresh session to extend expiry
           refreshSession();
+          // Immediately refresh user from server to load latest fields like permissions
+          await refreshUser();
         } else {
           // Ensure user is null if no valid session
           setUser(null);
@@ -108,11 +114,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: sessionData.role,
           department: sessionData.department,
           email: sessionData.email,
+          redirectPage: sessionData.redirectPage,
         };
 
         setUser(userObj);
         // Mirror server cookie with local session for client context
         createSession(userObj);
+        // Fetch latest user data (including permissions) and update context
+        await refreshUser();
         return { success: true, user: userObj };
       } else if (response.status === 401) {
         return { success: false, error: 'Invalid employee number or password' };
@@ -148,28 +157,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshUser = async () => {
-    if (!user?.id) return;
-    
     try {
-      const users = await getUsers();
-      const updatedUser = users.find(u => u.id === user.id);
-      
-      if (updatedUser) {
-        setUser(updatedUser);
-        
-        // Update session storage with new user data
-        const session = getCurrentSession();
-        if (session) {
-          const updatedSession = {
-            ...session,
-            user: updatedUser
-          };
-          // Keep key consistent with lib/auth.ts
-          localStorage.setItem('wareopes_session', JSON.stringify(updatedSession));
-        }
+      const res = await fetch('/api/me');
+      if (!res.ok) {
+        console.warn('Failed to refresh user from /api/me:', res.status);
+        return;
+      }
+      const data = await res.json();
+      if (!data?.success) {
+        console.warn('Refresh /api/me returned failure:', data?.error);
+        return;
+      }
+      const updatedUser: User = {
+        id: data.id,
+        employeeNo: String(data.employeeNo || ''),
+        fullName: data.fullName || data.name || '',
+        name: data.name,
+        role: data.role,
+        department: data.department,
+        email: data.email,
+        redirectPage: data.redirectPage,
+        permissions: data.permissions,
+      } as any;
+
+      setUser(updatedUser);
+
+      // Update local session with new user data
+      const session = getCurrentSession();
+      if (session) {
+        const updatedSession = {
+          ...session,
+          user: updatedUser,
+        };
+        localStorage.setItem('wareopes_session', JSON.stringify(updatedSession));
       }
     } catch (error) {
-      console.error('Error refreshing user data:', error);
+      console.error('Error refreshing user via /api/me:', error);
     }
   };
 
@@ -180,6 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     isLoading,
     isAdmin,
+    permissions: user?.permissions || null,
     login,
     logout,
     refreshUser,

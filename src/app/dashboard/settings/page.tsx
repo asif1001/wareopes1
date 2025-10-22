@@ -14,11 +14,14 @@ import { deleteUserAction, deleteSourceAction, deleteContainerSizeAction, delete
 import { UserEditForm, SourceEditForm, ContainerSizeEditForm, DepartmentEditForm, BranchEditForm } from "@/components/settings-edit-forms";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import type { User, Source, ContainerSize, Department, Branch, Role } from "@/lib/types";
+import { AddUserDialog } from "@/components/add-user-dialog";
 
 import { AdminRoute } from "@/components/AdminRoute";
 import { getFormTemplatesAction } from "@/app/actions";
 import { RoleFormsSettings } from "@/components/role-forms-settings";
 import { ExistingUsersCard } from "@/components/settings-users-table";
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 async function UsersTable() {
   const users = await getUsers();
@@ -239,6 +242,52 @@ async function RolesTable() {
 }
 
 export default async function SettingsPage() {
+  // Server-side gate: ensure user has settings:view or is admin
+  const c = await cookies();
+  const rawSession = c.get('session')?.value;
+  let userId: string | null = null;
+  if (rawSession) {
+    try {
+      const parsed = JSON.parse(rawSession);
+      userId = typeof parsed?.id === 'string' ? parsed.id : rawSession;
+    } catch {
+      userId = rawSession;
+    }
+  }
+  if (!userId) {
+    redirect('/');
+  }
+
+  const { getAdminDb } = await import('@/lib/firebase/admin');
+  const adb = await getAdminDb();
+  const snap = await adb.collection('Users').doc(userId!).get();
+  const udata = snap.exists ? (snap.data() as any) : {};
+  if (!udata?.role && !udata?.permissions) {
+    redirect('/dashboard');
+  }
+
+  let permissions = udata?.permissions as any | undefined;
+  if (!permissions && udata?.role) {
+    const rolesSnap = await adb.collection('Roles').where('name', '==', String(udata.role)).get();
+    if (!rolesSnap.empty) {
+      const roleData = rolesSnap.docs[0].data() as any;
+      const arr = Array.isArray(roleData?.permissions) ? roleData.permissions : [];
+      const normalized: any = {};
+      for (const item of arr) {
+        if (typeof item !== 'string') continue;
+        const [page, action] = item.split(':');
+        if (!page || !action) continue;
+        (normalized[page] ||= []).push(action);
+      }
+      permissions = Object.keys(normalized).length ? normalized : undefined;
+    }
+  }
+  const isAdmin = String(udata?.role || '').toLowerCase() === 'admin';
+  const canViewSettings = isAdmin || (Array.isArray(permissions?.settings) && permissions.settings.includes('view'));
+  if (!canViewSettings) {
+    redirect('/dashboard');
+  }
+
   const departments = await getDepartments();
   const branches = await getBranches();
   const roles = await getRoles();
@@ -264,9 +313,11 @@ export default async function SettingsPage() {
               <TabsTrigger value="roles">Roles</TabsTrigger>
             </TabsList>
             <TabsContent value="users">
-              <div className="grid lg:grid-cols-2 gap-6">
-                  <UserForm departments={serializableDepartments} roles={serializableRoles} />
-                  <UsersTable />
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-end">
+                  <AddUserDialog departments={serializableDepartments} roles={serializableRoles} />
+                </div>
+                <UsersTable />
               </div>
             </TabsContent>
             <TabsContent value="sources">

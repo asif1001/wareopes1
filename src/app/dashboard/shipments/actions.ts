@@ -6,6 +6,7 @@ import { z } from "zod";
 import { addShipment, updateShipment, isInvoiceUnique, updateShipmentBookings, deleteShipment, getShipmentsByDateRange } from "@/lib/firebase/firestore";
 import type { Shipment, Container, ContainerBooking, SerializableShipment } from "@/lib/types";
 import { format } from "date-fns";
+import { cookies } from 'next/headers';
 
 const shipmentSchema = z.object({
     id: z.string().optional().nullable(),
@@ -141,6 +142,48 @@ export async function saveContainerBookingsAction(
 
 export async function deleteShipmentAction(id: string): Promise<{ success: boolean, error: string | null }> {
     try {
+        // Server-side auth: get current user from session cookie
+        const c = await cookies();
+        const rawSession = c.get('session')?.value;
+        let userId: string | null = null;
+        if (rawSession) {
+            try {
+                const parsed = JSON.parse(rawSession);
+                userId = typeof parsed?.id === 'string' ? parsed.id : rawSession;
+            } catch {
+                userId = rawSession;
+            }
+        }
+        if (!userId) {
+            return { success: false, error: 'Not authenticated' };
+        }
+
+        // Fetch user and normalize permissions (fallback to role permissions when explicit missing)
+        const { getAdminDb } = await import('@/lib/firebase/admin');
+        const adb = await getAdminDb();
+        const snap = await adb.collection('Users').doc(userId).get();
+        const udata = snap.exists ? (snap.data() as any) : {};
+        let permissions = udata?.permissions as any | undefined;
+        if (!permissions && udata?.role) {
+            const rolesSnap = await adb.collection('Roles').where('name', '==', String(udata.role)).get();
+            if (!rolesSnap.empty) {
+                const roleData = rolesSnap.docs[0].data() as any;
+                const arr = Array.isArray(roleData?.permissions) ? roleData.permissions : [];
+                const normalized: any = {};
+                for (const item of arr) {
+                    if (typeof item !== 'string') continue;
+                    const [page, action] = item.split(':');
+                    if (!page || !action) continue;
+                    (normalized[page] ||= []).push(action);
+                }
+                permissions = Object.keys(normalized).length ? normalized : undefined;
+            }
+        }
+        const canDelete = Array.isArray(permissions?.shipments) && permissions.shipments.includes('delete');
+        if (!canDelete) {
+            return { success: false, error: 'Access denied: delete permission required' };
+        }
+
         await deleteShipment(id);
         revalidatePath("/dashboard/shipments");
         return { success: true, error: null };

@@ -5,24 +5,37 @@ import { Boxes, LayoutDashboard, Flag, FileText, GanttChartSquare, MessageSquare
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import type { AppPageKey } from "@/lib/types";
 
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/dashboard/shipments", label: "Shipments", icon: Flag },
-    { href: "/dashboard/tasks", label: "Tasks", icon: GanttChartSquare },
+    { href: "/dashboard/shipments", label: "Shipments", icon: Flag, pageKey: "shipments" as AppPageKey },
+    { href: "/dashboard/tasks", label: "Tasks", icon: GanttChartSquare, pageKey: "tasks" as AppPageKey },
     { href: "/dashboard/feedback", label: "Feedback", icon: MessageSquareWarning },
     { href: "/dashboard/reports", label: "Reports", icon: FileText },
-    { href: "/dashboard/settings", label: "Settings", icon: Settings, adminOnly: true },
+    { href: "/dashboard/settings", label: "Settings", icon: Settings, pageKey: "settings" as AppPageKey },
 ];
 
 export function DashboardNav() {
     const pathname = usePathname();
-    const { isAdmin, isLoading } = useAuth();
+    const { permissions, isLoading } = useAuth();
 
-    // Prevent hydration mismatch by not rendering admin-only items during initial load
+    // Helper function to check if user has view permission for a page
+    const hasViewPermission = (pageKey: AppPageKey): boolean => {
+        if (!permissions) return false;
+        const pagePermissions = permissions[pageKey];
+        return Array.isArray(pagePermissions) && pagePermissions.includes('view');
+    };
+
+    // Filter navigation items based on permissions
     const filteredNavItems = isLoading 
-        ? navItems.filter(item => !item.adminOnly)
-        : navItems.filter(item => !item.adminOnly || isAdmin);
+        ? navItems.filter(item => !item.pageKey) // Show only non-permission-gated items during loading
+        : navItems.filter(item => {
+            // Always show Dashboard and items without pageKey
+            if (!item.pageKey) return true;
+            // For items with pageKey, check view permission
+            return hasViewPermission(item.pageKey);
+        });
 
     return (
         <div className="flex flex-col h-full">

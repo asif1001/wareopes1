@@ -25,39 +25,29 @@ export type ContainerBooking = {
 
 export type Shipment = {
     id: string;
-    // Identifiers
     source: string; // from sources collection
     invoice: string;
     billOfLading: string;
-    // Status & Branch
     status: ShipmentStatus;
     branch?: string;
-    // Containers
     numContainers: number;
     containers: Container[];
-    // ETAs & Dates
     bahrainEta: Date;
     originalDocumentReceiptDate?: Date | null;
     actualBahrainEta?: Date | null;
     lastStorageDay?: Date | null;
     whEtaRequestedByParts?: Date | null;
     whEtaConfirmedByLogistics?: Date | null;
-    // Clearance
     cleared: boolean;
     actualClearedDate?: Date | null;
-    // Counts
     totalCases: number;
     domLines: number;
     bulkLines: number;
     totalLines: number; // computed
-    // Remarks
     generalRemark: string;
     remark?: string;
-    // Bookings
     bookings?: ContainerBooking[];
-    // Optimization
     monthYear?: string; // e.g., "Aug 24"
-    // System Fields
     createdAt: Timestamp;
     updatedAt: Timestamp;
     createdBy: string;
@@ -69,8 +59,6 @@ export type SerializableContainerBooking = {
     bookingDate: string;
 }
 
-// A version of Shipment where all Date/Timestamp fields are strings (ISO format)
-// This is safe to pass from Server to Client Components.
 export type SerializableShipment = Omit<Shipment, 'bahrainEta' | 'originalDocumentReceiptDate' | 'actualBahrainEta' | 'lastStorageDay' | 'whEtaRequestedByParts' | 'whEtaConfirmedByLogistics' | 'actualClearedDate' | 'createdAt' | 'updatedAt' | 'bookings'> & {
     bahrainEta: string;
     originalDocumentReceiptDate: string | null;
@@ -142,7 +130,6 @@ export type Task = {
   reminderEnabled?: boolean;
   reminderInterval?: number; // in hours
   completedAt?: string;
-  // Dual-filter metadata for UI distinction
   isCreatedByCurrentUser?: boolean;
   isAssignedToCurrentUser?: boolean;
 };
@@ -187,6 +174,11 @@ export type Role = {
   permissions?: string[]; // optional permissions assigned to this role
 };
 
+// Granular permissions
+export type PermissionAction = 'view' | 'add' | 'edit' | 'delete';
+export type AppPageKey = 'shipments' | 'tasks' | 'settings'; // extendable
+export type UserPermissions = Partial<Record<AppPageKey, PermissionAction[]>>;
+
 export type User = {
     id: string;
     fullName: string;
@@ -197,9 +189,11 @@ export type User = {
     phone?: string;
     department: string;
     role: UserRole;
+    redirectPage?: string; // Optional custom redirect page after login (e.g., "/dashboard/tasks", "/dashboard/shipments")
     profilePicture?: string;
     createdAt?: string; // ISO string for serialization
     updatedAt?: string; // ISO string for serialization
+    permissions?: UserPermissions; // optional granular permissions
 };
 
 export type Source = {
@@ -267,7 +261,6 @@ export type FormSubmission = {
   userRole: string;
   submittedAt: string;
   answers: Record<string, unknown>; // key = field.id, value depends on type
-  // Extra metadata for reporting
   userFullName?: string;
   userEmployeeNo?: string;
   templateDisplayName?: string;

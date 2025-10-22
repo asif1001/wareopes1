@@ -1,4 +1,8 @@
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+
 import { getShipments, getSources, getContainerSizes, getBranches } from "@/lib/firebase/firestore";
 import { ShipmentsClientPage } from "@/components/shipments-client-page";
 import { Suspense } from "react";
@@ -6,21 +10,21 @@ import { DashboardHeader } from "@/components/dashboard-header";
 import { Skeleton } from "@/components/ui/skeleton";
 
 async function Shipments() {
-  console.time('getShipments');
+  const t0 = Date.now();
   const shipments = await getShipments();
-  console.timeEnd('getShipments');
+  console.log('[perf] getShipments', Date.now() - t0, 'ms');
 
-  console.time('getSources');
+  const t1 = Date.now();
   const sources = await getSources();
-  console.timeEnd('getSources');
+  console.log('[perf] getSources', Date.now() - t1, 'ms');
 
-  console.time('getContainerSizes');
+  const t2 = Date.now();
   const containerSizes = await getContainerSizes();
-  console.timeEnd('getContainerSizes');
+  console.log('[perf] getContainerSizes', Date.now() - t2, 'ms');
 
-  console.time('getBranches');
+  const t3 = Date.now();
   const branches = await getBranches();
-  console.timeEnd('getBranches');
+  console.log('[perf] getBranches', Date.now() - t3, 'ms');
   
   return (
     <ShipmentsClientPage
