@@ -153,9 +153,9 @@ export function ShipmentsClientPage({
     });
   }, [shipments, searchQuery, sourceFilter]);
   
-  const clearedShipments = filteredShipments.filter(s => s.cleared);
   const notClearedShipments = filteredShipments.filter(s => !s.cleared);
   const wipShipments = filteredShipments.filter(s => s.status === 'WIP');
+  const arrivedShipments = filteredShipments.filter(s => s.status === 'Arrived');
   const completedShipments = filteredShipments.filter(s => s.status === 'Completed');
 
   if (!today) {
@@ -170,9 +170,9 @@ export function ShipmentsClientPage({
           <div className="flex items-center">
             <TabsList>
               <TabsTrigger value="all">All ({filteredShipments.length})</TabsTrigger>
-              <TabsTrigger value="cleared">Cleared ({clearedShipments.length})</TabsTrigger>
               <TabsTrigger value="not-cleared">Not Cleared ({notClearedShipments.length})</TabsTrigger>
               <TabsTrigger value="wip">WIP ({wipShipments.length})</TabsTrigger>
+              <TabsTrigger value="arrived">Arrived ({arrivedShipments.length})</TabsTrigger>
               <TabsTrigger value="completed">Completed ({completedShipments.length})</TabsTrigger>
             </TabsList>
             <div className="ml-auto flex items-center gap-3">
@@ -224,19 +224,6 @@ export function ShipmentsClientPage({
               </CardContent>
             </Card>
           </TabsContent>
-          <TabsContent value="cleared">
-            <Card>
-              <CardHeader>
-                <CardTitle>Cleared Shipments</CardTitle>
-                <CardDescription>
-                  Shipments that have been cleared.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                 <ShipmentTable shipments={clearedShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
-              </CardContent>
-            </Card>
-          </TabsContent>
           <TabsContent value="not-cleared">
             <Card>
               <CardHeader>
@@ -260,6 +247,19 @@ export function ShipmentsClientPage({
               </CardHeader>
               <CardContent>
                  <ShipmentTable shipments={wipShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="arrived">
+            <Card>
+              <CardHeader>
+                <CardTitle>Arrived Shipments</CardTitle>
+                <CardDescription>
+                  Shipments with status Arrived.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                 <ShipmentTable shipments={arrivedShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
               </CardContent>
             </Card>
           </TabsContent>

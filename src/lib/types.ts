@@ -52,6 +52,8 @@ export type Shipment = {
     updatedAt: Timestamp;
     createdBy: string;
     updatedBy: string;
+    // Whether production cases have been uploaded (lock flag)
+    productionUploaded?: boolean;
 };
 
 export type SerializableContainerBooking = {
@@ -176,7 +178,7 @@ export type Role = {
 
 // Granular permissions
 export type PermissionAction = 'view' | 'add' | 'edit' | 'delete';
-export type AppPageKey = 'shipments' | 'tasks' | 'settings'; // extendable
+export type AppPageKey = 'shipments' | 'tasks' | 'settings' | 'production' | 'productivity'; // extendable
 export type UserPermissions = Partial<Record<AppPageKey, PermissionAction[]>>;
 
 export type User = {

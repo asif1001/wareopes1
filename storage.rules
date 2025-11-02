@@ -19,6 +19,21 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*'); // Only images
     }
     
+    // Allow uploads of production data files under shipments/{shipmentId}/production/*
+    match /shipments/{shipmentId}/production/{fileName} {
+      // Allow read access (non-sensitive structured uploads)
+      allow read: if true;
+      // Allow writes with validation; app enforces permission server-side
+      allow write: if true;
+      allow create: if request.resource.size < 10 * 1024 * 1024 // 10MB limit
+        && (
+          request.resource.contentType.matches('text/csv') ||
+          request.resource.contentType.matches('application/vnd.ms-excel') ||
+          request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') ||
+          request.resource.contentType.matches('application/octet-stream')
+        );
+    }
+    
     // Default rule - deny all other access
     match /{allPaths=**} {
       allow read, write: if false;

@@ -1,5 +1,6 @@
 import { getApps, getApp, initializeApp, cert, applicationDefault } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import * as admin from 'firebase-admin';
 import fs from 'fs';
 import path from 'path';
 
@@ -155,5 +156,23 @@ export async function getAdminDb() {
         throw initErr;
       }
     }
+  }
+}
+
+// Expose the admin namespace for callers that need FieldValue, etc.
+export async function getAdmin() {
+  try {
+    // Ensure app is initialized; reuse getAdminDb for robust init logic
+    await getAdminDb();
+  } catch (_) {
+    // Swallow; getApp below will throw if still not initialized
+  }
+  // If an app exists, return the admin namespace
+  try {
+    getApp();
+    return admin;
+  } catch (err) {
+    // Propagate initialization error to caller
+    throw err;
   }
 }

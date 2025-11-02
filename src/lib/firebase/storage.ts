@@ -1,4 +1,4 @@
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, uploadBytesResumable } from 'firebase/storage';
 import { app } from './firebase';
 
 const storage = getStorage(app);
@@ -29,6 +29,48 @@ export async function uploadProfileImage(file: File, userId: string): Promise<st
   } catch (error) {
     console.error('Error uploading profile image:', error);
     throw new Error('Failed to upload profile image');
+  }
+}
+
+/**
+ * Upload a production data file to Firebase Storage under the shipment path
+ * Path: shipments/<shipmentId>/production/<timestamp>-<sanitizedFileName>
+ * Returns both a download URL and the storage object path for server-side deletion later.
+ */
+export async function uploadProductionFile(file: File, shipmentId: string, uploaderId?: string): Promise<{ downloadURL: string; storagePath: string; fileName: string }> {
+  try {
+    const timestamp = Date.now();
+    const originalName = file.name || 'upload.xlsx';
+    const sanitizedName = originalName.replace(/[^A-Za-z0-9_.-]/g, '_');
+    const fileName = `${timestamp}-${sanitizedName}`;
+    const storagePath = `shipments/${String(shipmentId)}/production/${fileName}`;
+
+    const storageRef = ref(storage, storagePath);
+    const metadata: any = {
+      contentType: file.type || 'application/octet-stream',
+      customMetadata: {
+        shipmentId: String(shipmentId),
+        uploaderId: uploaderId ? String(uploaderId) : '',
+      },
+    };
+    const snapshot = await uploadBytes(storageRef, file, metadata);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return { downloadURL, storagePath, fileName: originalName };
+  } catch (error) {
+    console.error('Error uploading production file:', error);
+    throw new Error('Failed to upload production file');
+  }
+}
+
+/**
+ * Delete a storage object by path (client-side). Prefer server-side deletion for authoritative cleanup.
+ */
+export async function deleteStoragePath(storagePath: string): Promise<void> {
+  try {
+    const storageRef = ref(storage, storagePath);
+    await deleteObject(storageRef);
+  } catch (error) {
+    console.error('Error deleting storage path:', error);
   }
 }
 
@@ -78,4 +120,54 @@ export function validateImageFile(file: File): { isValid: boolean; error?: strin
   }
   
   return { isValid: true };
+}
+
+/**
+ * Upload a production file with progress reporting.
+ * Uses resumable upload to surface percentage updates to the caller.
+ */
+export async function uploadProductionFileWithProgress(
+  file: File,
+  shipmentId: string,
+  uploaderId: string | undefined,
+  onProgress: (percent: number) => void
+): Promise<{ downloadURL: string; storagePath: string; fileName: string }> {
+  const timestamp = Date.now();
+  const originalName = file.name || 'upload.xlsx';
+  const sanitizedName = originalName.replace(/[^A-Za-z0-9_.-]/g, '_');
+  const fileName = `${timestamp}-${sanitizedName}`;
+  const storagePath = `shipments/${String(shipmentId)}/production/${fileName}`;
+
+  const storageRef = ref(storage, storagePath);
+  const metadata: any = {
+    contentType: file.type || 'application/octet-stream',
+    customMetadata: {
+      shipmentId: String(shipmentId),
+      uploaderId: uploaderId ? String(uploaderId) : '',
+    },
+  };
+
+  return new Promise((resolve, reject) => {
+    try {
+      const task = uploadBytesResumable(storageRef, file, metadata);
+      task.on(
+        'state_changed',
+        (snap) => {
+          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+          if (Number.isFinite(pct)) onProgress(Math.max(0, Math.min(100, pct)));
+        },
+        (err) => reject(err),
+        async () => {
+          try {
+            const downloadURL = await getDownloadURL(task.snapshot.ref);
+            resolve({ downloadURL, storagePath, fileName: originalName });
+          } catch (e) {
+            reject(e);
+          }
+        }
+      );
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
