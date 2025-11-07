@@ -24,6 +24,18 @@ export async function generateReportAction(
     error: string | null
   }> {
     try {
+      const apiKey =
+        process.env.GEMINI_API_KEY ||
+        process.env.GOOGLE_API_KEY ||
+        process.env.GOOGLE_GENAI_API_KEY;
+      if (!apiKey) {
+        return {
+          output: null,
+          error:
+            "Gemini API key not configured. Set `GEMINI_API_KEY` or `GOOGLE_API_KEY` (or `GOOGLE_GENAI_API_KEY`) in `.env.local` and restart the server.",
+        };
+      }
+
       const input: GenerateCustomReportInput = {
         reportTitle: formData.get("reportTitle") as string,
         dataDescription: formData.get("dataDescription") as string,
