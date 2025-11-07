@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { MaintenanceClientPage } from "@/components/maintenance-client-page";
 import { getUsers, getBranches } from "@/lib/firebase/firestore";
@@ -79,13 +80,11 @@ export default function MaintenancePage() {
                 <p>Current role: <span className="font-medium">{String(role || 'Unknown')}</span></p>
                 <p>Required: <span className="font-medium">Maintenance view permission or Admin</span></p>
               </div>
-              <Button 
-                onClick={() => { if (typeof window !== 'undefined') window.location.href = '/dashboard'; }}
-                className="w-full"
-                variant="outline"
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Dashboard
+              <Button asChild className="w-full" variant="outline">
+                <Link href="/dashboard">
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back to Dashboard
+                </Link>
               </Button>
             </CardContent>
           </Card>
