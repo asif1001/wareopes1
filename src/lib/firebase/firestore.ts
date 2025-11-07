@@ -491,6 +491,34 @@ export async function deleteRole(id: string) {
     await deleteDoc(doc(db, 'Roles', id));
 }
 
+// Vehicle Functions
+// These helpers persist vehicles to Firestore in a "vehicles" collection.
+// Shape aligns with the Maintenance page's Vehicle type.
+export async function getVehicles(): Promise<any[]> {
+    const snap = await getDocs(collection(db, 'vehicles'));
+    return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+}
+
+export async function addVehicle(vehicle: any): Promise<{ id: string } & any> {
+    // Normalize minimal fields
+    const payload: any = {
+        ...vehicle,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+    };
+    const ref = await addDoc(collection(db, 'vehicles'), payload);
+    return { id: ref.id, ...vehicle };
+}
+
+export async function updateVehicle(id: string, vehicle: Partial<any>): Promise<void> {
+    const payload: any = { ...vehicle, updatedAt: serverTimestamp() };
+    await updateDoc(doc(db, 'vehicles', id), payload);
+}
+
+export async function deleteVehicle(id: string): Promise<void> {
+    await deleteDoc(doc(db, 'vehicles', id));
+}
+
 
 // ...
 

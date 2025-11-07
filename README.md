@@ -11,6 +11,7 @@ A modern warehouse management application built with Next.js 15.3.3, Firebase, a
 - **Firebase Integration** - Real-time database and authentication
 - **Responsive Design** - Mobile-friendly interface
 - **TypeScript** - Full type safety and better development experience
+- **Maintenance & Operations Reminders** - Unified notifications for vehicles, MHEs, and gate passes
 
 ## 🛠️ Tech Stack
 
@@ -72,6 +73,106 @@ npm run dev
 ```
 
 The application will be available at [http://localhost:3000](http://localhost:3000)
+
+## 🛠 Maintenance & Operations Reminders
+
+A new dashboard card named "Maintenance & Operations Reminders" aggregates upcoming maintenance and compliance dates from Vehicles, MHEs, and Gate Passes and surfaces them in one place.
+
+What it shows
+- Vehicle: insurance expiry, registration expiry, next service due
+- MHE: certification expiry (when available), next service due
+- Gate Pass: expiry date
+
+Behavior
+- Sorts reminders by urgency and color-codes due dates (red/orange/yellow/blue for 0–3/4–7/8–14/15–30 days)
+- Interactive actions: View details, Mark as done, Snooze
+- Friendly labels: shows vehicle `plateNo` and MHE `equipmentInfo`/`name` instead of raw IDs
+- Robust error handling: detects sign-in and permission issues and displays helpful messages
+
+Data sources (Firestore-backed APIs)
+- `GET /api/vehicles` → `vehicles` collection
+- `GET /api/mhes` → `mhes` collection
+- `GET /api/gatepasses` → `gatepasses` collection
+- `GET /api/vehicle-maintenance` → vehicle maintenance records
+- `GET /api/mhe-maintenance` → MHE maintenance records
+
+File references
+- Component: `src/components/maintenance-notifications-card.tsx`
+- Integrated in dashboard: `src/components/dashboard-client.tsx` (rendered below `ContainerOverview`)
+
+Previewing the card
+- Start dev server: `npm run dev`
+- Open dashboard: `http://localhost:3000/dashboard` (or whichever dev port is active)
+- The card appears under "Container Overview"
+
+Permissions & errors
+- If you see “Please sign in to view maintenance data”, sign in and refresh.
+- If you see “Insufficient permissions to view maintenance data”, grant the user appropriate view permissions (or admin) for maintenance.
+- If “Unable to load maintenance notifications” appears, check server logs for endpoint errors.
+
+## 🔧 Maintenance Page & Workflow
+
+Route
+- `GET /dashboard/maintenance` — Server Component that renders the client page.
+
+Permissions
+- Requires `Admin` role or `maintenance:view` permission.
+- Gate: reads the `session` cookie, loads the user via Admin SDK, normalizes permissions from `Roles` when explicit user permissions are missing.
+
+Data Flow
+- Server-side: loads `Users` and `Branches` and passes them as props to the client page to ensure availability regardless of client Firestore rules.
+- Client-side: fetches operational data via APIs:
+  - `GET /api/mhes` — MHE master data
+  - `GET /api/gatepasses` — Gate pass records
+  - `GET /api/vehicle-maintenance` — Vehicle maintenance records
+  - `GET /api/mhe-maintenance` — MHE maintenance records
+
+UI & Actions
+- Filtering and search for Vehicles, MHEs, Gate Passes, and maintenance records.
+- Add/Edit dialogs for Vehicles and MHEs (local state backed by Firestore via API routes).
+- Attachments: upload/delete files to/from Firebase Storage for records (e.g., maintenance attachments, images).
+- Expiry statuses for gate passes and certifications (Active/Expiring Soon/Expired).
+
+Key Files
+- Page: `src/app/dashboard/maintenance/page.tsx` (server-side gate, data hydration, layout)
+- Client: `src/components/maintenance-client-page.tsx` (UI, fetches, dialogs, uploads)
+
+Preview
+- Start: `npm run dev`
+- Open: `http://localhost:3000/dashboard/maintenance` (or your active dev port)
+
+## ⚙️ Settings Page Workflow
+
+Route
+- `GET /dashboard/settings` — Server Component with a tabbed settings UI.
+
+Permissions
+- Requires `Admin` role or `settings:view` permission.
+- Server-side gate: validates `session` → loads user via Admin SDK → allows if admin or `settings:view`; otherwise redirects.
+- Client-side: wrapped with `<AdminRoute>` for defense-in-depth.
+
+Tabs & Features
+- Users: add users (`AddUserDialog`) and view/manage users (`ExistingUsersCard`).
+- Sources: create/edit/delete sources.
+- Container Sizes: create/edit/delete container size records.
+- Departments: create/edit/delete departments, linked to branches.
+- Branches: create/edit/delete branches.
+- Role-Based Forms: manage form templates per role.
+- Roles: manage roles and inspect permissions.
+
+Data Flow
+- Server-side: loads Departments, Branches, Roles; serializes data for client safety.
+- Actions: deletion operations performed via server actions (e.g., `deleteUserAction`, `deleteSourceAction`, etc.).
+
+Key Files
+- Page: `src/app/dashboard/settings/page.tsx`
+- Forms: `src/components/settings-forms.tsx`, `src/components/settings-edit-forms.tsx`
+- Users table: `src/components/settings-users-table.tsx`
+- Actions: `src/app/actions.ts`
+
+Preview
+- Start: `npm run dev`
+- Open: `http://localhost:3000/dashboard/settings` (or your active dev port)
 
 ## 📜 Available Scripts
 
