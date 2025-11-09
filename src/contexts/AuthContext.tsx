@@ -114,6 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: sessionData.role,
           department: sessionData.department,
           email: sessionData.email,
+          branch: sessionData.branch,
           redirectPage: sessionData.redirectPage,
         };
 
@@ -176,6 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: data.role,
         department: data.department,
         email: data.email,
+        branch: data.branch,
         redirectPage: data.redirectPage,
         permissions: data.permissions,
       } as any;

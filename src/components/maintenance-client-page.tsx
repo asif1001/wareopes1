@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import type { User, Branch } from "@/lib/types";
 import { getUsers, getBranches } from "@/lib/firebase/firestore";
+import { useAuth } from "@/contexts/AuthContext";
 import { storage } from "@/lib/firebase/firebase";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
@@ -152,6 +153,7 @@ function expiryStatus(expiry?: string | null) {
 
 export function MaintenanceClientPage({ initialUsers, initialBranches }: { initialUsers?: User[]; initialBranches?: Branch[] }) {
   const { toast } = useToast();
+  const { user, isAdmin } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
   const [ownershipFilter, setOwnershipFilter] = useState("all");
@@ -176,7 +178,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     let active = true;
     (async () => {
       try {
-        const res = await fetch("/api/mhes", { method: "GET" });
+        const res = await fetch("/api/mhes?limit=50", { method: "GET" });
         if (!res.ok) throw new Error(`Failed to load MHEs: ${res.status}`);
         const data = await res.json();
         const list = (data?.items || []) as any[];
@@ -233,7 +235,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     let active = true;
     (async () => {
       try {
-        const res = await fetch('/api/vehicle-maintenance', { method: 'GET' });
+        const res = await fetch('/api/vehicle-maintenance?limit=50', { method: 'GET' });
         if (!res.ok) throw new Error(`Failed to load Vehicle Maintenance: ${res.status}`);
         const data = await res.json();
         const list = (data?.items || []) as any[];
@@ -265,7 +267,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     let active = true;
     (async () => {
       try {
-        const res = await fetch('/api/mhe-maintenance', { method: 'GET' });
+        const res = await fetch('/api/mhe-maintenance?limit=50', { method: 'GET' });
         if (!res.ok) throw new Error(`Failed to load MHE Maintenance: ${res.status}`);
         const data = await res.json();
         const list = (data?.items || []) as any[];
@@ -295,7 +297,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     let active = true;
     (async () => {
       try {
-        const res = await fetch("/api/vehicles", { method: "GET" });
+        const params = new URLSearchParams({ limit: "50" });
+        const desiredBranch = branchFilter !== "all" ? branchFilter : (!isAdmin && user?.branch ? user.branch : undefined);
+        if (desiredBranch) params.set("branch", desiredBranch);
+        const res = await fetch(`/api/vehicles?${params.toString()}`, { method: "GET" });
         if (!res.ok) throw new Error(`Failed to load vehicles: ${res.status}`);
         const data = await res.json();
         const list = (data?.items || []) as any[];
@@ -328,7 +333,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
       }
     })();
     return () => { active = false; };
-  }, []);
+  }, [branchFilter, isAdmin, user?.branch]);
 
   // Load users for driver selector from Firebase
   useEffect(() => {
@@ -477,8 +482,12 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                     if (form.status) fd.append('status', String(form.status as any));
                     if (imageFile) fd.append('image', imageFile, imageFile.name);
                     const res = await fetch(`/api/vehicles`, { method: 'POST', body: fd });
-                    if (!res.ok) throw new Error(`Create failed: ${res.status}`);
-                    const data = await res.json();
+                    let data: any = null;
+                    try { data = await res.json(); } catch (_) { /* ignore parse errors */ }
+                    if (!res.ok) {
+                      const errMsg = (data && (data.error || data.message)) ? (data.error || data.message) : `Create failed: ${res.status}`;
+                      throw new Error(errMsg);
+                    }
                     const created = data?.item as Vehicle | undefined;
                     if (created) {
                       setVehicles(prev => [created, ...prev]);
@@ -489,7 +498,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                     }
                   } catch (e) {
                     console.warn("Failed to add vehicle via API", e);
-                    toast({ title: "Save failed", description: "Could not persist vehicle. Check network/permissions.", variant: "destructive" });
+                    toast({ title: "Save failed", description: (e as any)?.message || "Could not persist vehicle. Check network/permissions.", variant: "destructive" });
                   }
                 }
               };
@@ -594,15 +603,19 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                         fd.append('existingImageUrl', form.imageUrl);
                       }
                       const res = await fetch(`/api/vehicles/${vehicle.id}`, { method: 'PUT', body: fd });
-                      if (!res.ok) throw new Error(`Update failed: ${res.status}`);
-                      const data = await res.json();
+                      let data: any = null;
+                      try { data = await res.json(); } catch (_) { /* ignore parse errors */ }
+                      if (!res.ok) {
+                        const errMsg = (data && (data.error || data.message)) ? (data.error || data.message) : `Update failed: ${res.status}`;
+                        throw new Error(errMsg);
+                      }
                       const saved = (data?.item || { ...vehicle, ...form }) as Vehicle;
                       setVehicles((prev) => prev.map((x) => (x.id === vehicle.id ? saved : x)));
                       toast({ title: "Vehicle updated", description: `${saved.plateNo || saved.vehicleType} updated` });
                       onSaved?.();
                     } catch (e) {
                       console.warn("Failed to update vehicle via API", e);
-                      toast({ title: "Update failed", description: "Could not persist changes. Check network/permissions.", variant: "destructive" });
+                      toast({ title: "Update failed", description: (e as any)?.message || "Could not persist changes. Check network/permissions.", variant: "destructive" });
                     }
                   } else {
                     try {
@@ -627,8 +640,12 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       if (form.status) fd.append('status', String(form.status as any));
                       if (imageFile) fd.append('image', imageFile, imageFile.name);
                       const res = await fetch(`/api/vehicles`, { method: 'POST', body: fd });
-                      if (!res.ok) throw new Error(`Create failed: ${res.status}`);
-                      const data = await res.json();
+                      let data: any = null;
+                      try { data = await res.json(); } catch (_) { /* ignore parse errors */ }
+                      if (!res.ok) {
+                        const errMsg = (data && (data.error || data.message)) ? (data.error || data.message) : `Create failed: ${res.status}`;
+                        throw new Error(errMsg);
+                      }
                       const created = data?.item as Vehicle | undefined;
                       if (created) {
                         setVehicles((prev) => [created, ...prev]);
@@ -639,7 +656,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       }
                     } catch (e) {
                       console.warn("Failed to add vehicle via API", e);
-                      toast({ title: "Save failed", description: "Could not persist vehicle. Check network/permissions.", variant: "destructive" });
+                      toast({ title: "Save failed", description: (e as any)?.message || "Could not persist vehicle. Check network/permissions.", variant: "destructive" });
                     }
                   }
                 };
@@ -1236,7 +1253,19 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="flex flex-col gap-1"><Label htmlFor="equipmentInfo">Equipment Info<span className="text-destructive"> *</span></Label><Input id="equipmentInfo" required placeholder="e.g. Forklift Cat 2.5T" value={form.equipmentInfo || ""} onChange={e => setForm(f => ({ ...f, equipmentInfo: e.target.value }))} /></div>
-                <div className="flex flex-col gap-1"><Label htmlFor="mheStatus">Status<span className="text-destructive"> *</span></Label><Input id="mheStatus" required placeholder="Active / In Maintenance / Inactive" value={(form.status || "") as any} onChange={e => setForm(f => ({ ...f, status: (e.target.value as any) }))} /></div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="mheStatus">Status<span className="text-destructive"> *</span></Label>
+            <Select value={(form.status || "") as any} onValueChange={(val) => setForm((f) => ({ ...f, status: val as any }))}>
+              <SelectTrigger id="mheStatus" className="w-full">
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Active">Active</SelectItem>
+                <SelectItem value="In Maintenance">In Maintenance</SelectItem>
+                <SelectItem value="Inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex flex-col gap-1"><Label htmlFor="modelNo">Model No.</Label><Input id="modelNo" placeholder="e.g. CAT-25" value={form.modelNo || ""} onChange={e => setForm(f => ({ ...f, modelNo: e.target.value }))} /></div>
           <div className="flex flex-col gap-1"><Label htmlFor="mheSerial">Serial No.</Label><Input id="mheSerial" placeholder="e.g. FL-12345" value={form.serialNo || ""} onChange={e => setForm(f => ({ ...f, serialNo: e.target.value }))} /></div>
           <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="mheImage">MHE Image</Label><Input id="mheImage" type="file" accept="image/*" onChange={e => {
@@ -1306,7 +1335,19 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1"><Label htmlFor="equipmentInfo">Equipment Info<span className="text-destructive"> *</span></Label><Input id="equipmentInfo" required placeholder="e.g. Forklift Cat 2.5T" value={form.equipmentInfo || ""} onChange={e => setForm(f => ({ ...f, equipmentInfo: e.target.value }))} /></div>
-                <div className="flex flex-col gap-1"><Label htmlFor="mheStatus">Status<span className="text-destructive"> *</span></Label><Input id="mheStatus" required placeholder="Active / In Maintenance / Inactive" value={(form.status || "") as any} onChange={e => setForm(f => ({ ...f, status: (e.target.value as any) }))} /></div>
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="mheStatus">Status<span className="text-destructive"> *</span></Label>
+                    <Select value={(form.status || "") as any} onValueChange={(val) => setForm((f) => ({ ...f, status: val as any }))}>
+                      <SelectTrigger id="mheStatus" className="w-full">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="In Maintenance">In Maintenance</SelectItem>
+                        <SelectItem value="Inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="flex flex-col gap-1"><Label htmlFor="modelNo">Model No.</Label><Input id="modelNo" placeholder="e.g. CAT-25" value={form.modelNo || ""} onChange={e => setForm(f => ({ ...f, modelNo: e.target.value }))} /></div>
                   <div className="flex flex-col gap-1"><Label htmlFor="mheSerial">Serial No.</Label><Input id="mheSerial" placeholder="e.g. FL-12345" value={form.serialNo || ""} onChange={e => setForm(f => ({ ...f, serialNo: e.target.value }))} /></div>
                   <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="mheImage">MHE Image</Label><Input id="mheImage" type="file" accept="image/*" onChange={e => {
@@ -1766,7 +1807,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                     const ins = expiryStatus(v.insuranceExpiry);
                     const reg = expiryStatus(v.registrationExpiry);
                     return (
-                      <TableRow key={v.id}>
+                      <TableRow
+                        key={v.id}
+                        className={((v.status || "Active") !== "Active") ? "bg-orange-50 hover:bg-orange-100" : undefined}
+                      >
                         <TableCell>
                           {v.imageUrl ? (
                             <img src={v.imageUrl} alt={v.plateNo || v.vehicleType || "Vehicle"} className="h-8 w-8 rounded object-cover" />
@@ -1778,7 +1822,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                         <TableCell>{[v.make, v.model, v.year ? String(v.year) : undefined].filter(Boolean).join(' ') || '-'}</TableCell>
                         <TableCell>{v.driverName || '-'}</TableCell>
                         <TableCell>{v.branch || '-'}</TableCell>
-                        <TableCell>{v.status || "Active"}</TableCell>
+                        <TableCell className={((v.status || "Active") !== "Active") ? "text-orange-700 font-medium" : undefined}>{v.status || "Active"}</TableCell>
                         <TableCell>
                           <Badge variant={ins.variant}>{ins.label}</Badge>
                         </TableCell>
@@ -1986,7 +2030,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                     const cert = m.certification;
                     const stat = expiryStatus(cert?.expiry);
                     return (
-                      <TableRow key={m.id}>
+                      <TableRow
+                        key={m.id}
+                        className={((m.status || "Active") !== "Active") ? "bg-orange-50 hover:bg-orange-100" : undefined}
+                      >
                         <TableCell>
                           {m.imageUrl ? (
                             <img src={m.imageUrl} alt={m.equipmentInfo} className="h-8 w-8 rounded object-cover" />
@@ -1995,7 +2042,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                           )}
                         </TableCell>
                         <TableCell className="font-medium">{m.equipmentInfo}</TableCell>
-                        <TableCell>{m.status || "Active"}</TableCell>
+                        <TableCell className={((m.status || "Active") !== "Active") ? "text-orange-700 font-medium" : undefined}>{m.status || "Active"}</TableCell>
                         <TableCell>{cert?.type || '-'}</TableCell>
                         <TableCell>{cert?.vendor || '-'}</TableCell>
                         <TableCell>
@@ -2180,11 +2227,14 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                   {filteredGatePasses.map(g => {
                     const st = expiryStatus(g.expiryDate);
                     return (
-                      <TableRow key={g.id}>
+                      <TableRow
+                        key={g.id}
+                        className={((g.status || "Active") !== "Active") ? "bg-orange-50 hover:bg-orange-100" : undefined}
+                      >
                         <TableCell className="font-medium">{g.customerName}</TableCell>
                         <TableCell>{g.location}</TableCell>
                         <TableCell>{g.passNumber}</TableCell>
-                        <TableCell>{g.status || "Active"}</TableCell>
+                        <TableCell className={((g.status || "Active") !== "Active") ? "text-orange-700 font-medium" : undefined}>{g.status || "Active"}</TableCell>
                         <TableCell>
                           <Badge variant={st.variant}>{st.label}</Badge>
                         </TableCell>

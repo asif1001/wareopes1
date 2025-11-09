@@ -44,15 +44,32 @@ async function resolveBucket() {
   return storage.bucket(bucketName);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const { ok, role, permissions } = await getCurrentUserPermissions();
     const canView = ok && (isAdmin(role) || hasPermission(permissions, 'maintenance', 'view'));
     if (!canView) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     const adb = await getAdminDb();
-    const snap = await adb.collection('mhes').orderBy('createdAt', 'desc').get();
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get('limit');
+    const statusParam = url.searchParams.get('status');
+    const cursorParam = url.searchParams.get('cursor');
+    const limit = Math.max(1, Math.min(Number(limitParam || '50'), 200));
+    let q = adb.collection('mhes').orderBy('createdAt', 'desc');
+    if (statusParam) q = q.where('status', '==', statusParam);
+    if (cursorParam) {
+      try {
+        const admin = await getAdmin();
+        const ts = admin.firestore.Timestamp.fromDate(new Date(cursorParam));
+        q = q.startAfter(ts);
+      } catch (_) { /* ignore bad cursor */ }
+    }
+    q = q.limit(limit);
+    const snap = await q.get();
     const items = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: tsToISO(d.get('createdAt')), updatedAt: tsToISO(d.get('updatedAt')) }));
-    return NextResponse.json({ success: true, items });
+    const last = snap.docs[snap.docs.length - 1];
+    const nextCursor = last ? tsToISO(last.get('createdAt')) : null;
+    return NextResponse.json({ success: true, items, nextCursor });
   } catch (e: any) {
     console.error('GET /api/mhes error:', e);
     return NextResponse.json({ success: false, error: e?.message || 'Server error' }, { status: 500 });

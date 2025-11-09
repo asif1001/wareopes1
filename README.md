@@ -141,6 +141,35 @@ Preview
 - Start: `npm run dev`
 - Open: `http://localhost:3000/dashboard/maintenance` (or your active dev port)
 
+## 📤 Reports Page & Operational Exports
+
+Route
+- `GET /dashboard/reports` — Tabbed page with Operational Reports and AI Generator.
+
+Preview
+- Start: `npm run dev`
+- Open: `http://localhost:3001/dashboard/reports` (dev server may use `3000` or `3001`).
+
+Operational Exports
+- Export Vehicles (Excel): downloads `vehicles-report.csv`.
+  - Loads vehicles from `/api/vehicles`. If data is not yet loaded, the export performs an on-demand fetch to avoid empty files.
+  - Exports even when empty (headers-only) so the button is always usable.
+- Export MHE (Excel): downloads `mhe-report.csv` with equipment details, battery, and certification info.
+- Export Maintenance (Excel): downloads `maintenance-report.csv` combining Vehicles and MHE maintenance records.
+- Export Shipments (Excel) — Date-wise: opens a date range dialog and downloads `shipments-report.csv`.
+  - Select `From` and `To` dates, then click `Export`.
+  - Branch names: if shipments contain branch IDs or codes, they are mapped to human-readable names via `/api/branches`.
+  - Columns include: `Invoice`, `B/L`, `Source`, `Branch`, `Status`, `Num Containers`, `Container Sizes`, `Bookings`, `Bahrain ETA`, `Original Doc Receipt`, `Actual Bahrain ETA`, `WH ETA Requested by Parts`, `WH ETA Confirmed by Logistics`, `Cleared`, `Actual Cleared Date`, `Last Storage Day`, `Total Cases`, `DOM Lines`, `Bulk Lines`, `Total Lines`, `General Remark`, `Remark`, `Arrived Date`, `Completed Date`, `Status Update Date`, `Created At`, `Updated At`.
+
+API Routes (added)
+- `GET /api/shipments/by-date-range` → `src/app/api/shipments/by-date-range/route.ts` — returns `{ items: SerializableShipment[] }` filtered by `bahrainEta` within the provided date range (`from`, `to` as `YYYY-MM-DD`).
+- `GET /api/branches` → `src/app/api/branches/route.ts` — returns `{ items: Branch[] }` used to map branch IDs/codes to names during export.
+
+Known behaviors
+- If a chosen date range has no shipments, the CSV downloads with headers only.
+- If your browser blocks automatic downloads, allow downloads for the local dev site.
+- If an error occurs during export, an alert displays the error text returned by the API.
+
 ## ⚙️ Settings Page Workflow
 
 Route

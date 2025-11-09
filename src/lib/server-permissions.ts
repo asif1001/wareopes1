@@ -1,7 +1,7 @@
 import type { UserPermissions } from '@/lib/types';
 import { cookies } from 'next/headers';
 
-export async function getCurrentUserPermissions(): Promise<{ ok: boolean; userId?: string; role?: string; permissions?: UserPermissions }>{
+export async function getCurrentUserPermissions(): Promise<{ ok: boolean; userId?: string; role?: string; permissions?: UserPermissions; branch?: string }>{
   try {
     const sessionCookie = (await cookies()).get('session');
     let userId: string | null = null;
@@ -22,6 +22,7 @@ export async function getCurrentUserPermissions(): Promise<{ ok: boolean; userId
     const udata = userSnap.data() as any;
     let permissions: UserPermissions | undefined = udata?.permissions as any;
     const role: string | undefined = udata?.role;
+    const branch: string | undefined = typeof udata?.branch === 'string' ? udata.branch : undefined;
 
     // Normalize permissions from role if explicit not set
     if (!permissions && role) {
@@ -40,7 +41,7 @@ export async function getCurrentUserPermissions(): Promise<{ ok: boolean; userId
       }
     }
 
-    return { ok: true, userId, role, permissions };
+    return { ok: true, userId, role, permissions, branch };
   } catch {
     return { ok: false };
   }

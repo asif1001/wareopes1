@@ -191,6 +191,7 @@ export type User = {
     phone?: string;
     department: string;
     role: UserRole;
+    branch?: string; // Optional branch for scoping data
     redirectPage?: string; // Optional custom redirect page after login (e.g., "/dashboard/tasks", "/dashboard/shipments")
     profilePicture?: string;
     createdAt?: string; // ISO string for serialization

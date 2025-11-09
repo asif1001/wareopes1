@@ -49,11 +49,25 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url);
     const mheId = url.searchParams.get('mheId');
+    const limitParam = url.searchParams.get('limit');
+    const cursorParam = url.searchParams.get('cursor');
+    const limit = Math.max(1, Math.min(Number(limitParam || '50'), 200));
+
     let q = adb.collection('mhe_maintenance').orderBy('createdAt', 'desc');
     if (mheId) q = q.where('mheId', '==', mheId);
+    if (cursorParam) {
+      try {
+        const admin = await getAdmin();
+        const ts = admin.firestore.Timestamp.fromDate(new Date(cursorParam));
+        q = q.startAfter(ts);
+      } catch (_) { /* ignore bad cursor */ }
+    }
+    q = q.limit(limit);
     const snap = await q.get();
     const items = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: tsToISO(d.get('createdAt')), updatedAt: tsToISO(d.get('updatedAt')) }));
-    return NextResponse.json({ success: true, items });
+    const last = snap.docs[snap.docs.length - 1];
+    const nextCursor = last ? tsToISO(last.get('createdAt')) : null;
+    return NextResponse.json({ success: true, items, nextCursor });
   } catch (e: any) {
     console.error('GET /api/mhe-maintenance error:', e);
     return NextResponse.json({ success: false, error: e?.message || 'Server error' }, { status: 500 });

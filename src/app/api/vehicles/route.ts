@@ -51,15 +51,37 @@ async function resolveBucket() {
   return storage.bucket(bucketName);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const { ok, role, permissions } = await getCurrentUserPermissions();
+    const { ok, role, permissions, branch } = await getCurrentUserPermissions();
     const canView = ok && (isAdmin(role) || hasPermission(permissions, 'maintenance', 'view'));
     if (!canView) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
     const adb = await getAdminDb();
-    const snap = await adb.collection('vehicles').get();
+
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get('limit');
+    const statusParam = url.searchParams.get('status');
+    const branchParam = url.searchParams.get('branch');
+    const cursorParam = url.searchParams.get('cursor'); // ISO date string
+    const limit = Math.max(1, Math.min(Number(limitParam || '50'), 200));
+
+    let q = adb.collection('vehicles').orderBy('createdAt', 'desc');
+    // Branch scoping: non-admins are limited to their branch; admins can optionally filter
+    const effectiveBranch = !isAdmin(role) ? (branch || undefined) : (branchParam || undefined);
+    if (effectiveBranch) q = q.where('branch', '==', effectiveBranch);
+    if (statusParam) q = q.where('status', '==', statusParam);
+    if (cursorParam) {
+      try {
+        const admin = await getAdmin();
+        const ts = admin.firestore.Timestamp.fromDate(new Date(cursorParam));
+        q = q.startAfter(ts);
+      } catch (_) { /* ignore bad cursor */ }
+    }
+    q = q.limit(limit);
+
+    const snap = await q.get();
     const items = snap.docs.map((d: any) => {
       const data = d.data();
       return {
@@ -69,7 +91,10 @@ export async function GET() {
         updatedAt: timestampToISO(data?.updatedAt) || data?.updatedAt || null,
       };
     });
-    return NextResponse.json({ success: true, items });
+    // Provide nextCursor for client-side pagination if needed
+    const last = snap.docs[snap.docs.length - 1];
+    const nextCursor = last ? timestampToISO(last.get('createdAt')) : null;
+    return NextResponse.json({ success: true, items, nextCursor });
   } catch (e: any) {
     console.error('GET /api/vehicles error:', e);
     return NextResponse.json({ success: false, error: e?.message || 'Server error' }, { status: 500 });
@@ -86,8 +111,8 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const raw = Object.fromEntries(formData.entries());
 
-    // Basic validation: require plateNo, vehicleType, driverName, branch, ownership
-    const required = ['plateNo', 'vehicleType', 'driverName', 'branch', 'ownership'];
+    // Basic validation: require core fields; driver assignment is optional
+    const required = ['plateNo', 'vehicleType', 'branch', 'ownership'];
     const missing = required.filter((k) => !raw?.[k]);
     if (missing.length) {
       return NextResponse.json({ success: false, error: `Missing required fields: ${missing.join(', ')}` }, { status: 400 });
@@ -124,7 +149,7 @@ export async function POST(request: NextRequest) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       history: [{
         id: nanoid(),
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        timestamp: admin.firestore.Timestamp.now(),
         userId: String(userId || 'system'),
         action: 'Created vehicle',
       }],

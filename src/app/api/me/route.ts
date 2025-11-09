@@ -60,6 +60,7 @@ export async function GET() {
       role: udata.role,
       department: udata.department,
       email: udata.email,
+      branch: typeof udata.branch === 'string' ? udata.branch : undefined,
       redirectPage: udata.redirectPage,
       permissions,
     };
