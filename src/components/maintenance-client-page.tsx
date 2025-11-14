@@ -2181,11 +2181,17 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                               </div>
                             )}
                           >
-                            {v.imageUrl ? (
-                              <img src={v.imageUrl} alt="Vehicle" className="w-full h-56 md:h-72 rounded object-cover mb-4" />
-                            ) : (
-                              <div className="mb-4 h-32 md:h-40 w-full rounded bg-muted flex items-center justify-center text-sm text-muted-foreground">No image</div>
-                            )}
+                            <div className="mb-4 rounded overflow-hidden">
+                              {v.imageUrl ? (
+                                <img
+                                  src={v.imageUrl}
+                                  alt="Vehicle"
+                                  className="block w-full h-auto max-h-[55vh] object-contain"
+                                />
+                              ) : (
+                                <div className="h-32 md:h-40 w-full bg-muted flex items-center justify-center text-sm text-muted-foreground">No image</div>
+                              )}
+                            </div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                               <div className="rounded border p-3">
                                 <div className="text-xs text-muted-foreground">Status</div>
