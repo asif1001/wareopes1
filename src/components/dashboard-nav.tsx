@@ -6,6 +6,9 @@ import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import type { AppPageKey } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useEffect, useRef, useState } from "react";
 
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -22,6 +25,66 @@ const navItems = [
 export function DashboardNav() {
     const pathname = usePathname();
     const { permissions, isLoading } = useAuth();
+    const [pendingCount, setPendingCount] = useState<number | null>(null);
+    const [animate, setAnimate] = useState(false);
+    const prevCountRef = useRef<number | null>(null);
+    const [expiringCount, setExpiringCount] = useState<number | null>(null);
+    const [expiringAnimate, setExpiringAnimate] = useState(false);
+    const prevExpiringRef = useRef<number | null>(null);
+
+    // Poll server-side pending count for real-time updates (every 10s)
+    useEffect(() => {
+        let cancelled = false;
+        const fetchCount = async () => {
+            try {
+                const res = await fetch('/api/tasks/pending-count');
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                if (!cancelled) {
+                    const newCount = Number(data?.count ?? 0);
+                    if (prevCountRef.current !== null && prevCountRef.current !== newCount) {
+                        setAnimate(true);
+                        setTimeout(() => setAnimate(false), 800);
+                    }
+                    prevCountRef.current = newCount;
+                    setPendingCount(newCount);
+                }
+            } catch (err) {
+                if (!cancelled) setPendingCount(null);
+                console.error('Failed to load pending task count:', err);
+            }
+        };
+        fetchCount();
+        const iv = setInterval(fetchCount, 10000);
+        return () => { cancelled = true; clearInterval(iv); };
+    }, []);
+
+    // Poll expiring maintenance count (every 10s) for real-time updates
+    useEffect(() => {
+        let cancelled = false;
+        const fetchExpiring = async () => {
+            try {
+                const res = await fetch('/api/maintenance/expiring-count');
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                if (!cancelled) {
+                    const newCount = Number(data?.count ?? 0);
+                    if (prevExpiringRef.current !== null && prevExpiringRef.current !== newCount) {
+                        setExpiringAnimate(true);
+                        setTimeout(() => setExpiringAnimate(false), 800);
+                    }
+                    prevExpiringRef.current = newCount;
+                    setExpiringCount(newCount);
+                }
+            } catch (err) {
+                if (!cancelled) setExpiringCount(null);
+                console.error('Failed to load expiring maintenance count:', err);
+            }
+        };
+        fetchExpiring();
+        const iv = setInterval(fetchExpiring, 10000);
+        return () => { cancelled = true; clearInterval(iv); };
+    }, []);
 
     // Helper function to check if user has view permission for a page
     const hasViewPermission = (pageKey: AppPageKey): boolean => {
@@ -57,9 +120,53 @@ export function DashboardNav() {
                                 isActive={pathname === item.href}
                                 tooltip={{children: item.label}}
                             >
-                                <Link href={item.href}>
+                                <Link href={item.href === "/dashboard/tasks" ? "/dashboard/tasks#active" : (item.href === "/dashboard/maintenance" ? "/dashboard/maintenance#expiring" : item.href)}>
                                     <item.icon />
-                                    <span>{item.label}</span>
+                                    <span className="flex items-center gap-2">
+                                        {item.label}
+                                        {item.href === "/dashboard/tasks" && (
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Badge
+                                                        variant="destructive"
+                                                        className={cn(
+                                                            "ml-1 px-1.5 py-0.5 text-[11px] rounded-sm",
+                                                            animate && "animate-bounce",
+                                                        )}
+                                                        aria-live="polite"
+                                                        aria-label={`Pending tasks requiring action: ${pendingCount ?? 'unknown'}`}
+                                                        role="status"
+                                                    >
+                                                        {pendingCount === null ? '!' : pendingCount}
+                                                    </Badge>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    {pendingCount === null ? 'Error loading task count' : 'Pending tasks requiring action'}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        )}
+                                        {item.href === "/dashboard/maintenance" && (
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Badge
+                                                        variant="destructive"
+                                                        className={cn(
+                                                            "ml-1 px-1.5 py-0.5 text-[11px] rounded-sm",
+                                                            expiringAnimate && "animate-bounce",
+                                                        )}
+                                                        aria-live="polite"
+                                                        aria-label={`Expiring maintenance items within 30 days: ${expiringCount ?? 'unknown'}`}
+                                                        role="status"
+                                                    >
+                                                        {expiringCount === null ? '!' : expiringCount}
+                                                    </Badge>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    {expiringCount === null ? 'Error loading expiring count' : 'Expiring items within 30 days'}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        )}
+                                    </span>
                                 </Link>
                             </SidebarMenuButton>
                         </SidebarMenuItem>
