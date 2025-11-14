@@ -2,16 +2,17 @@
 
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import MaintenanceActionButton from "./MaintenanceActionButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, ListFilter, Plus, Trash2, Edit, Wrench } from "lucide-react";
+import { Search, ListFilter, Plus, Trash2, Edit, Wrench, MoreHorizontal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -19,6 +20,7 @@ import type { User, Branch } from "@/lib/types";
 import { getUsers, getBranches } from "@/lib/firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import { storage } from "@/lib/firebase/firebase";
+import { cn } from "@/lib/utils";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
 // Helper: derive Storage object path from a Firebase download URL
@@ -141,14 +143,36 @@ type GatePass = {
   driverName?: string | null;
 };
 
+type GatePassMaintenanceRecord = {
+  id: string;
+  gatePassId: string;
+  date: string;
+  type: string;
+  detail: string;
+  vendor?: string | null;
+  cost?: number | null;
+  remarks?: string | null;
+  attachmentUrl?: string | null;
+};
+
 function expiryStatus(expiry?: string | null) {
   if (!expiry) return { label: "Active", variant: "secondary" as const };
   const today = new Date();
   const exp = new Date(expiry);
   const diffDays = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays < 0) return { label: "Expired", variant: "destructive" as const };
-  if (diffDays <= 14) return { label: "Expiring Soon", variant: "default" as const };
+  if (diffDays <= 30) return { label: "Expiring Soon", variant: "default" as const };
   return { label: "Active", variant: "secondary" as const };
+}
+
+function isWithin30Days(dateISO?: string | null) {
+  if (!dateISO) return false;
+  try {
+    const now = new Date();
+    const target = new Date(dateISO);
+    const diffDays = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 30;
+  } catch { return false; }
 }
 
 export function MaintenanceClientPage({ initialUsers, initialBranches }: { initialUsers?: User[]; initialBranches?: Branch[] }) {
@@ -170,8 +194,19 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
   // Dialog open states for Vehicle add/edit
   const [addVehicleOpen, setAddVehicleOpen] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const [maintenanceVehicleId, setMaintenanceVehicleId] = useState<string | null>(null);
+  const [deleteVehicleId, setDeleteVehicleId] = useState<string | null>(null);
   const [addMheOpen, setAddMheOpen] = useState(false);
   const [editingMheId, setEditingMheId] = useState<string | null>(null);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
+  const [selectedMheId, setSelectedMheId] = useState<string | null>(null);
+  const [selectedGatePassId, setSelectedGatePassId] = useState<string | null>(null);
+  const [maintenanceMheId, setMaintenanceMheId] = useState<string | null>(null);
+  const [deleteMheId, setDeleteMheId] = useState<string | null>(null);
+  const [editingGatePassId, setEditingGatePassId] = useState<string | null>(null);
+  const [maintenanceGatePassId, setMaintenanceGatePassId] = useState<string | null>(null);
+  const [deleteGatePassId, setDeleteGatePassId] = useState<string | null>(null);
+  const [gatePassMaintenances, setGatePassMaintenances] = useState<GatePassMaintenanceRecord[]>([]);
 
   // Load MHEs from Firestore
   useEffect(() => {
@@ -333,6 +368,48 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
       }
     })();
     return () => { active = false; };
+  }, [branchFilter, isAdmin, user?.branch]);
+
+  // Light polling to reflect server-side date changes in real-time
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const params = new URLSearchParams({ limit: "50" });
+        const desiredBranch = branchFilter !== "all" ? branchFilter : (!isAdmin && user?.branch ? user.branch : undefined);
+        if (desiredBranch) params.set("branch", desiredBranch);
+        const res = await fetch(`/api/vehicles?${params.toString()}`, { method: "GET" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = (data?.items || []) as any[];
+        const normalized = (list || []).map((v: any) => ({
+          id: v.id,
+          plateNo: v.plateNo || "",
+          vehicleType: v.vehicleType || "",
+          make: v.make || "",
+          model: v.model || "",
+          year: v.year ?? null,
+          branch: v.branch || "",
+          status: (v.status as any) || "Active",
+          ownership: (v.ownership as any) || "Owned",
+          hireCompanyName: v.hireCompanyName ?? null,
+          driverName: v.driverName || "",
+          driverEmployeeId: v.driverEmployeeId ?? null,
+          driverContact: v.driverContact ?? null,
+          lastOdometerReading: v.lastOdometerReading ?? null,
+          nextServiceDueKm: v.nextServiceDueKm ?? null,
+          nextServiceDueDate: v.nextServiceDueDate ?? null,
+          insuranceExpiry: v.insuranceExpiry ?? null,
+          registrationExpiry: v.registrationExpiry ?? null,
+          fuelType: (v.fuelType as any) ?? null,
+          attachments: Array.isArray(v.attachments) ? v.attachments : [],
+          imageUrl: v.imageUrl ?? null,
+        })) as Vehicle[];
+        setVehicles(normalized);
+      } catch {
+        /* silent */
+      }
+    }, 10000);
+    return () => clearInterval(interval);
   }, [branchFilter, isAdmin, user?.branch]);
 
   // Load users for driver selector from Firebase
@@ -1713,6 +1790,73 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     );
   }
 
+  function GatePassMaintenanceForm({ onSaved, gatePassId, record }: { onSaved?: () => void, gatePassId?: string, record?: GatePassMaintenanceRecord }) {
+    const [form, setForm] = useState<Partial<GatePassMaintenanceRecord>>(() => {
+      if (record) return { ...record };
+      return { date: new Date().toISOString(), gatePassId } as Partial<GatePassMaintenanceRecord>;
+    });
+    const isEdit = !!record;
+    const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+    return (
+      <div className="space-y-4">
+        <div className="sticky top-0 z-10 bg-background border-b py-3">
+          <div className="flex justify-end gap-2">
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button onClick={() => {
+              if (!form.gatePassId || !form.date || !form.type || !form.detail) {
+                toast({ title: "Missing required fields", description: "Gate Pass, Date, Type, and Detail are required." });
+                return;
+              }
+              if (isEdit && record) {
+                const updated: GatePassMaintenanceRecord = {
+                  id: record.id,
+                  gatePassId: form.gatePassId!,
+                  date: form.date!,
+                  type: form.type!,
+                  detail: form.detail!,
+                  vendor: form.vendor || null,
+                  cost: form.cost || null,
+                  remarks: form.remarks || null,
+                  attachmentUrl: form.attachmentUrl || null,
+                };
+                setGatePassMaintenances(prev => prev.map(r => r.id === record.id ? updated : r));
+                toast({ title: "Maintenance updated", description: updated.type });
+                onSaved?.();
+              } else {
+                const newRec: GatePassMaintenanceRecord = {
+                  id: String(Date.now()),
+                  gatePassId: form.gatePassId!,
+                  date: form.date!,
+                  type: form.type!,
+                  detail: form.detail!,
+                  vendor: form.vendor || null,
+                  cost: form.cost || null,
+                  remarks: form.remarks || null,
+                  attachmentUrl: form.attachmentUrl || null,
+                };
+                setGatePassMaintenances(prev => [newRec, ...prev]);
+                toast({ title: "Maintenance saved", description: newRec.type });
+                onSaved?.();
+              }
+            }}>
+              <Plus className="h-4 w-4 mr-2" /> {isEdit ? "Update Maintenance" : "Save Maintenance"}
+            </Button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1"><Label htmlFor="gpmm-date">Date<span className="text-destructive"> *</span></Label><Input id="gpmm-date" type="date" value={(form.date || "").split("T")[0]} onChange={e => setForm(f => ({ ...f, date: new Date(e.target.value).toISOString() }))} /></div>
+          <div className="flex flex-col gap-1"><Label htmlFor="gpmm-type">Type<span className="text-destructive"> *</span></Label><Input id="gpmm-type" placeholder="Renewal / Suspension / Note" value={form.type || ""} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} /></div>
+          <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="gpmm-detail">Detail<span className="text-destructive"> *</span></Label><Input id="gpmm-detail" placeholder="Description" value={form.detail || ""} onChange={e => setForm(f => ({ ...f, detail: e.target.value }))} /></div>
+          <div className="flex flex-col gap-1"><Label htmlFor="gpmm-vendor">Vendor</Label><Input id="gpmm-vendor" placeholder="Optional" value={form.vendor || ""} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} /></div>
+          <div className="flex flex-col gap-1"><Label htmlFor="gpmm-cost">Cost</Label><Input id="gpmm-cost" type="number" placeholder="Optional" value={(form.cost || 0) as any} onChange={e => setForm(f => ({ ...f, cost: Number(e.target.value || 0) }))} /></div>
+          <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="gpmm-remarks">Remarks</Label><Input id="gpmm-remarks" placeholder="Optional" value={form.remarks || ""} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} /></div>
+          <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="gpmm-attachment">Attachment</Label><Input id="gpmm-attachment" type="file" onChange={e => { const f = e.target.files?.[0] || null; setAttachmentFile(f); }} /></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -1806,10 +1950,16 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                   {filteredVehicles.map(v => {
                     const ins = expiryStatus(v.insuranceExpiry);
                     const reg = expiryStatus(v.registrationExpiry);
+                    const svcSoon = isWithin30Days(v.nextServiceDueDate);
+                    const expiringSoon = ins.label === 'Expiring Soon' || reg.label === 'Expiring Soon' || svcSoon;
                     return (
                       <TableRow
                         key={v.id}
-                        className={((v.status || "Active") !== "Active") ? "bg-orange-50 hover:bg-orange-100" : undefined}
+                        className={cn(
+                          ((v.status || "Active") !== "Active") ? "bg-orange-50 hover:bg-orange-100" : undefined,
+                          expiringSoon ? "bg-yellow-50 hover:bg-yellow-100" : undefined
+                        )}
+                        onClick={() => setSelectedVehicleId(v.id)}
                       >
                         <TableCell>
                           {v.imageUrl ? (
@@ -1824,37 +1974,85 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                         <TableCell>{v.branch || '-'}</TableCell>
                         <TableCell className={((v.status || "Active") !== "Active") ? "text-orange-700 font-medium" : undefined}>{v.status || "Active"}</TableCell>
                         <TableCell>
-                          <Badge variant={ins.variant}>{ins.label}</Badge>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant={ins.variant} aria-label={`Insurance ${ins.label}`}>{ins.label}</Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {v.insuranceExpiry ? `Insurance expiry: ${new Date(v.insuranceExpiry).toLocaleDateString()}` : 'No insurance expiry date'}
+                            </TooltipContent>
+                          </Tooltip>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={reg.variant}>{reg.label}</Badge>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant={reg.variant} aria-label={`Registration ${reg.label}`}>{reg.label}</Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {v.registrationExpiry ? `Registration expiry: ${new Date(v.registrationExpiry).toLocaleDateString()}` : 'No registration expiry date'}
+                            </TooltipContent>
+                          </Tooltip>
                         </TableCell>
                         <TableCell>
-                          {(v.nextServiceDueKm ?? '-') + ' km' }{' • '}{v.nextServiceDueDate ? new Date(v.nextServiceDueDate).toLocaleDateString() : '-'}
+                          <div className="flex items-center gap-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  {(v.nextServiceDueKm ?? '-') + ' km' }{' • '}{v.nextServiceDueDate ? new Date(v.nextServiceDueDate).toLocaleDateString() : '-'}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {v.nextServiceDueDate ? `Next service: ${new Date(v.nextServiceDueDate).toLocaleDateString()}` : 'No next service date'}
+                              </TooltipContent>
+                            </Tooltip>
+                            {svcSoon && (
+                              <Badge variant="destructive" aria-label="Expiring Soon">Expiring Soon</Badge>
+                            )}
+                          </div>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
+                        <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                          <div className="flex justify-end">
+                            <DropdownMenu>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" aria-label="Open actions">
+                                      <MoreHorizontal className="h-5 w-5" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>Vehicle actions</TooltipContent>
+                              </Tooltip>
+                              <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onSelect={() => { setEditingVehicleId(v.id); }} aria-label="Edit Vehicle">
+                                  <Edit className="mr-2 h-4 w-4 text-blue-600" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => { setMaintenanceVehicleId(v.id); }} aria-label="Open Maintenance">
+                                  <Wrench className="mr-2 h-4 w-4 text-orange-600" />
+                                  Maintenance
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onSelect={() => { setDeleteVehicleId(v.id); }} className="text-red-600" aria-label="Delete Vehicle">
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+
+                            {/* Edit Vehicle Dialog (controlled) */}
                             <Dialog open={editingVehicleId === v.id} onOpenChange={(open) => setEditingVehicleId(open ? v.id : null)}>
-                              <DialogTrigger asChild>
-                                {/* Permission: maintenance:edit or Admin */}
-                                <MaintenanceActionButton action="edit" variant="outline" size="sm" aria-label="Edit Vehicle" title="Edit Vehicle">
-                                  <Edit className="h-4 w-4 mr-2" /> Edit
-                                </MaintenanceActionButton>
-                              </DialogTrigger>
                               <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
                                 <DialogHeader>
                                   <DialogTitle>Edit Vehicle</DialogTitle>
                                 </DialogHeader>
-                <VehicleFormPro vehicle={v} onSaved={() => { setEditingVehicleId(null); }} />
+                                <VehicleFormPro vehicle={v} onSaved={() => { setEditingVehicleId(null); }} />
                               </DialogContent>
                             </Dialog>
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                {/* Permission: maintenance:add or Admin (adding maintenance records) */}
-                                <MaintenanceActionButton action="add" variant="outline" size="icon" aria-label="Maintenance" title="Maintenance">
-                                  <Wrench className="h-4 w-4" />
-                                </MaintenanceActionButton>
-                              </DialogTrigger>
+
+                            {/* Maintenance Dialog (controlled) */}
+                            <Dialog open={maintenanceVehicleId === v.id} onOpenChange={(open) => setMaintenanceVehicleId(open ? v.id : null)}>
                               <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
                                 <DialogHeader>
                                   <DialogTitle>Maintenance — {v.plateNo || v.vehicleType || v.id}</DialogTitle>
@@ -1944,13 +2142,8 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                 </div>
                               </DialogContent>
                             </Dialog>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                {/* Permission: maintenance:delete or Admin */}
-                                <MaintenanceActionButton action="delete" variant="destructive" size="icon" aria-label="Delete" title="Delete">
-                                  <Trash2 className="h-4 w-4" />
-                                </MaintenanceActionButton>
-                              </AlertDialogTrigger>
+                            {/* Delete Vehicle Dialog (controlled) */}
+                            <AlertDialog open={deleteVehicleId === v.id} onOpenChange={(open) => setDeleteVehicleId(open ? v.id : null)}>
                               <AlertDialogContent>
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Delete Vehicle</AlertDialogTitle>
@@ -1973,6 +2166,91 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
+                          <DetailedModal
+                            open={selectedVehicleId === v.id}
+                            onOpenChange={(open) => setSelectedVehicleId(open ? v.id : null)}
+                            title={`${v.plateNo || v.vehicleType || v.id}`}
+                            footer={(
+                              <div className="flex gap-2">
+                                <Button variant="outline" onClick={() => setEditingVehicleId(v.id)}>
+                                  <Edit className="h-4 w-4 mr-2" /> Edit
+                                </Button>
+                                <Button variant="outline" onClick={() => setMaintenanceVehicleId(v.id)}>
+                                  <Wrench className="h-4 w-4 mr-2" /> Maintenance
+                                </Button>
+                              </div>
+                            )}
+                          >
+                            {v.imageUrl ? (
+                              <img src={v.imageUrl} alt="Vehicle" className="w-full h-56 md:h-72 rounded object-cover mb-4" />
+                            ) : (
+                              <div className="mb-4 h-32 md:h-40 w-full rounded bg-muted flex items-center justify-center text-sm text-muted-foreground">No image</div>
+                            )}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                              <div className="rounded border p-3">
+                                <div className="text-xs text-muted-foreground">Status</div>
+                                <div className="font-medium">{v.status || 'Active'}</div>
+                              </div>
+                              <div className="rounded border p-3">
+                                <div className="text-xs text-muted-foreground">Insurance</div>
+                                <div><Badge variant={expiryStatus(v.insuranceExpiry).variant}>{expiryStatus(v.insuranceExpiry).label}</Badge></div>
+                              </div>
+                              <div className="rounded border p-3">
+                                <div className="text-xs text-muted-foreground">Registration</div>
+                                <div><Badge variant={expiryStatus(v.registrationExpiry).variant}>{expiryStatus(v.registrationExpiry).label}</Badge></div>
+                              </div>
+                              <div className="rounded border p-3">
+                                <div className="text-xs text-muted-foreground">Next Service</div>
+                                <div className="font-medium">{(v.nextServiceDueKm ?? '-') + ' km'} • {v.nextServiceDueDate ? new Date(v.nextServiceDueDate).toLocaleDateString() : '-'}</div>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <div className="font-medium">Identification</div>
+                                <div>Plate: {v.plateNo || '-'}</div>
+                                <div>Type: {v.vehicleType || '-'}</div>
+                                <div>Make/Model/Year: {[v.make, v.model, v.year ? String(v.year) : undefined].filter(Boolean).join(' ') || '-'}</div>
+                                <div>Branch: {v.branch || '-'}</div>
+                                <div>Ownership: {v.ownership}</div>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="font-medium">Details</div>
+                                <div>Insurance Expiry: {v.insuranceExpiry ? new Date(v.insuranceExpiry).toLocaleDateString() : '-'}</div>
+                                <div>Registration Expiry: {v.registrationExpiry ? new Date(v.registrationExpiry).toLocaleDateString() : '-'}</div>
+                                <div>Last Odometer: {v.lastOdometerReading ?? '-'}</div>
+                                <div>Fuel Type: {v.fuelType || '-'}</div>
+                              </div>
+                              
+                              <div className="md:col-span-2 space-y-2">
+                                <div className="font-medium">Personnel</div>
+                                <div>Driver: {v.driverName || '-'}</div>
+                                <div>Driver Contact: {v.driverContact || '-'}</div>
+                              </div>
+                              <div className="md:col-span-2 space-y-2">
+                                <div className="font-medium">Maintenance History</div>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Date</TableHead>
+                                      <TableHead>Type</TableHead>
+                                      <TableHead>Vendor</TableHead>
+                                      <TableHead>Cost</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {vehicleMaintenances.filter(r => r.vehicleId === v.id).map(rec => (
+                                      <TableRow key={rec.id}>
+                                        <TableCell>{rec.date ? new Date(rec.date).toLocaleDateString() : '-'}</TableCell>
+                                        <TableCell>{rec.type}</TableCell>
+                                        <TableCell>{rec.vendor || '-'}</TableCell>
+                                        <TableCell>{rec.cost ?? '-'}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </div>
+                          </DetailedModal>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -2033,6 +2311,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       <TableRow
                         key={m.id}
                         className={((m.status || "Active") !== "Active") ? "bg-orange-50 hover:bg-orange-100" : undefined}
+                        onClick={() => setSelectedMheId(m.id)}
                       >
                         <TableCell>
                           {m.imageUrl ? (
@@ -2051,15 +2330,38 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                         <TableCell>{m.battery?.type || '-'}</TableCell>
                         <TableCell>{m.battery?.voltage || '-'}</TableCell>
                         <TableCell>{m.battery?.size || '-'}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
+                        <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                          <div className="flex justify-end">
+                            <DropdownMenu>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" aria-label="Open actions">
+                                      <MoreHorizontal className="h-5 w-5" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>MHE actions</TooltipContent>
+                              </Tooltip>
+                              <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onSelect={() => { setEditingMheId(m.id); }} aria-label="Edit MHE">
+                                  <Edit className="mr-2 h-4 w-4 text-blue-600" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => { setMaintenanceMheId(m.id); }} aria-label="Open Maintenance">
+                                  <Wrench className="mr-2 h-4 w-4 text-orange-600" />
+                                  Maintenance
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onSelect={() => { setDeleteMheId(m.id); }} className="text-red-600" aria-label="Delete MHE">
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+
                             <Dialog open={editingMheId === m.id} onOpenChange={(open) => setEditingMheId(open ? m.id : null)}>
-                              <DialogTrigger asChild>
-                                {/* Permission: maintenance:edit or Admin */}
-                                <MaintenanceActionButton action="edit" variant="outline" size="sm" aria-label="Edit MHE" title="Edit MHE">
-                                  <Edit className="h-4 w-4 mr-2" /> Edit
-                                </MaintenanceActionButton>
-                              </DialogTrigger>
                               <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
                                 <DialogHeader>
                                   <DialogTitle>Edit MHE</DialogTitle>
@@ -2067,13 +2369,8 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                 <MheFormPro mhe={m} onSaved={() => { setEditingMheId(null); }} />
                               </DialogContent>
                             </Dialog>
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                {/* Permission: maintenance:add or Admin */}
-                                <MaintenanceActionButton action="add" variant="outline" size="icon" aria-label="Maintenance" title="Maintenance">
-                                  <Wrench className="h-4 w-4" />
-                                </MaintenanceActionButton>
-                              </DialogTrigger>
+
+                            <Dialog open={maintenanceMheId === m.id} onOpenChange={(open) => setMaintenanceMheId(open ? m.id : null)}>
                               <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
                                 <DialogHeader>
                                   <DialogTitle>Maintenance — {m.equipmentInfo || m.id}</DialogTitle>
@@ -2116,7 +2413,19 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                                 <TableCell>{rec.nextServiceDueDate ? new Date(rec.nextServiceDueDate).toLocaleDateString() : '-'}</TableCell>
                                                 <TableCell className="text-right">
                                                   <div className="flex justify-end gap-2">
-                                                    {/* Edit maintenance removed per request */}
+                                                    <Dialog>
+                                                      <DialogTrigger asChild>
+                                                        <Button variant="outline" size="icon" aria-label="Edit" title="Edit">
+                                                          <Edit className="h-4 w-4" />
+                                                        </Button>
+                                                      </DialogTrigger>
+                                                      <DialogContent className="w-[85vw] max-w-[900px] max-h-[80vh] overflow-y-auto">
+                                                        <DialogHeader>
+                                                          <DialogTitle>Edit Maintenance</DialogTitle>
+                                                        </DialogHeader>
+                                                        <MheMaintenanceForm mheId={m.id} record={rec} onSaved={() => { /* auto close by Dialog */ }} />
+                                                      </DialogContent>
+                                                    </Dialog>
                                                     <AlertDialog>
                                                       <AlertDialogTrigger asChild>
                                                         {/* Permission: maintenance:delete or Admin */}
@@ -2149,14 +2458,8 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                 </div>
                               </DialogContent>
                             </Dialog>
-                            {/* Removed Update Status edit icon/dialog near Delete per request */}
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                {/* Permission: maintenance:delete or Admin */}
-                                <MaintenanceActionButton action="delete" variant="destructive" size="icon" aria-label="Delete" title="Delete">
-                                  <Trash2 className="h-4 w-4" />
-                                </MaintenanceActionButton>
-                              </AlertDialogTrigger>
+
+                            <AlertDialog open={deleteMheId === m.id} onOpenChange={(open) => setDeleteMheId(open ? m.id : null)}>
                               <AlertDialogContent>
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Delete MHE</AlertDialogTitle>
@@ -2165,18 +2468,99 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction onClick={async () => {
                                     try {
-                                      const res = await fetch(`/api/mhes/${m.id}`, { method: 'DELETE' });
-                                      if (!res.ok) throw new Error(`Failed to delete MHE: ${res.status}`);
+                                      const res = await fetch(`/api/mhes/${m.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'Inactive' }) });
+                                      if (!res.ok) throw new Error(`Failed to update status: ${res.status}`);
                                       setMhes(prev => prev.filter(x => x.id !== m.id));
                                       toast({ title: "MHE deleted", description: m.equipmentInfo });
                                     } catch (e) {
                                       console.warn(e);
-                                      toast({ title: 'Delete failed', description: 'Could not delete MHE.', variant: 'destructive' as any });
+                                      toast({ title: 'Delete failed', description: 'Could not update MHE status.', variant: 'destructive' as any });
                                     }
                                   }}>Delete</AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
+                            <DetailedModal
+                              open={selectedMheId === m.id}
+                              onOpenChange={(open) => setSelectedMheId(open ? m.id : null)}
+                              title={`${m.equipmentInfo || m.id}`}
+                              footer={(
+                                <div className="flex gap-2">
+                                  <Button variant="outline" onClick={() => setEditingMheId(m.id)}>
+                                    <Edit className="h-4 w-4 mr-2" /> Edit
+                                  </Button>
+                                  <Button variant="outline" onClick={() => setMaintenanceMheId(m.id)}>
+                                    <Wrench className="h-4 w-4 mr-2" /> Maintenance
+                                  </Button>
+                                </div>
+                              )}
+                            >
+                              {m.imageUrl ? (
+                                <img src={m.imageUrl} alt="MHE" className="w-full h-56 md:h-72 rounded object-cover mb-4" />
+                              ) : (
+                                <div className="mb-4 h-32 md:h-40 w-full rounded bg-muted flex items-center justify-center text-sm text-muted-foreground">No image</div>
+                              )}
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                                <div className="rounded border p-3">
+                                  <div className="text-xs text-muted-foreground">Status</div>
+                                  <div className="font-medium">{m.status || 'Active'}</div>
+                                </div>
+                                <div className="rounded border p-3">
+                                  <div className="text-xs text-muted-foreground">Cert Status</div>
+                                  <div><Badge variant={expiryStatus(m.certification?.expiry).variant}>{expiryStatus(m.certification?.expiry).label}</Badge></div>
+                                </div>
+                                <div className="rounded border p-3">
+                                  <div className="text-xs text-muted-foreground">Cert Expiry</div>
+                                  <div className="font-medium">{m.certification?.expiry ? new Date(m.certification.expiry).toLocaleDateString() : '-'}</div>
+                                </div>
+                                <div className="rounded border p-3">
+                                  <div className="text-xs text-muted-foreground">Battery</div>
+                                  <div className="font-medium">{[m.battery?.type, m.battery?.voltage, m.battery?.size].filter(Boolean).join(' • ') || '-'}</div>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <div className="font-medium">Identification</div>
+                                  <div>Equipment: {m.equipmentInfo}</div>
+                                  <div>Model: {m.modelNo || '-'}</div>
+                                  <div>Serial: {m.serialNo || '-'}</div>
+                                </div>
+                                <div className="space-y-2">
+                                  <div className="font-medium">Certification</div>
+                                  <div>Type: {m.certification?.type || '-'}</div>
+                                  <div>Vendor: {m.certification?.vendor || '-'}</div>
+                                  <div>Certificate No: {m.certification?.certificateNo || '-'}</div>
+                                </div>
+                                <div className="md:col-span-2 space-y-2">
+                                  <div className="font-medium">Battery</div>
+                                  <div>{[m.battery?.type, m.battery?.voltage, m.battery?.size].filter(Boolean).join(' • ') || '-'}</div>
+                                </div>
+                                
+                                <div className="md:col-span-2 space-y-2">
+                                  <div className="font-medium">Maintenance History</div>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Date</TableHead>
+                                        <TableHead>Type</TableHead>
+                                        <TableHead>Vendor</TableHead>
+                                        <TableHead>Cost</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {mheMaintenances.filter(r => r.mheId === m.id).map(rec => (
+                                        <TableRow key={rec.id}>
+                                          <TableCell>{rec.date ? new Date(rec.date).toLocaleDateString() : '-'}</TableCell>
+                                          <TableCell>{rec.type}</TableCell>
+                                          <TableCell>{rec.vendor || '-'}</TableCell>
+                                          <TableCell>{rec.cost ?? '-'}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </div>
+                            </DetailedModal>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -2230,6 +2614,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       <TableRow
                         key={g.id}
                         className={((g.status || "Active") !== "Active") ? "bg-orange-50 hover:bg-orange-100" : undefined}
+                        onClick={() => setSelectedGatePassId(g.id)}
                       >
                         <TableCell className="font-medium">{g.customerName}</TableCell>
                         <TableCell>{g.location}</TableCell>
@@ -2239,48 +2624,130 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                           <Badge variant={st.variant}>{st.label}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                {/* Permission: maintenance:edit or Admin */}
-                                <MaintenanceActionButton action="edit" variant="outline" size="icon" aria-label="Update Status" title="Update Status">
-                                  <Edit className="h-4 w-4" />
-                                </MaintenanceActionButton>
-                              </DialogTrigger>
-                              <DialogContent>
+                          <div className="flex justify-end">
+                            <DropdownMenu>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" aria-label="Open actions">
+                                      <MoreHorizontal className="h-5 w-5" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>Gate Pass actions</TooltipContent>
+                              </Tooltip>
+                              <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onSelect={() => { setEditingGatePassId(g.id); }} aria-label="Edit Gate Pass">
+                                  <Edit className="mr-2 h-4 w-4 text-blue-600" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => { setMaintenanceGatePassId(g.id); }} aria-label="Open Maintenance">
+                                  <Wrench className="mr-2 h-4 w-4 text-orange-600" />
+                                  Maintenance
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onSelect={() => { setDeleteGatePassId(g.id); }} className="text-red-600" aria-label="Delete Gate Pass">
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                            <Dialog open={editingGatePassId === g.id} onOpenChange={(open) => setEditingGatePassId(open ? g.id : null)}>
+                              <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
                                 <DialogHeader>
-                                  <DialogTitle>Update Status</DialogTitle>
+                                  <DialogTitle>Edit Gate Pass</DialogTitle>
                                 </DialogHeader>
-                                <div className="space-y-2">
-                                  <div className="flex gap-2">
-                                    {(["Active","Suspended","Expired"] as const).map(s => (
-                                      <Button key={s} variant={g.status === s ? "default" : "outline"} onClick={async () => {
-                                        try {
-                                          const res = await fetch(`/api/gatepasses/${g.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: s }) });
-                                          if (!res.ok) throw new Error(`Failed to update status: ${res.status}`);
-                                          const data = await res.json();
-                                          const updated = data?.item || {};
-                                          setGatePasses(prev => prev.map(x => x.id === g.id ? { ...x, status: updated.status || s } : x));
-                                          toast({ title: "Gate Pass status updated", description: `${g.passNumber} → ${updated.status || s}` });
-                                        } catch (e) {
-                                          console.warn(e);
-                                          toast({ title: 'Update failed', description: 'Could not update status.', variant: 'destructive' as any });
-                                        }
-                                      }}>
-                                        {s}
-                                      </Button>
-                                    ))}
+                                <GatePassFormPro onSaved={() => { setEditingGatePassId(null); }} />
+                              </DialogContent>
+                            </Dialog>
+                            <Dialog open={maintenanceGatePassId === g.id} onOpenChange={(open) => setMaintenanceGatePassId(open ? g.id : null)}>
+                              <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
+                                <DialogHeader>
+                                  <DialogTitle>Maintenance — {g.passNumber}</DialogTitle>
+                                </DialogHeader>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  <div className="md:sticky md:top-0">
+                                    <Card>
+                                      <CardHeader>
+                                        <CardTitle>Add Maintenance</CardTitle>
+                                      </CardHeader>
+                                      <CardContent>
+                                        <GatePassMaintenanceForm gatePassId={g.id} onSaved={() => { /* updates list via state */ }} />
+                                      </CardContent>
+                                    </Card>
+                                  </div>
+                                  <div>
+                                    <Card>
+                                      <CardHeader>
+                                        <CardTitle>Records</CardTitle>
+                                      </CardHeader>
+                                      <CardContent>
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow>
+                                              <TableHead>Date</TableHead>
+                                              <TableHead>Type</TableHead>
+                                              <TableHead>Vendor</TableHead>
+                                              <TableHead>Cost</TableHead>
+                                              <TableHead className="text-right">Actions</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {gatePassMaintenances.filter(r => r.gatePassId === g.id).map(rec => (
+                                              <TableRow key={rec.id}>
+                                                <TableCell>{rec.date ? new Date(rec.date).toLocaleDateString() : '-'}</TableCell>
+                                                <TableCell>{rec.type}</TableCell>
+                                                <TableCell>{rec.vendor || '-'}</TableCell>
+                                                <TableCell>{rec.cost ?? '-'}</TableCell>
+                        <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                          <div className="flex justify-end gap-2">
+                                                    <Dialog>
+                                                      <DialogTrigger asChild>
+                                                        <Button variant="outline" size="icon" aria-label="Edit" title="Edit">
+                                                          <Edit className="h-4 w-4" />
+                                                        </Button>
+                                                      </DialogTrigger>
+                                                      <DialogContent className="w-[85vw] max-w-[900px] max-h-[80vh] overflow-y-auto">
+                                                        <DialogHeader>
+                                                          <DialogTitle>Edit Maintenance</DialogTitle>
+                                                        </DialogHeader>
+                                                        <GatePassMaintenanceForm gatePassId={g.id} record={rec} onSaved={() => { /* auto close by Dialog */ }} />
+                                                      </DialogContent>
+                                                    </Dialog>
+                                                    <AlertDialog>
+                                                      <AlertDialogTrigger asChild>
+                                                        {/* Permission: maintenance:delete or Admin */}
+                                                        <MaintenanceActionButton action="delete" variant="destructive" size="icon" aria-label="Delete" title="Delete">
+                                                          <Trash2 className="h-4 w-4" />
+                                                        </MaintenanceActionButton>
+                                                      </AlertDialogTrigger>
+                                                      <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                          <AlertDialogTitle>Delete Maintenance</AlertDialogTitle>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                          <AlertDialogAction onClick={() => {
+                                                            setGatePassMaintenances(prev => prev.filter(x => x.id !== rec.id));
+                                                            toast({ title: "Maintenance deleted", description: `${g.passNumber} • ${rec.type}` });
+                                                          }}>Delete</AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                      </AlertDialogContent>
+                                                    </AlertDialog>
+                                                  </div>
+                                                </TableCell>
+                                              </TableRow>
+                                            ))}
+                                          </TableBody>
+                                        </Table>
+                                      </CardContent>
+                                    </Card>
                                   </div>
                                 </div>
                               </DialogContent>
                             </Dialog>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                {/* Permission: maintenance:delete or Admin */}
-                                <MaintenanceActionButton action="delete" variant="destructive" size="icon" aria-label="Delete" title="Delete">
-                                  <Trash2 className="h-4 w-4" />
-                                </MaintenanceActionButton>
-                              </AlertDialogTrigger>
+                            <AlertDialog open={deleteGatePassId === g.id} onOpenChange={(open) => setDeleteGatePassId(open ? g.id : null)}>
                               <AlertDialogContent>
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Delete Gate Pass</AlertDialogTitle>
@@ -2289,18 +2756,99 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction onClick={async () => {
                                     try {
-                                      const res = await fetch(`/api/gatepasses/${g.id}`, { method: 'DELETE' });
-                                      if (!res.ok) throw new Error(`Failed to delete gate pass: ${res.status}`);
+                                      const res = await fetch(`/api/gatepasses/${g.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'Expired' }) });
+                                      if (!res.ok) throw new Error(`Failed to update status: ${res.status}`);
                                       setGatePasses(prev => prev.filter(x => x.id !== g.id));
                                       toast({ title: "Gate Pass deleted", description: g.passNumber });
                                     } catch (e) {
                                       console.warn(e);
-                                      toast({ title: 'Delete failed', description: 'Could not delete Gate Pass.', variant: 'destructive' as any });
+                                      toast({ title: 'Delete failed', description: 'Could not update Gate Pass status.', variant: 'destructive' as any });
                                     }
                                   }}>Delete</AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
+                            <DetailedModal
+                              open={selectedGatePassId === g.id}
+                              onOpenChange={(open) => setSelectedGatePassId(open ? g.id : null)}
+                              title={`${g.passNumber}`}
+                              footer={(
+                                <div className="flex gap-2">
+                                  <Button variant="outline" onClick={() => setEditingGatePassId(g.id)}>
+                                    <Edit className="h-4 w-4 mr-2" /> Edit
+                                  </Button>
+                                  <Button variant="outline" onClick={() => setMaintenanceGatePassId(g.id)}>
+                                    <Wrench className="h-4 w-4 mr-2" /> Maintenance
+                                  </Button>
+                                </div>
+                              )}
+                            >
+                              {g.attachment ? (
+                                <img src={g.attachment} alt="Attachment" className="w-full h-56 md:h-72 rounded object-cover mb-4" />
+                              ) : (
+                                <div className="mb-4 h-32 md:h-40 w-full rounded bg-muted flex items-center justify-center text-sm text-muted-foreground">No attachment</div>
+                              )}
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                                <div className="rounded border p-3">
+                                  <div className="text-xs text-muted-foreground">Status</div>
+                                  <div className="font-medium">{g.status || 'Active'}</div>
+                                </div>
+                                <div className="rounded border p-3">
+                                  <div className="text-xs text-muted-foreground">Expiry</div>
+                                  <div><Badge variant={expiryStatus(g.expiryDate).variant}>{expiryStatus(g.expiryDate).label}</Badge></div>
+                                </div>
+                                <div className="rounded border p-3">
+                                  <div className="text-xs text-muted-foreground">Vehicle</div>
+                                  <div className="font-medium">{vehicles.find(v => v.id === g.vehicleId)?.plateNo || vehicles.find(v => v.id === g.vehicleId)?.vehicleType || g.vehicleId || '-'}</div>
+                                </div>
+                                <div className="rounded border p-3">
+                                  <div className="text-xs text-muted-foreground">Driver</div>
+                                  <div className="font-medium">{g.driverName || '-'}</div>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <div className="font-medium">Identification</div>
+                                  <div>Customer: {g.customerName}</div>
+                                  <div>Location: {g.location}</div>
+                                  <div>Pass Number: {g.passNumber}</div>
+                                </div>
+                                <div className="space-y-2">
+                                  <div className="font-medium">Dates</div>
+                                  <div>Issue Date: {g.issueDate ? new Date(g.issueDate).toLocaleDateString() : '-'}</div>
+                                  <div>Expiry Date: {g.expiryDate ? new Date(g.expiryDate).toLocaleDateString() : '-'}</div>
+                                </div>
+                                
+                                <div className="md:col-span-2 space-y-2">
+                                  <div className="font-medium">Associated</div>
+                                  <div>Vehicle: {vehicles.find(v => v.id === g.vehicleId)?.plateNo || vehicles.find(v => v.id === g.vehicleId)?.vehicleType || g.vehicleId || '-'}</div>
+                                  <div>Driver: {g.driverName || '-'}</div>
+                                </div>
+                                <div className="md:col-span-2 space-y-2">
+                                  <div className="font-medium">History</div>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Date</TableHead>
+                                        <TableHead>Type</TableHead>
+                                        <TableHead>Vendor</TableHead>
+                                        <TableHead>Cost</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {gatePassMaintenances.filter(r => r.gatePassId === g.id).map(rec => (
+                                        <TableRow key={rec.id}>
+                                          <TableCell>{rec.date ? new Date(rec.date).toLocaleDateString() : '-'}</TableCell>
+                                          <TableCell>{rec.type}</TableCell>
+                                          <TableCell>{rec.vendor || '-'}</TableCell>
+                                          <TableCell>{rec.cost ?? '-'}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </div>
+                            </DetailedModal>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -2315,3 +2863,4 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     </div>
   );
 }
+import DetailedModal from "./DetailedModal";
