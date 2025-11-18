@@ -32,58 +32,66 @@ export function DashboardNav() {
     const [expiringAnimate, setExpiringAnimate] = useState(false);
     const prevExpiringRef = useRef<number | null>(null);
 
-    // Poll server-side pending count for real-time updates (every 10s)
-    useEffect(() => {
-        let cancelled = false;
-        const fetchCount = async () => {
-            try {
-                const res = await fetch('/api/tasks/pending-count');
-                if (!res.ok) throw new Error(await res.text());
-                const data = await res.json();
-                if (!cancelled) {
-                    const newCount = Number(data?.count ?? 0);
-                    if (prevCountRef.current !== null && prevCountRef.current !== newCount) {
-                        setAnimate(true);
-                        setTimeout(() => setAnimate(false), 800);
-                    }
-                    prevCountRef.current = newCount;
-                    setPendingCount(newCount);
-                }
-            } catch (err) {
-                if (!cancelled) setPendingCount(null);
-                console.error('Failed to load pending task count:', err);
+    const [pendingLoading, setPendingLoading] = useState<boolean>(false);
+    const refreshPendingCount = async () => {
+        setPendingLoading(true);
+        try {
+            const res = await fetch('/api/tasks/pending-count');
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            const newCount = Number(data?.count ?? 0);
+            if (prevCountRef.current !== null && prevCountRef.current !== newCount) {
+                setAnimate(true);
+                setTimeout(() => setAnimate(false), 800);
             }
-        };
-        fetchCount();
-        const iv = setInterval(fetchCount, 10000);
-        return () => { cancelled = true; clearInterval(iv); };
-    }, []);
+            prevCountRef.current = newCount;
+            setPendingCount(newCount);
+        } catch (err) {
+            setPendingCount(null);
+            console.error('Failed to load pending task count:', err);
+        } finally {
+            setPendingLoading(false);
+        }
+    };
 
-    // Poll expiring maintenance count (every 10s) for real-time updates
+    const [expiringLoading, setExpiringLoading] = useState<boolean>(false);
+    const refreshExpiringCount = async () => {
+        setExpiringLoading(true);
+        try {
+            const res = await fetch('/api/maintenance/expiring-count');
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            const newCount = Number(data?.count ?? 0);
+            if (prevExpiringRef.current !== null && prevExpiringRef.current !== newCount) {
+                setExpiringAnimate(true);
+                setTimeout(() => setExpiringAnimate(false), 800);
+            }
+            prevExpiringRef.current = newCount;
+            setExpiringCount(newCount);
+        } catch (err) {
+            setExpiringCount(null);
+            console.error('Failed to load expiring maintenance count:', err);
+        } finally {
+            setExpiringLoading(false);
+        }
+    };
+
+    // Initial auto refresh on load, then a one-time refresh after 20s, and no further automatic refreshes
     useEffect(() => {
         let cancelled = false;
-        const fetchExpiring = async () => {
+        const initial = async () => {
             try {
-                const res = await fetch('/api/maintenance/expiring-count');
-                if (!res.ok) throw new Error(await res.text());
-                const data = await res.json();
-                if (!cancelled) {
-                    const newCount = Number(data?.count ?? 0);
-                    if (prevExpiringRef.current !== null && prevExpiringRef.current !== newCount) {
-                        setExpiringAnimate(true);
-                        setTimeout(() => setExpiringAnimate(false), 800);
-                    }
-                    prevExpiringRef.current = newCount;
-                    setExpiringCount(newCount);
-                }
-            } catch (err) {
-                if (!cancelled) setExpiringCount(null);
-                console.error('Failed to load expiring maintenance count:', err);
-            }
+                await Promise.all([refreshPendingCount(), refreshExpiringCount()]);
+            } catch (_) {}
         };
-        fetchExpiring();
-        const iv = setInterval(fetchExpiring, 10000);
-        return () => { cancelled = true; clearInterval(iv); };
+        initial();
+        const timer = setTimeout(async () => {
+            if (cancelled) return;
+            try {
+                await Promise.all([refreshPendingCount(), refreshExpiringCount()]);
+            } catch (_) {}
+        }, 20000);
+        return () => { cancelled = true; clearTimeout(timer); };
     }, []);
 
     // Helper function to check if user has view permission for a page
@@ -124,7 +132,7 @@ export function DashboardNav() {
                                     <item.icon />
                                     <span className="flex items-center gap-2">
                                         {item.label}
-                                        {item.href === "/dashboard/tasks" && (
+                                        {item.href === "/dashboard/tasks" && (pendingCount !== null && pendingCount > 0) && (
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
                                                     <Badge
@@ -134,10 +142,11 @@ export function DashboardNav() {
                                                             animate && "animate-bounce",
                                                         )}
                                                         aria-live="polite"
+                                                        aria-atomic="true"
                                                         aria-label={`Pending tasks requiring action: ${pendingCount ?? 'unknown'}`}
                                                         role="status"
                                                     >
-                                                        {pendingCount === null ? '!' : pendingCount}
+                                                        {pendingCount}
                                                     </Badge>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
@@ -145,7 +154,7 @@ export function DashboardNav() {
                                                 </TooltipContent>
                                             </Tooltip>
                                         )}
-                                        {item.href === "/dashboard/maintenance" && (
+                                        {item.href === "/dashboard/maintenance" && (expiringCount !== null && expiringCount > 0) && (
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
                                                     <Badge
@@ -155,14 +164,15 @@ export function DashboardNav() {
                                                             expiringAnimate && "animate-bounce",
                                                         )}
                                                         aria-live="polite"
+                                                        aria-atomic="true"
                                                         aria-label={`Expiring maintenance items within 30 days: ${expiringCount ?? 'unknown'}`}
                                                         role="status"
                                                     >
-                                                        {expiringCount === null ? '!' : expiringCount}
+                                                        {expiringCount}
                                                     </Badge>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    {expiringCount === null ? 'Error loading expiring count' : 'Expiring items within 30 days'}
+                                                    {expiringCount === null ? 'Error loading expiring count' : 'Due or expired within 30 days'}
                                                 </TooltipContent>
                                             </Tooltip>
                                         )}

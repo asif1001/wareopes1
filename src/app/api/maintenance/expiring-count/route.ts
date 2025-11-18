@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       const insDays = daysUntil(v.insuranceExpiry ?? null);
       const regDays = daysUntil(v.registrationExpiry ?? null);
       const svcDays = daysUntil(v.nextServiceDueDate ?? null);
-      const soon = (d: number | null) => d != null && d >= 0 && d <= 30;
+      const soon = (d: number | null) => d != null && d >= -30 && d <= 30;
       if (soon(insDays) || soon(regDays) || soon(svcDays)) {
         count += 1;
       }

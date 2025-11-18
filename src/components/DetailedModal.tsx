@@ -19,7 +19,7 @@ export default function DetailedModal(props: DetailedModalProps) {
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogClose asChild>
-            <Button variant="outline" size="sm">Close</Button>
+            <Button variant="outline" size="sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpenChange(false); }}>Close</Button>
           </DialogClose>
         </DialogHeader>
         <div className="space-y-4">

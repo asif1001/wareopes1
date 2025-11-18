@@ -18,3 +18,15 @@
 - Use a consistent set of line icons throughout the application, with the accent color (#F07167) used selectively to draw attention to key functions.
 - Implement a responsive, grid-based layout to ensure the application is usable on devices of all sizes.
 - Use subtle transitions and animations to enhance user experience, such as chart loading animations or status update changes.
+
+## Data Refresh Architecture
+
+- Event-driven data operations only; no periodic polling anywhere in the app.
+- Data fetches are triggered exclusively by:
+  - Explicit Refresh button clicks in modules (e.g., maintenance, tasks badges).
+  - Data modifications: Add, Edit, Delete actions dispatch on-demand reads to reconcile state.
+- Initial page navigation may load baseline data for the current view; no subsequent automatic re-fetch occurs without user action.
+- Dashboard navigation special-case: On first load, perform an immediate refresh, then one more automatic refresh after 20 seconds. After that, automatic refreshes are disabled; manual refresh or user actions must trigger updates.
+- Loading states: show spinners or placeholder badges (e.g., '…') during fetch; disable action buttons to prevent duplicate requests.
+- Error handling: display non-blocking toasts; keep existing UI state stable; provide retry via Refresh.
+- Consistency: Maintenance, Tasks, Vehicles, MHE modules follow this policy; shared helpers centralize fetch and error patterns.

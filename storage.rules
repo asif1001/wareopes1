@@ -34,6 +34,24 @@ service firebase.storage {
         );
     }
     
+    // Vehicle files: images and attachments
+    match /vehicles/{vehicleId}/images/{fileName} {
+      allow read: if true;
+      allow write: if true;
+      allow create: if request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+    match /vehicles/{vehicleId}/attachments/{fileName} {
+      allow read: if true;
+      allow write: if true;
+      allow create: if request.resource.size < 10 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType.matches('application/pdf') ||
+          request.resource.contentType.matches('application/octet-stream')
+        );
+    }
+    
     // Default rule - deny all other access
     match /{allPaths=**} {
       allow read, write: if false;

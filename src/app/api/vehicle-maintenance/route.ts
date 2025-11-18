@@ -28,16 +28,14 @@ async function resolveBucket() {
   } else if (projectId) {
     candidates.push(`${projectId}.appspot.com`, `${projectId}.firebasestorage.app`);
   }
-  let bucketName: string | undefined;
   for (const cand of candidates) {
     try {
       const b = storage.bucket(cand);
       const [exists] = await b.exists();
-      if (exists) { bucketName = cand; break; }
+      if (exists) return b;
     } catch (_) {}
   }
-  if (!bucketName) throw new Error('No Storage bucket found for Vehicle Maintenance.');
-  return storage.bucket(bucketName);
+  return storage.bucket();
 }
 
 export async function GET(request: NextRequest) {

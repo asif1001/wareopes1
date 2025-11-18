@@ -70,6 +70,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     };
 
     const image = formData.get('image');
+    const certAttachmentFile = formData.get('certAttachment') instanceof File ? (formData.get('certAttachment') as File) : null;
     const existingUrl = (raw as any).existingImageUrl as string | undefined;
     if (image && image instanceof File) {
       try {
@@ -93,6 +94,29 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       }
     } else if (existingUrl) {
       updatePayload.imageUrl = existingUrl;
+    }
+    // Handle certificate attachment upload if provided
+    if (certAttachmentFile) {
+      try {
+        const bucket = await resolveBucket();
+        const safeName = certAttachmentFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const storagePath = `mhes/${id}/certificates/${Date.now()}-${nanoid()}-${safeName}`;
+        const buffer = Buffer.from(await certAttachmentFile.arrayBuffer());
+        const downloadToken = nanoid();
+        await bucket.file(storagePath).save(buffer, {
+          metadata: {
+            contentType: certAttachmentFile.type || 'application/octet-stream',
+            metadata: { firebaseStorageDownloadTokens: downloadToken },
+            cacheControl: 'public, max-age=31536000',
+          },
+          public: false,
+        });
+        const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+        const currentCert = raw.certification ? JSON.parse(String(raw.certification)) : {};
+        updatePayload.certification = { ...(currentCert || {}), attachment: fileUrl };
+      } catch (err) {
+        console.warn('MHE cert attachment upload (PUT) failed:', (err as any)?.message || err);
+      }
     }
 
     const beforeSnap = await adb.collection('mhes').doc(id).get();

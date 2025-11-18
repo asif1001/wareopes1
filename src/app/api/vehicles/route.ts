@@ -39,16 +39,14 @@ async function resolveBucket() {
   } else if (projectId) {
     candidates.push(`${projectId}.appspot.com`, `${projectId}.firebasestorage.app`);
   }
-  let bucketName: string | undefined;
   for (const cand of candidates) {
     try {
       const b = storage.bucket(cand);
       const [exists] = await b.exists();
-      if (exists) { bucketName = cand; break; }
+      if (exists) return b;
     } catch (_) {}
   }
-  if (!bucketName) throw new Error('No Storage bucket found. Enable Firebase Storage and configure FIREBASE_STORAGE_BUCKET or project id.');
-  return storage.bucket(bucketName);
+  return storage.bucket();
 }
 
 export async function GET(request: NextRequest) {
@@ -183,15 +181,40 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const snap = await ref.get();
-    const data = snap.data() || {};
-    const response = {
-      id: ref.id,
-      ...data,
-      createdAt: timestampToISO(data?.createdAt) || null,
-      updatedAt: timestampToISO(data?.updatedAt) || null,
-    };
-    return NextResponse.json({ success: true, item: response }, { status: 201 });
+  const snap = await ref.get();
+  const data = snap.data() || {};
+  try {
+    const attachments = formData.getAll('attachments').filter((x) => x instanceof File) as File[];
+    if (attachments.length > 0) {
+      const bucket = await resolveBucket();
+      const urls: string[] = [];
+      for (const file of attachments) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const storagePath = `vehicles/${ref.id}/attachments/${Date.now()}-${nanoid()}-${safeName}`;
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const downloadToken = nanoid();
+        await bucket.file(storagePath).save(buffer, {
+          metadata: {
+            contentType: file.type || 'application/octet-stream',
+            metadata: { firebaseStorageDownloadTokens: downloadToken },
+            cacheControl: 'public, max-age=31536000',
+          },
+          public: false,
+        });
+        const encodedPath = encodeURIComponent(storagePath);
+        const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${downloadToken}`;
+        urls.push(fileUrl);
+      }
+      await ref.update({ attachments: urls, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    }
+  } catch (_) {}
+  const response = {
+    id: ref.id,
+    ...(await (await adb.collection('vehicles').doc(ref.id).get()).data()),
+    createdAt: timestampToISO(data?.createdAt) || null,
+    updatedAt: timestampToISO(data?.updatedAt) || null,
+  };
+  return NextResponse.json({ success: true, item: response }, { status: 201 });
   } catch (e: any) {
     console.error('POST /api/vehicles error:', e);
     return NextResponse.json({ success: false, error: e?.message || 'Server error' }, { status: 500 });

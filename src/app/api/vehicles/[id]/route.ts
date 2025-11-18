@@ -34,16 +34,14 @@ async function resolveBucket() {
   } else if (projectId) {
     candidates.push(`${projectId}.appspot.com`, `${projectId}.firebasestorage.app`);
   }
-  let bucketName: string | undefined;
   for (const cand of candidates) {
     try {
       const b = storage.bucket(cand);
       const [exists] = await b.exists();
-      if (exists) { bucketName = cand; break; }
+      if (exists) return b;
     } catch (_) {}
   }
-  if (!bucketName) throw new Error('No Storage bucket found for vehicles update.');
-  return storage.bucket(bucketName);
+  return storage.bucket();
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
@@ -113,32 +111,87 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       updatePayload.imageUrl = existingUrl;
     }
 
-    // Fetch original for audit
-    const beforeSnap = await adb.collection('vehicles').doc(id).get();
-    await adb.collection('vehicles').doc(id).update(updatePayload);
-    const snap = await adb.collection('vehicles').doc(id).get();
-    if (!snap.exists) {
-      return NextResponse.json({ success: false, error: 'Vehicle not found after update' }, { status: 404 });
+    const docRef = adb.collection('vehicles').doc(id);
+    const beforeSnap = await docRef.get();
+    const attachFiles = formData.getAll('attachments').filter(x => x instanceof File) as File[];
+    if (attachFiles.length > 0) {
+      try {
+        const bucket = await resolveBucket();
+        const urls: string[] = [];
+        for (const file of attachFiles) {
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const storagePath = `vehicles/${id}/attachments/${Date.now()}-${nanoid()}-${safeName}`;
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const downloadToken = nanoid();
+          await bucket.file(storagePath).save(buffer, {
+            metadata: {
+              contentType: file.type || 'application/octet-stream',
+              metadata: { firebaseStorageDownloadTokens: downloadToken },
+              cacheControl: 'public, max-age=31536000',
+            },
+            public: false,
+          });
+          const encodedPath = encodeURIComponent(storagePath);
+          const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${downloadToken}`;
+          urls.push(fileUrl);
+        }
+      const prev = Array.isArray((beforeSnap.data() as any)?.attachments) ? ((beforeSnap.data() as any).attachments as string[]) : [];
+      updatePayload.attachments = [...prev, ...urls];
+    } catch (_) {}
     }
-    const data = snap.data() || {};
+    try {
+      const urlsRaw = (raw as any).attachmentsUrls as string | undefined;
+      if (urlsRaw) {
+        const urls: string[] = JSON.parse(urlsRaw);
+        const prev = Array.isArray((beforeSnap.data() as any)?.attachments) ? ((beforeSnap.data() as any).attachments as string[]) : [];
+        updatePayload.attachments = [...prev, ...urls];
+      }
+    } catch (_) {}
+    try {
+      const removeRaw = (raw as any).removeAttachmentsUrls as string | undefined;
+      if (removeRaw) {
+        const removeUrls: string[] = JSON.parse(removeRaw);
+        const prev = Array.isArray((beforeSnap.data() as any)?.attachments) ? ((beforeSnap.data() as any).attachments as string[]) : [];
+        const next = prev.filter((u) => !removeUrls.includes(String(u)));
+        updatePayload.attachments = next;
+        try {
+          const bucket = await resolveBucket();
+          for (const url of removeUrls) {
+            const m = String(url).match(/\/o\/([^?]+)/);
+            const encodedPath = m?.[1];
+            if (encodedPath) {
+              const path = decodeURIComponent(encodedPath);
+              await bucket.file(path).delete({ ignoreNotFound: true });
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+    // Prepare history entry in a single atomic update
     try {
       const original = beforeSnap.data() || {};
       const changedFields: string[] = [];
       for (const k of Object.keys(updatePayload)) {
         if (k === 'updatedAt') continue;
-        if (JSON.stringify((original as any)[k]) !== JSON.stringify((data as any)[k])) changedFields.push(k);
+        if (JSON.stringify((original as any)[k]) !== JSON.stringify((updatePayload as any)[k])) changedFields.push(k);
       }
       if (changedFields.length > 0) {
-        await adb.collection('vehicles').doc(id).update({
-          history: [...(Array.isArray((data as any).history) ? (data as any).history : []), {
-            id: nanoid(),
-            timestamp: admin.firestore.Timestamp.now(),
-            userId: String(userId || 'system'),
-            action: `Updated vehicle (${changedFields.join(', ')})`,
-          }]
+        updatePayload.history = admin.firestore.FieldValue.arrayUnion({
+          id: nanoid(),
+          timestamp: admin.firestore.Timestamp.now(),
+          userId: String(userId || 'system'),
+          action: `Updated vehicle (${changedFields.join(', ')})`,
         });
       }
-    } catch {}
+    } catch (_) {}
+
+    await docRef.update(updatePayload);
+    const snap = await docRef.get();
+    if (!snap.exists) {
+      return NextResponse.json({ success: false, error: 'Vehicle not found after update' }, { status: 404 });
+    }
+    const data = snap.data() || {};
+    
     return NextResponse.json({
       success: true,
       item: {

@@ -29,16 +29,15 @@ async function resolveBucket() {
   } else if (projectId) {
     candidates.push(`${projectId}.appspot.com`, `${projectId}.firebasestorage.app`);
   }
-  let bucketName: string | undefined;
   for (const cand of candidates) {
     try {
       const b = storage.bucket(cand);
       const [exists] = await b.exists();
-      if (exists) { bucketName = cand; break; }
+      if (exists) return b;
     } catch (_) {}
   }
-  if (!bucketName) throw new Error('No Storage bucket found for Gate Pass create.');
-  return storage.bucket(bucketName);
+  // Fallback to default bucket if candidates resolution fails
+  return storage.bucket();
 }
 
 export async function GET() {

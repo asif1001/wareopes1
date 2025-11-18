@@ -29,17 +29,36 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const admin = await getAdmin();
     const adb = await getAdminDb();
 
-    const body = await request.json().catch(() => ({}));
-    const updatePayload: any = {
-      ...(body.passNumber != null ? { passNumber: String(body.passNumber) } : {}),
-      ...(body.customerName != null ? { customerName: String(body.customerName) } : {}),
-      ...(body.location != null ? { location: String(body.location) } : {}),
-      ...(body.issueDate != null ? { issueDate: body.issueDate } : {}),
-      ...(body.expiryDate != null ? { expiryDate: body.expiryDate } : {}),
-      ...(body.status != null ? { status: String(body.status) } : {}),
-      ...(body.attachments != null ? { attachments: Array.isArray(body.attachments) ? body.attachments : [] } : {}),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
+    const contentType = request.headers.get('content-type') || '';
+    let updatePayload: any = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+    let attachmentFile: File | null = null;
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData();
+      const raw = Object.fromEntries(formData.entries());
+      updatePayload = {
+        ...updatePayload,
+        ...(raw.passNumber != null ? { passNumber: String(raw.passNumber) } : {}),
+        ...(raw.customerName != null ? { customerName: String(raw.customerName) } : {}),
+        ...(raw.location != null ? { location: String(raw.location) } : {}),
+        ...(raw.issueDate != null ? { issueDate: raw.issueDate } : {}),
+        ...(raw.expiryDate != null ? { expiryDate: raw.expiryDate } : {}),
+        ...(raw.status != null ? { status: String(raw.status) } : {}),
+        ...(raw.attachments != null ? { attachments: JSON.parse(String(raw.attachments)) } : {}),
+      };
+      attachmentFile = formData.get('attachment') instanceof File ? (formData.get('attachment') as File) : null;
+    } else {
+      const body = await request.json().catch(() => ({}));
+      updatePayload = {
+        ...updatePayload,
+        ...(body.passNumber != null ? { passNumber: String(body.passNumber) } : {}),
+        ...(body.customerName != null ? { customerName: String(body.customerName) } : {}),
+        ...(body.location != null ? { location: String(body.location) } : {}),
+        ...(body.issueDate != null ? { issueDate: body.issueDate } : {}),
+        ...(body.expiryDate != null ? { expiryDate: body.expiryDate } : {}),
+        ...(body.status != null ? { status: String(body.status) } : {}),
+        ...(body.attachments != null ? { attachments: Array.isArray(body.attachments) ? body.attachments : [] } : {}),
+      };
+    }
 
     const docRef = adb.collection('gatepasses').doc(id);
     const beforeSnap = await docRef.get();
@@ -54,6 +73,32 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       await Promise.all(removed.map(deleteStorageByDownloadUrl));
     }
 
+    // Upload new attachment and append to existing list if provided
+    if (attachmentFile) {
+      try {
+        const storage = getStorage();
+        const bucket = storage.bucket();
+        const safeName = attachmentFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const storagePath = `gatepasses/${id}/attachments/${Date.now()}-${nanoid()}-${safeName}`;
+        const buffer = Buffer.from(await attachmentFile.arrayBuffer());
+        const downloadToken = nanoid();
+        await bucket.file(storagePath).save(buffer, {
+          metadata: {
+            contentType: attachmentFile.type || 'application/octet-stream',
+            metadata: { firebaseStorageDownloadTokens: downloadToken },
+            cacheControl: 'public, max-age=31536000',
+          },
+          public: false,
+        });
+        const encodedPath = encodeURIComponent(storagePath);
+        const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${downloadToken}`;
+        const prev: string[] = Array.isArray((before as any).attachments) ? (before as any).attachments : [];
+        updatePayload.attachments = Array.isArray(updatePayload.attachments) ? updatePayload.attachments : prev;
+        updatePayload.attachments = [...updatePayload.attachments, fileUrl];
+      } catch (err) {
+        console.warn('Gate Pass attachment upload (PUT) failed:', (err as any)?.message || err);
+      }
+    }
     await docRef.update(updatePayload);
     const snap = await docRef.get();
     const data = snap.data() || {};

@@ -1,34 +1,24 @@
 export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
+import { getCurrentUserPermissions, hasPermission, isAdmin } from '@/lib/server-permissions';
 
 // Returns the count of pending tasks for the current user (reporter or assignee)
 // Pending = status not equal to 'Done' and not equal to 'On Hold'
 // Server-side calculation using Firebase Admin SDK.
 export async function GET(_req: NextRequest) {
   try {
-    const { cookies } = await import('next/headers');
-    const sessionCookie = (await cookies()).get('session');
-
-    let currentUserId: string | null = null;
-    if (sessionCookie?.value) {
-      try {
-        const sessionData = JSON.parse(sessionCookie.value);
-        currentUserId = sessionData?.id || null;
-      } catch {
-        currentUserId = sessionCookie.value || null;
-      }
-    }
-
-    if (!currentUserId) {
-      return NextResponse.json({ error: 'Unauthorized: no session' }, { status: 401 });
+    const { ok, role, permissions, userId } = await getCurrentUserPermissions();
+    const canView = ok && (isAdmin(role) || hasPermission(permissions, 'tasks', 'view'));
+    if (!canView || !userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
 
     const [reporterSnap, assigneeSnap] = await Promise.all([
-      adb.collection('tasks').where('reporterId', '==', currentUserId).get(),
-      adb.collection('tasks').where('assigneeId', '==', currentUserId).get(),
+      adb.collection('tasks').where('reporterId', '==', String(userId)).get(),
+      adb.collection('tasks').where('assigneeId', '==', String(userId)).get(),
     ]);
 
     const seen = new Set<string>();

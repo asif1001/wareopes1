@@ -21,7 +21,9 @@ import { getUsers, getBranches } from "@/lib/firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import { storage } from "@/lib/firebase/firebase";
 import { cn } from "@/lib/utils";
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL, deleteObject, uploadBytesResumable } from "firebase/storage";
+import { useDropzone } from "react-dropzone";
+import { Progress } from "@/components/ui/progress";
 
 // Helper: derive Storage object path from a Firebase download URL
 function storagePathFromDownloadUrl(url: string): string | null {
@@ -175,6 +177,16 @@ function isWithin30Days(dateISO?: string | null) {
   } catch { return false; }
 }
 
+function daysUntil(dateISO?: string | null): number | null {
+  if (!dateISO) return null;
+  try {
+    const now = new Date();
+    const target = new Date(dateISO);
+    const diffMs = target.getTime() - now.getTime();
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  } catch { return null; }
+}
+
 export function MaintenanceClientPage({ initialUsers, initialBranches }: { initialUsers?: User[]; initialBranches?: Branch[] }) {
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
@@ -207,6 +219,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
   const [maintenanceGatePassId, setMaintenanceGatePassId] = useState<string | null>(null);
   const [deleteGatePassId, setDeleteGatePassId] = useState<string | null>(null);
   const [gatePassMaintenances, setGatePassMaintenances] = useState<GatePassMaintenanceRecord[]>([]);
+  const [addGatePassOpen, setAddGatePassOpen] = useState<boolean>(false);
 
   // Load MHEs from Firestore
   useEffect(() => {
@@ -370,47 +383,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     return () => { active = false; };
   }, [branchFilter, isAdmin, user?.branch]);
 
-  // Light polling to reflect server-side date changes in real-time
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const params = new URLSearchParams({ limit: "50" });
-        const desiredBranch = branchFilter !== "all" ? branchFilter : (!isAdmin && user?.branch ? user.branch : undefined);
-        if (desiredBranch) params.set("branch", desiredBranch);
-        const res = await fetch(`/api/vehicles?${params.toString()}`, { method: "GET" });
-        if (!res.ok) return;
-        const data = await res.json();
-        const list = (data?.items || []) as any[];
-        const normalized = (list || []).map((v: any) => ({
-          id: v.id,
-          plateNo: v.plateNo || "",
-          vehicleType: v.vehicleType || "",
-          make: v.make || "",
-          model: v.model || "",
-          year: v.year ?? null,
-          branch: v.branch || "",
-          status: (v.status as any) || "Active",
-          ownership: (v.ownership as any) || "Owned",
-          hireCompanyName: v.hireCompanyName ?? null,
-          driverName: v.driverName || "",
-          driverEmployeeId: v.driverEmployeeId ?? null,
-          driverContact: v.driverContact ?? null,
-          lastOdometerReading: v.lastOdometerReading ?? null,
-          nextServiceDueKm: v.nextServiceDueKm ?? null,
-          nextServiceDueDate: v.nextServiceDueDate ?? null,
-          insuranceExpiry: v.insuranceExpiry ?? null,
-          registrationExpiry: v.registrationExpiry ?? null,
-          fuelType: (v.fuelType as any) ?? null,
-          attachments: Array.isArray(v.attachments) ? v.attachments : [],
-          imageUrl: v.imageUrl ?? null,
-        })) as Vehicle[];
-        setVehicles(normalized);
-      } catch {
-        /* silent */
-      }
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [branchFilter, isAdmin, user?.branch]);
+  // Event-driven only: remove periodic polling. Vehicles refresh is triggered by user actions (add/edit/delete) and filter changes.
 
   // Load users for driver selector from Firebase
   useEffect(() => {
@@ -461,6 +434,26 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     });
   }, [vehicles, searchQuery, branchFilter, ownershipFilter, statusFilter]);
 
+  const expiringVehiclesCount = useMemo(() => {
+    const days = (iso?: string | null): number | null => {
+      if (!iso) return null;
+      try {
+        const now = new Date();
+        const t = new Date(iso);
+        return Math.ceil((t.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      } catch { return null; }
+    };
+    const soon = (d: number | null) => d != null && d >= -30 && d <= 30;
+    let count = 0;
+    for (const v of vehicles) {
+      const ins = days(v.insuranceExpiry ?? null);
+      const reg = days(v.registrationExpiry ?? null);
+      const svc = days(v.nextServiceDueDate ?? null);
+      if (soon(ins) || soon(reg) || soon(svc)) count++;
+    }
+    return count;
+  }, [vehicles]);
+
   const filteredMhes = useMemo(() => {
     return mhes.filter(m => {
       const q = searchQuery.toLowerCase();
@@ -486,6 +479,14 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
   function VehicleForm({ onSaved, vehicle }: { onSaved?: () => void, vehicle?: Vehicle }) {
     const [form, setForm] = useState<Partial<Vehicle>>(() => vehicle ? { ...vehicle } : { ownership: "Owned", status: "Active" });
     const [imageFile, setImageFile] = useState<File | null>(null);
+    const [uploadingImage, setUploadingImage] = useState<boolean>(false);
+    const [uploadProgressImage, setUploadProgressImage] = useState<number>(0);
+    const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+    const [attachmentPreviewUrls, setAttachmentPreviewUrls] = useState<string[]>([]);
+    const [uploadingFiles, setUploadingFiles] = useState<File[]>([]);
+    const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+    
+    
     return (
       <div className="space-y-4">
         <div className="sticky top-0 z-10 bg-background border-b py-3">
@@ -493,7 +494,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button onClick={() => {
+            <Button onClick={async () => {
               if (!form.plateNo || !form.vehicleType || !form.driverName || !form.branch || !form.ownership) {
                 toast({ title: "Missing required fields", description: "Plate No, Vehicle Type, Driver, Branch, and Ownership are required." });
                 return;
@@ -557,7 +558,6 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                     if (form.registrationExpiry) fd.append('registrationExpiry', form.registrationExpiry);
                     if (form.fuelType) fd.append('fuelType', String(form.fuelType as any));
                     if (form.status) fd.append('status', String(form.status as any));
-                    if (imageFile) fd.append('image', imageFile, imageFile.name);
                     const res = await fetch(`/api/vehicles`, { method: 'POST', body: fd });
                     let data: any = null;
                     try { data = await res.json(); } catch (_) { /* ignore parse errors */ }
@@ -569,8 +569,72 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                     if (created) {
                       setVehicles(prev => [created, ...prev]);
                       toast({ title: "Vehicle saved", description: `${created.plateNo || created.vehicleType}` });
+                      // Upload vehicle image with progress via server
+                      if (imageFile) {
+                        try {
+                          setUploadingImage(true);
+                          setUploadProgressImage(0);
+                          const fdImg = new FormData();
+                          fdImg.append('image', imageFile, imageFile.name);
+                          const xhrImg = new XMLHttpRequest();
+                          xhrImg.open('PUT', `/api/vehicles/${created.id}`);
+                          xhrImg.upload.onprogress = (e) => {
+                            if (e.lengthComputable) setUploadProgressImage((e.loaded / e.total) * 100);
+                          };
+                          xhrImg.onreadystatechange = () => {
+                            if (xhrImg.readyState === 4) {
+                              setUploadingImage(false);
+                              try {
+                                const ok = xhrImg.status >= 200 && xhrImg.status < 300;
+                                if (ok) {
+                                  const data2 = JSON.parse(xhrImg.responseText || '{}');
+                                  const saved2 = (data2?.item || created) as Vehicle;
+                                  setVehicles((prev) => prev.map((x) => (x.id === saved2.id ? saved2 : x)));
+                                  setForm((f) => ({ ...f, imageUrl: saved2.imageUrl || f.imageUrl || null }));
+                                }
+                              } catch {}
+                              setImageFile(null);
+                            }
+                          };
+                          xhrImg.send(fdImg);
+                        } catch {}
+                      }
+                      // Upload attachments with progress via server
+                      if (attachmentFiles.length > 0) {
+                        attachmentFiles.forEach((file) => {
+                          setUploadingFiles((prev) => [...prev, file]);
+                          setUploadProgress((prev) => ({ ...prev, [file.name]: 0 }));
+                          const fdAtt = new FormData();
+                          fdAtt.append('attachments', file);
+                          const xhrAtt = new XMLHttpRequest();
+                          xhrAtt.open('PUT', `/api/vehicles/${created.id}`);
+                          xhrAtt.upload.onprogress = (e) => {
+                            try {
+                              if (e.lengthComputable) {
+                                const pct = (e.loaded / e.total) * 100;
+                                setUploadProgress((prev) => ({ ...prev, [file.name]: pct }));
+                              }
+                            } catch {}
+                          };
+                          xhrAtt.onreadystatechange = () => {
+                            if (xhrAtt.readyState === 4) {
+                              try {
+                                const ok = xhrAtt.status >= 200 && xhrAtt.status < 300;
+                                if (ok) {
+                                  const data3 = JSON.parse(xhrAtt.responseText || '{}');
+                                  const saved3 = (data3?.item || created) as Vehicle;
+                                  setVehicles((prev) => prev.map((x) => (x.id === saved3.id ? saved3 : x)));
+                                  setForm((f) => ({ ...f, attachments: Array.isArray((saved3 as any)?.attachments) ? (saved3 as any).attachments : (f.attachments || []) }));
+                                }
+                              } catch {}
+                              setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
+                            }
+                          };
+                          xhrAtt.send(fdAtt);
+                        });
+                      }
                       setForm({ ownership: "Owned", status: "Active" });
-                      setImageFile(null);
+                      // Keep previews until uploads complete
                       onSaved?.();
                     }
                   } catch (e) {
@@ -590,7 +654,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
           <div className="flex flex-col gap-1"><Label htmlFor="vehicleType">Vehicle Type<span className="text-destructive"> *</span></Label><Input id="vehicleType" required placeholder="Van / Truck / Pickup" value={form.vehicleType || ""} onChange={e => setForm(f => ({ ...f, vehicleType: e.target.value }))} /></div>
           <div className="flex flex-col gap-1"><Label htmlFor="make">Make</Label><Input id="make" placeholder="e.g. Toyota" value={form.make || ""} onChange={e => setForm(f => ({ ...f, make: e.target.value }))} /></div>
           <div className="flex flex-col gap-1"><Label htmlFor="model">Model</Label><Input id="model" placeholder="e.g. Hilux" value={form.model || ""} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} /></div>
-        <div className="flex flex-col gap-1"><Label htmlFor="year">Year</Label><Input id="year" type="number" placeholder="e.g. 2021" value={(form.year || 0) as any} onChange={e => setForm(f => ({ ...f, year: Number(e.target.value || 0) }))} /></div>
+        <div className="flex flex-col gap-1"><Label htmlFor="year">Year</Label><Input id="year" type="number" placeholder="e.g. 2021" value={(form.year ?? '') as any} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, year: v === '' ? null : Number(v) })); }} /></div>
         <div className="flex flex-col gap-1"><Label htmlFor="branch">Branch Location<span className="text-destructive"> *</span></Label><Input id="branch" required placeholder="e.g. Salmabad" value={form.branch || ""} onChange={e => setForm(f => ({ ...f, branch: e.target.value }))} /></div>
         <div className="flex flex-col gap-1"><Label htmlFor="status">Status</Label><Input id="status" placeholder="Active / Under Maintenance / Out of Service" value={(form.status || "") as any} onChange={e => setForm(f => ({ ...f, status: (e.target.value as any) }))} /></div>
         <div className="flex flex-col gap-1"><Label htmlFor="ownership">Ownership Type<span className="text-destructive"> *</span></Label><Input id="ownership" required placeholder="Owned / Hired" value={(form.ownership || "") as any} onChange={e => setForm(f => ({ ...f, ownership: (e.target.value === "Hired" ? "Hired" : "Owned") }))} /></div>
@@ -607,14 +671,48 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
         <div className="flex flex-col gap-1"><Label htmlFor="vehicleImage">Vehicle Image</Label><Input id="vehicleImage" type="file" accept="image/*" onChange={e => {
           const file = e.target.files?.[0] || null;
           setImageFile(file);
-          if (!file) setForm(f => ({ ...f, imageUrl: null }));
+          if (file) {
+            const url = URL.createObjectURL(file);
+            setForm(f => ({ ...f, imageUrl: url }));
+          } else {
+            setForm(f => ({ ...f, imageUrl: null }));
+          }
         }} /></div>
         {form.imageUrl && (
           <div className="md:col-span-2">
-            <img src={form.imageUrl} alt="Vehicle image preview" className="h-20 w-20 rounded object-cover" />
+            <img src={form.imageUrl || ''} alt="Vehicle image preview" className="h-20 w-20 rounded object-cover" />
+            {uploadingImage && <Progress value={uploadProgressImage} className="h-2 mt-2 w-40" />}
           </div>
         )}
-        <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="attachments">Attachments</Label><Input id="attachments" type="file" multiple onChange={() => { /* hook into storage upload later */ }} /></div>
+        <div className="flex flex-col gap-1 md:col-span-2">
+          <Label htmlFor="attachments">Attachments</Label>
+          <div className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50">
+            <Input id="attachments" type="file" accept="image/*,.pdf" multiple onChange={e => { const files = Array.from(e.target.files || []); setAttachmentFiles(files); setAttachmentPreviewUrls(files.map(f => URL.createObjectURL(f))); }} />
+          </div>
+          {attachmentPreviewUrls.length > 0 && (
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+              {attachmentPreviewUrls.map((url, idx) => (
+                (attachmentFiles[idx]?.type || '').startsWith('image/') ? (
+                  <img key={idx} src={url} alt="Attachment preview" className="w-full h-32 rounded object-contain bg-muted" />
+                ) : (
+                  <iframe key={idx} src={url} title="Attachment preview" className="w-full h-32 rounded" />
+                )
+              ))}
+            </div>
+          )}
+          {uploadingFiles.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {uploadingFiles.map((file, i) => (
+                <div key={`${file.name}-${i}`} className="flex items-center gap-3 p-2 border rounded">
+                  <div className="flex-1">
+                    <div className="text-xs font-medium truncate">{file.name}</div>
+                    <Progress value={uploadProgress[file.name] || 0} className="h-2" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         </div>
       </div>
     );
@@ -625,8 +723,61 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
       () => (vehicle ? { ...vehicle } : { ownership: "Owned", status: "Active" })
     );
     const [imageFile, setImageFile] = useState<File | null>(null);
+    const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+    const [attachmentPreviewUrls, setAttachmentPreviewUrls] = useState<string[]>([]);
+    const [uploadingFiles, setUploadingFiles] = useState<File[]>([]);
+    const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+    const [uploadingImage, setUploadingImage] = useState<boolean>(false);
+    const [uploadProgressImage, setUploadProgressImage] = useState<number>(0);
+    const [isSaving, setIsSaving] = useState<boolean>(false);
+    const DRAFT_KEY = 'vehicle_add_draft_v1';
     // Track selected driver by User ID, while storing employeeNo into form.driverEmployeeId
     const [selectedDriverId, setSelectedDriverId] = useState<string>("");
+    const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+    const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+    const validAttachment = (file: File) => {
+      const t = (file.type || '').toLowerCase();
+      return t.startsWith('image/') || t === 'application/pdf' || t === 'application/octet-stream';
+    };
+    const validImage = (file: File) => (file.type || '').toLowerCase().startsWith('image/');
+
+    useEffect(() => {
+      if (!vehicle) {
+        try {
+          const raw = sessionStorage.getItem(DRAFT_KEY);
+          if (raw) {
+            const draft = JSON.parse(raw);
+            setForm((f) => ({ ...f, ...(draft.form || {}) }));
+            if (Array.isArray(draft.attachmentPreviewUrls)) setAttachmentPreviewUrls(draft.attachmentPreviewUrls);
+            if (typeof draft.imageUrl === 'string') setForm((f) => ({ ...f, imageUrl: draft.imageUrl }));
+          }
+        } catch {}
+      }
+    }, [vehicle]);
+
+    useEffect(() => {
+      if (!vehicle) {
+        try {
+          const payload = {
+            form: {
+              plateNo: form.plateNo || '',
+              vehicleType: form.vehicleType || '',
+              make: form.make || '',
+              model: form.model || '',
+              year: form.year ?? null,
+              branch: form.branch || '',
+              ownership: form.ownership || 'Owned',
+              driverName: form.driverName || '',
+              driverEmployeeId: form.driverEmployeeId || '',
+              imageUrl: form.imageUrl || null,
+            },
+            attachmentPreviewUrls,
+            imageUrl: form.imageUrl || null,
+          };
+          sessionStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+        } catch {}
+      }
+    }, [vehicle, form, attachmentPreviewUrls]);
 
     useEffect(() => {
       const empNo = form.driverEmployeeId || vehicle?.driverEmployeeId || "";
@@ -634,6 +785,88 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
       const match = users.find(u => String(u.employeeNo) === String(empNo));
       setSelectedDriverId(match?.id || "");
     }, [users, form.driverEmployeeId, vehicle?.driverEmployeeId]);
+
+    const startClientUpload = (file: File, targetId?: string) => {
+      const id = targetId || vehicle?.id;
+      if (!id) return;
+      if (!validAttachment(file)) {
+        toast({ title: 'Unsupported file', description: 'Only images or PDFs are allowed', variant: 'destructive' });
+        return;
+      }
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        toast({ title: 'File too large', description: 'Attachment must be under 10 MB', variant: 'destructive' });
+        return;
+      }
+      setUploadingFiles((prev) => [...prev, file]);
+      setUploadProgress((prev) => ({ ...prev, [file.name]: 0 }));
+      try {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const storagePath = `vehicles/${id}/attachments/${Date.now()}-${safeName}`;
+        const storageRef = ref(storage, storagePath);
+        const task = uploadBytesResumable(storageRef, file);
+        task.on(
+          'state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            setUploadProgress((prev) => ({ ...prev, [file.name]: progress }));
+          },
+          async (error) => {
+            console.error('Attachment upload failed', error);
+            // Fallback: try server PUT for this file
+            try {
+              const fd = new FormData();
+              fd.append('attachments', file);
+              const res = await fetch(`/api/vehicles/${id}`, { method: 'PUT', body: fd });
+              if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                const saved = (data?.item || vehicle) as Vehicle;
+                setVehicles((prev) => prev.map((x) => (x.id === (saved?.id || id || x.id) ? saved : x)));
+                setForm((f) => ({ ...f, attachments: Array.isArray((saved as any)?.attachments) ? (saved as any).attachments : (f.attachments || []) }));
+              } else {
+                toast({ title: 'Upload failed', description: 'Could not upload attachment. Please retry.', variant: 'destructive' });
+              }
+            } catch {
+              toast({ title: 'Network error', description: 'Attachment upload failed. Check connection.', variant: 'destructive' });
+            } finally {
+              setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
+            }
+          },
+          async () => {
+            try {
+              const url = await getDownloadURL(task.snapshot.ref);
+              const fd = new FormData();
+              fd.append('attachmentsUrls', JSON.stringify([url]));
+              const res = await fetch(`/api/vehicles/${id}`, { method: 'PUT', body: fd });
+              let data: any = null;
+              try { data = await res.json(); } catch {}
+              if (res.ok) {
+                const saved = (data?.item || vehicle) as Vehicle;
+                setVehicles((prev) => prev.map((x) => (x.id === (saved?.id || id || x.id) ? saved : x)));
+                setForm((f) => ({ ...f, attachments: Array.isArray((saved as any)?.attachments) ? (saved as any).attachments : ((f.attachments || []).concat([url])) }));
+              }
+            } finally {
+              setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
+            }
+          }
+        );
+      } catch (e) {
+        console.warn('Failed to start client upload', e);
+      }
+    };
+
+    const onDrop = (files: File[]) => {
+      if (!files || files.length === 0) return;
+      const valid = files.filter((f) => validAttachment(f) && f.size <= MAX_ATTACHMENT_BYTES);
+      const invalid = files.filter((f) => !validAttachment(f) || f.size > MAX_ATTACHMENT_BYTES);
+      if (invalid.length) {
+        toast({ title: 'Some files were skipped', description: 'Only images/PDF under 10 MB are allowed', variant: 'destructive' });
+      }
+      setAttachmentFiles(valid);
+      setAttachmentPreviewUrls(valid.map((f) => URL.createObjectURL(f)));
+      valid.forEach((f) => startClientUpload(f));
+    };
+
+    const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, multiple: true, accept: { "image/*": [], "application/pdf": [".pdf"] } });
 
     return (
       <div className="space-y-4">
@@ -652,7 +885,12 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                   });
                   return;
                 }
+                if (imageFile) {
+                  if (!validImage(imageFile)) { toast({ title: 'Invalid image', description: 'Please select a valid image file', variant: 'destructive' }); return; }
+                  if (imageFile.size > MAX_IMAGE_BYTES) { toast({ title: 'Image too large', description: 'Image must be under 5 MB', variant: 'destructive' }); return; }
+                }
                 const doSave = async () => {
+                  setIsSaving(true);
                   if (vehicle) {
                     try {
                       const fd = new FormData();
@@ -679,6 +917,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       } else if (form.imageUrl) {
                         fd.append('existingImageUrl', form.imageUrl);
                       }
+                      
                       const res = await fetch(`/api/vehicles/${vehicle.id}`, { method: 'PUT', body: fd });
                       let data: any = null;
                       try { data = await res.json(); } catch (_) { /* ignore parse errors */ }
@@ -688,11 +927,15 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       }
                       const saved = (data?.item || { ...vehicle, ...form }) as Vehicle;
                       setVehicles((prev) => prev.map((x) => (x.id === vehicle.id ? saved : x)));
+                      setForm(f => ({ ...f, attachments: Array.isArray((saved as any).attachments) ? (saved as any).attachments : (f.attachments || []) }));
+                      setAttachmentPreviewUrls([]);
                       toast({ title: "Vehicle updated", description: `${saved.plateNo || saved.vehicleType} updated` });
                       onSaved?.();
                     } catch (e) {
                       console.warn("Failed to update vehicle via API", e);
                       toast({ title: "Update failed", description: (e as any)?.message || "Could not persist changes. Check network/permissions.", variant: "destructive" });
+                    } finally {
+                      setIsSaving(false);
                     }
                   } else {
                     try {
@@ -715,7 +958,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       if (form.registrationExpiry) fd.append('registrationExpiry', form.registrationExpiry);
                       if (form.fuelType) fd.append('fuelType', String(form.fuelType as any));
                       if (form.status) fd.append('status', String(form.status as any));
+                      
+                      // Include image and attachments in initial create so persistence works even if client Storage is restricted
                       if (imageFile) fd.append('image', imageFile, imageFile.name);
+                      for (const f of attachmentFiles) fd.append('attachments', f);
                       const res = await fetch(`/api/vehicles`, { method: 'POST', body: fd });
                       let data: any = null;
                       try { data = await res.json(); } catch (_) { /* ignore parse errors */ }
@@ -727,18 +973,64 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       if (created) {
                         setVehicles((prev) => [created, ...prev]);
                         toast({ title: "Vehicle saved", description: `${created.plateNo || created.vehicleType}` });
-                        setForm({ ownership: "Owned", status: "Active" });
-                        setImageFile(null);
+                        try { sessionStorage.removeItem(DRAFT_KEY); } catch {}
+                      // Upload image with client SDK only if not already sent in POST
+                      if (imageFile && !(created.imageUrl)) {
+                        try {
+                          setUploadingImage(true);
+                          setUploadProgressImage(0);
+                          const safeName = imageFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+                          const storagePath = `vehicles/${created.id}/images/${Date.now()}-${safeName}`;
+                          const imgRef = ref(storage, storagePath);
+                          const task = uploadBytesResumable(imgRef, imageFile);
+                          task.on(
+                            'state_changed',
+                            (snapshot) => {
+                              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                              setUploadProgressImage(progress);
+                            },
+                            (error) => {
+                              console.error('Image upload failed', error);
+                              setUploadingImage(false);
+                            },
+                            async () => {
+                              try {
+                                const url = await getDownloadURL(task.snapshot.ref);
+                                const fdImg = new FormData();
+                                fdImg.append('existingImageUrl', url);
+                                const res2 = await fetch(`/api/vehicles/${created.id}`, { method: 'PUT', body: fdImg });
+                                let data2: any = null;
+                                try { data2 = await res2.json(); } catch {}
+                                if (res2.ok) {
+                                  const saved2 = (data2?.item || created) as Vehicle;
+                                  setVehicles((prev) => prev.map((x) => (x.id === saved2.id ? saved2 : x)));
+                                  setForm((f) => ({ ...f, imageUrl: saved2.imageUrl || f.imageUrl || null }));
+                                }
+                              } finally {
+                                setUploadingImage(false);
+                                setImageFile(null);
+                              }
+                            }
+                          );
+                        } catch {}
+                      }
+                      // Upload attachments with progress only if not already sent in POST
+                      if (attachmentFiles.length > 0 && !(Array.isArray(created.attachments) && created.attachments.length >= attachmentFiles.length)) {
+                        attachmentFiles.forEach((f) => startClientUpload(f, created.id));
+                      }
                         onSaved?.();
                       }
                     } catch (e) {
                       console.warn("Failed to add vehicle via API", e);
                       toast({ title: "Save failed", description: (e as any)?.message || "Could not persist vehicle. Check network/permissions.", variant: "destructive" });
+                    } finally {
+                      setIsSaving(false);
                     }
                   }
                 };
                 doSave();
               }}
+              disabled={isSaving}
             >
               <Plus className="h-4 w-4 mr-2" /> Save Vehicle
             </Button>
@@ -820,9 +1112,15 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       onChange={(e) => {
                         const file = e.target.files?.[0] || null;
                         setImageFile(file);
-                        if (!file) setForm((f) => ({ ...f, imageUrl: null }));
+                        if (file) {
+                          const url = URL.createObjectURL(file);
+                          setForm((f) => ({ ...f, imageUrl: url }));
+                        } else {
+                          setForm((f) => ({ ...f, imageUrl: null }));
+                        }
                       }}
                     />
+                    <div className="text-xs text-muted-foreground mt-1">{imageFile?.name || 'No file chosen'}</div>
                   </div>
                   {form.imageUrl && (
                     <div className="md:col-span-2">
@@ -831,6 +1129,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                         alt="Vehicle image preview"
                         className="h-20 w-20 rounded object-cover"
                       />
+                      {uploadingImage && <Progress value={uploadProgressImage} className="h-2 mt-2 w-40" />}
                     </div>
                   )}
                 </div>
@@ -914,7 +1213,77 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                   </div>
                   <div className="flex flex-col gap-1 md:col-span-3">
                     <Label htmlFor="attachments">Attachments</Label>
-                    <Input id="attachments" type="file" multiple onChange={() => {}} />
+                    <div {...getRootProps()} className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${isDragActive ? "border-primary bg-primary/10" : "hover:border-primary/50"}`}>
+                      <input {...getInputProps()} id="attachments" />
+                      <div className="text-sm text-muted-foreground">Drag & drop files here, or click to select</div>
+                    </div>
+                    <Input id="attachments_fallback" type="file" accept="image/*,.pdf" multiple onChange={e => { const files = Array.from(e.target.files || []); onDrop(files); }} className="mt-2" />
+                    {attachmentPreviewUrls.length > 0 && (
+                      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {attachmentPreviewUrls.map((url, idx) => (
+                          (attachmentFiles[idx]?.type || '').startsWith('image/') ? (
+                            <img key={idx} src={url} alt="Attachment preview" className="w-full h-32 rounded object-contain bg-muted" />
+                          ) : (
+                            <iframe key={idx} src={url} title="Attachment preview" className="w-full h-32 rounded" />
+                          )
+                        ))}
+                      </div>
+                    )}
+                    {uploadingFiles.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {uploadingFiles.map((file, i) => (
+                          <div key={`${file.name}-${i}`} className="flex items-center gap-3 p-2 border rounded">
+                            <div className="flex-1">
+                              <div className="text-xs font-medium truncate">{file.name}</div>
+                              <Progress value={uploadProgress[file.name] || 0} className="h-2" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {Array.isArray(form.attachments) && form.attachments.length > 0 && (
+                      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {(form.attachments || []).map((url, idx) => (
+                          String(url).toLowerCase().endsWith('.pdf') ? (
+                            <div key={idx} className="space-y-2">
+                              <iframe src={String(url)} title="Attachment" className="w-full h-32 rounded" />
+                              <div className="flex items-center justify-between">
+                                <a href={String(url)} download className="text-xs underline">Download</a>
+                                <Button variant="ghost" size="sm" onClick={async () => {
+                                  try {
+                                    const fd = new FormData();
+                                    fd.append('removeAttachmentsUrls', JSON.stringify([String(url)]));
+                                    const res = await fetch(`/api/vehicles/${vehicle?.id || ''}`, { method: 'PUT', body: fd });
+                                    if (res.ok) {
+                                      setForm(f => ({ ...f, attachments: (f.attachments || []).filter(u => u !== url) }));
+                                      setVehicles(prev => prev.map(x => x.id === (vehicle?.id || x.id) ? { ...x, attachments: (x.attachments || []).filter(u => u !== url) } : x));
+                                    }
+                                  } catch {}
+                                }}>Remove</Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div key={idx} className="space-y-2">
+                              <img src={String(url)} alt="Attachment" className="w-full h-32 rounded object-contain bg-muted" />
+                              <div className="flex items-center justify-between">
+                                <a href={String(url)} download className="text-xs underline">Download</a>
+                                <Button variant="ghost" size="sm" onClick={async () => {
+                                  try {
+                                    const fd = new FormData();
+                                    fd.append('removeAttachmentsUrls', JSON.stringify([String(url)]));
+                                    const res = await fetch(`/api/vehicles/${vehicle?.id || ''}`, { method: 'PUT', body: fd });
+                                    if (res.ok) {
+                                      setForm(f => ({ ...f, attachments: (f.attachments || []).filter(u => u !== url) }));
+                                      setVehicles(prev => prev.map(x => x.id === (vehicle?.id || x.id) ? { ...x, attachments: (x.attachments || []).filter(u => u !== url) } : x));
+                                    }
+                                  } catch {}
+                                }}>Remove</Button>
+                              </div>
+                            </div>
+                          )
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -1044,7 +1413,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button onClick={() => {
+            <Button onClick={async () => {
               if (!form.vehicleId || !form.date || !form.type || !form.workDescription) {
                 toast({ title: "Missing required fields", description: "Vehicle, Date, Type, and Work Description are required." });
                 return;
@@ -1066,6 +1435,20 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                   attachmentUrl: form.attachmentUrl || null,
                 };
                 setVehicleMaintenances(prev => prev.map(r => r.id === record.id ? updated : r));
+                // Persist vehicle's next service fields when provided
+                try {
+                  const fd = new FormData();
+                  if (updated.nextServiceDueKm != null) fd.append('nextServiceDueKm', String(updated.nextServiceDueKm));
+                  if (updated.nextServiceDueDate) fd.append('nextServiceDueDate', String(updated.nextServiceDueDate));
+                  if (fd.has('nextServiceDueKm') || fd.has('nextServiceDueDate')) {
+                    const res = await fetch(`/api/vehicles/${updated.vehicleId}`, { method: 'PUT', body: fd });
+                    if (res.ok) {
+                      const data = await res.json();
+                      const item = data?.item as any;
+                      setVehicles(prev => prev.map(x => x.id === updated.vehicleId ? { ...x, nextServiceDueKm: item?.nextServiceDueKm ?? updated.nextServiceDueKm ?? null, nextServiceDueDate: item?.nextServiceDueDate ?? updated.nextServiceDueDate ?? null } : x));
+                    }
+                  }
+                } catch {}
                 const v = vehicles.find(v => v.id === updated.vehicleId);
                 toast({ title: "Maintenance updated", description: `${v?.plateNo || v?.vehicleType || updated.vehicleId} • ${updated.type}` });
                 onSaved?.();
@@ -1105,6 +1488,20 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       attachmentUrl: saved.attachmentUrl ?? null,
                     };
                     setVehicleMaintenances(prev => [rec, ...prev]);
+                    // Persist vehicle's next service fields when provided
+                    try {
+                      const fd2 = new FormData();
+                      if (rec.nextServiceDueKm != null) fd2.append('nextServiceDueKm', String(rec.nextServiceDueKm));
+                      if (rec.nextServiceDueDate) fd2.append('nextServiceDueDate', String(rec.nextServiceDueDate));
+                      if (fd2.has('nextServiceDueKm') || fd2.has('nextServiceDueDate')) {
+                        const res2 = await fetch(`/api/vehicles/${rec.vehicleId}`, { method: 'PUT', body: fd2 });
+                        if (res2.ok) {
+                          const data2 = await res2.json();
+                          const item2 = data2?.item as any;
+                          setVehicles(prev => prev.map(x => x.id === rec.vehicleId ? { ...x, nextServiceDueKm: item2?.nextServiceDueKm ?? rec.nextServiceDueKm ?? null, nextServiceDueDate: item2?.nextServiceDueDate ?? rec.nextServiceDueDate ?? null } : x));
+                        }
+                      }
+                    } catch {}
                     const v = vehicles.find(v => v.id === rec.vehicleId);
                     toast({ title: 'Maintenance saved', description: `${v?.plateNo || v?.vehicleType || rec.vehicleId} • ${rec.type}` });
                     onSaved?.();
@@ -1143,10 +1540,27 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                 <div className="flex flex-col gap-1"><Label htmlFor="vm-nextKm">Next Service Due (Km)</Label><Input id="vm-nextKm" type="number" placeholder="e.g. 50000" value={(form.nextServiceDueKm || 0) as any} onChange={e => setForm(f => ({ ...f, nextServiceDueKm: Number(e.target.value || 0) }))} /></div>
         <div className="flex flex-col gap-1"><Label htmlFor="vm-nextDate">Next Service Due (Date)</Label><Input id="vm-nextDate" type="date" value={(form.nextServiceDueDate || "").split("T")[0]} onChange={e => setForm(f => ({ ...f, nextServiceDueDate: new Date(e.target.value).toISOString() }))} /></div>
         <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="vm-remarks">Remarks</Label><Input id="vm-remarks" placeholder="Notes or follow-up" value={form.remarks || ""} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} /></div>
-        <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="vm-attachment">Attachment</Label><Input id="vm-attachment" type="file" accept="image/*" onChange={e => {
+        <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="vm-attachment">Attachment</Label><Input id="vm-attachment" type="file" accept="image/*,.pdf" onChange={e => {
           const file = e.target.files?.[0] || null;
           setAttachmentFile(file);
         }} /></div>
+        {(attachmentFile || form.attachmentUrl) && (
+          <div className="md:col-span-2">
+            {attachmentFile ? (
+              attachmentFile.type.startsWith('image/') ? (
+                <img src={URL.createObjectURL(attachmentFile)} alt="Attachment preview" className="w-full max-h-64 rounded object-contain" />
+              ) : (
+                <iframe src={URL.createObjectURL(attachmentFile)} title="Attachment preview" className="w-full h-64 rounded" />
+              )
+            ) : (
+              (String(form.attachmentUrl).toLowerCase().endsWith('.pdf')) ? (
+                <iframe src={String(form.attachmentUrl)} title="Attachment" className="w-full h-64 rounded" />
+              ) : (
+                <img src={String(form.attachmentUrl)} alt="Attachment" className="w-full max-h-64 rounded object-contain" />
+              )
+            )}
+          </div>
+        )}
         </div>
       </div>
     );
@@ -1260,10 +1674,27 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                 <div className="flex flex-col gap-1"><Label htmlFor="mm-cost">Cost (BHD)</Label><Input id="mm-cost" type="number" placeholder="e.g. 120" value={(form.cost || 0) as any} onChange={e => setForm(f => ({ ...f, cost: Number(e.target.value || 0) }))} /></div>
         <div className="flex flex-col gap-1"><Label htmlFor="mm-nextDate">Next Service / Inspection Date</Label><Input id="mm-nextDate" type="date" value={(form.nextServiceDueDate || "").split("T")[0]} onChange={e => setForm(f => ({ ...f, nextServiceDueDate: new Date(e.target.value).toISOString() }))} /></div>
         <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="mm-remarks">Remarks</Label><Input id="mm-remarks" placeholder="Notes or follow-up" value={form.remarks || ""} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} /></div>
-        <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="mm-attachment">Attachment</Label><Input id="mm-attachment" type="file" accept="image/*" onChange={e => {
+        <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="mm-attachment">Attachment</Label><Input id="mm-attachment" type="file" accept="image/*,.pdf" onChange={e => {
           const file = e.target.files?.[0] || null;
           setAttachmentFile(file);
         }} /></div>
+        {(attachmentFile || form.attachmentUrl) && (
+          <div className="md:col-span-2">
+            {attachmentFile ? (
+              attachmentFile.type.startsWith('image/') ? (
+                <img src={URL.createObjectURL(attachmentFile)} alt="Attachment preview" className="w-full max-h-64 rounded object-contain" />
+              ) : (
+                <iframe src={URL.createObjectURL(attachmentFile)} title="Attachment preview" className="w-full h-64 rounded" />
+              )
+            ) : (
+              (String(form.attachmentUrl).toLowerCase().endsWith('.pdf')) ? (
+                <iframe src={String(form.attachmentUrl)} title="Attachment" className="w-full h-64 rounded" />
+              ) : (
+                <img src={String(form.attachmentUrl)} alt="Attachment" className="w-full max-h-64 rounded object-contain" />
+              )
+            )}
+          </div>
+        )}
         </div>
       </div>
     );
@@ -1383,6 +1814,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     const [cert, setCert] = useState<Partial<Certification>>({});
     const [bat, setBat] = useState<Partial<Battery>>({});
     const mheImageFileRef = useRef<File | null>(null);
+    const certAttachmentFileRef = useRef<File | null>(null);
 
     useEffect(() => {
       if (mhe) {
@@ -1459,7 +1891,25 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                   <div className="flex flex-col gap-1"><Label htmlFor="certIssue">Issue Date</Label><Input id="certIssue" type="date" value={(cert.issueDate || "").split("T")[0]} onChange={e => setCert(c => ({ ...c, issueDate: new Date(e.target.value).toISOString() }))} /></div>
                   <div className="flex flex-col gap-1"><Label htmlFor="certExpiry">Expiry</Label><Input id="certExpiry" type="date" value={(cert.expiry || "").split("T")[0]} onChange={e => setCert(c => ({ ...c, expiry: new Date(e.target.value).toISOString() }))} /></div>
                   <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="certNumber">Certificate No.</Label><Input id="certNumber" placeholder="e.g. CERT-0001" value={cert.certificateNo || ""} onChange={e => setCert(c => ({ ...c, certificateNo: e.target.value }))} /></div>
-                  <div className="flex flex-col gap-1 md:col-span-4"><Label htmlFor="mheAttachments">Attachments</Label><Input id="mheAttachments" type="file" onChange={() => { /* attach later */ }} /></div>
+                  <div className="flex flex-col gap-1 md:col-span-4"><Label htmlFor="mheAttachments">Certificate Attachment</Label><Input id="mheAttachments" type="file" accept="image/*,.pdf" onChange={e => { const f = e.target.files?.[0] || null; certAttachmentFileRef.current = f; }} />
+                    {(certAttachmentFileRef.current || cert.attachment) && (
+                      <div className="mt-3">
+                        {certAttachmentFileRef.current ? (
+                          (certAttachmentFileRef.current.type || '').startsWith('image/') ? (
+                            <img src={URL.createObjectURL(certAttachmentFileRef.current)} alt="Certificate attachment" className="w-full max-h-64 rounded object-contain" />
+                          ) : (
+                            <iframe src={URL.createObjectURL(certAttachmentFileRef.current)} title="Certificate attachment" className="w-full h-64 rounded" />
+                          )
+                        ) : (
+                          (String(cert.attachment).toLowerCase().endsWith('.pdf')) ? (
+                            <iframe src={String(cert.attachment)} title="Certificate attachment" className="w-full h-64 rounded" />
+                          ) : (
+                            <img src={String(cert.attachment)} alt="Certificate attachment" className="w-full max-h-64 rounded object-contain" />
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1515,6 +1965,9 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                     const isEdit = Boolean(mhe?.id);
                     const url = isEdit ? `/api/mhes/${mhe!.id}` : '/api/mhes';
                     const method = isEdit ? 'PUT' : 'POST';
+                    if (certAttachmentFileRef.current) {
+                      fd.append('certAttachment', certAttachmentFileRef.current);
+                    }
                     const res = await fetch(url, { method, body: fd });
                     if (!res.ok) {
                       const j = await res.json().catch(() => ({}));
@@ -1655,10 +2108,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
   );
   }
 
-  function GatePassFormPro({ onSaved }: { onSaved?: () => void }) {
-    const [form, setForm] = useState<Partial<GatePass>>({ status: "Active" });
+  function GatePassFormPro({ onSaved, gatePass }: { onSaved?: () => void, gatePass?: GatePass }) {
+    const [form, setForm] = useState<Partial<GatePass>>(() => gatePass ? { ...gatePass } : { status: "Active" });
     const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-    // Attachment will be uploaded server-side via Admin Storage
+    // Attachment will be uploaded server-side via Admin Storage (create only)
     return (
       <div className="space-y-4">
         <div className="sticky top-0 z-10 bg-background border-b py-3">
@@ -1671,44 +2124,75 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                 toast({ title: "Missing required fields", description: "Customer, Location, Pass Number, Status, Vehicle, and Driver are required." });
                 return;
               }
-              const fd = new FormData();
-              fd.append('customerName', String(form.customerName || ''));
-              fd.append('location', String(form.location || ''));
-              fd.append('passNumber', String(form.passNumber || ''));
-              if (form.issueDate) fd.append('issueDate', String(form.issueDate));
-              if (form.expiryDate) fd.append('expiryDate', String(form.expiryDate));
-              fd.append('status', String((form.status as any) || 'Active'));
-              if (form.vehicleId) fd.append('vehicleId', String(form.vehicleId));
-              if (form.driverName) fd.append('driverName', String(form.driverName));
-              if (attachmentFile) fd.append('attachment', attachmentFile);
               try {
-                const res = await fetch('/api/gatepasses', { method: 'POST', body: fd });
-                if (!res.ok) throw new Error(`Failed to save Gate Pass: ${res.status}`);
-                const data = await res.json();
-                const saved = data?.item || {};
-                const gp: GatePass = {
-                  id: saved.id,
-                  customerName: saved.customerName || String(form.customerName || ''),
-                  location: saved.location || String(form.location || ''),
-                  passNumber: saved.passNumber || String(form.passNumber || ''),
-                  issueDate: saved.issueDate ?? (form.issueDate || null),
-                  expiryDate: saved.expiryDate ?? (form.expiryDate || null),
-                  attachment: Array.isArray(saved.attachments) && saved.attachments.length > 0 ? saved.attachments[0] : null,
-                  status: (saved.status as any) || ((form.status as any) || 'Active'),
-                  vehicleId: saved.vehicleId ?? (form.vehicleId || null),
-                  driverName: saved.driverName ?? (form.driverName || null),
-                };
-                setGatePasses(prev => [gp, ...prev]);
-                toast({ title: "Gate Pass saved", description: gp.passNumber });
-                setForm({});
-                setAttachmentFile(null);
-                onSaved?.();
+                if (!gatePass) {
+                  const fd = new FormData();
+                  fd.append('customerName', String(form.customerName || ''));
+                  fd.append('location', String(form.location || ''));
+                  fd.append('passNumber', String(form.passNumber || ''));
+                  if (form.issueDate) fd.append('issueDate', String(form.issueDate));
+                  if (form.expiryDate) fd.append('expiryDate', String(form.expiryDate));
+                  fd.append('status', String((form.status as any) || 'Active'));
+                  if (form.vehicleId) fd.append('vehicleId', String(form.vehicleId));
+                  if (form.driverName) fd.append('driverName', String(form.driverName));
+                  if (attachmentFile) fd.append('attachment', attachmentFile);
+                  const res = await fetch('/api/gatepasses', { method: 'POST', body: fd });
+                  if (!res.ok) throw new Error(`Failed to save Gate Pass: ${res.status}`);
+                  const data = await res.json();
+                  const saved = data?.item || {};
+                  const gp: GatePass = {
+                    id: saved.id,
+                    customerName: saved.customerName || String(form.customerName || ''),
+                    location: saved.location || String(form.location || ''),
+                    passNumber: saved.passNumber || String(form.passNumber || ''),
+                    issueDate: saved.issueDate ?? (form.issueDate || null),
+                    expiryDate: saved.expiryDate ?? (form.expiryDate || null),
+                    attachment: Array.isArray(saved.attachments) && saved.attachments.length > 0 ? saved.attachments[0] : null,
+                    status: (saved.status as any) || ((form.status as any) || 'Active'),
+                    vehicleId: saved.vehicleId ?? (form.vehicleId || null),
+                    driverName: saved.driverName ?? (form.driverName || null),
+                  };
+                  setGatePasses(prev => [gp, ...prev]);
+                  toast({ title: "Gate Pass saved", description: gp.passNumber });
+                  setForm({});
+                  setAttachmentFile(null);
+                  onSaved?.();
+                } else {
+                  const fd = new FormData();
+                  fd.append('passNumber', String(form.passNumber || ''));
+                  fd.append('customerName', String(form.customerName || ''));
+                  fd.append('location', String(form.location || ''));
+                  if (form.issueDate) fd.append('issueDate', String(form.issueDate));
+                  if (form.expiryDate) fd.append('expiryDate', String(form.expiryDate));
+                  fd.append('status', String((form.status as any) || 'Active'));
+                  // Allow appending a new attachment in edit
+                  if (attachmentFile) fd.append('attachment', attachmentFile);
+                  const res = await fetch(`/api/gatepasses/${gatePass.id}`, { method: 'PUT', body: fd });
+                  if (!res.ok) throw new Error(`Failed to update Gate Pass: ${res.status}`);
+                  const data = await res.json();
+                  const saved = data?.item || {};
+                  const gp: GatePass = {
+                    id: gatePass.id,
+                    customerName: saved.customerName || String(form.customerName || ''),
+                    location: saved.location || String(form.location || ''),
+                    passNumber: saved.passNumber || String(form.passNumber || ''),
+                    issueDate: saved.issueDate ?? (form.issueDate || null),
+                    expiryDate: saved.expiryDate ?? (form.expiryDate || null),
+                    attachment: Array.isArray(saved.attachments) && saved.attachments.length > 0 ? saved.attachments[0] : (gatePass.attachment || null),
+                    status: (saved.status as any) || ((form.status as any) || 'Active'),
+                    vehicleId: gatePass.vehicleId ?? (form.vehicleId || null),
+                    driverName: gatePass.driverName ?? (form.driverName || null),
+                  };
+                  setGatePasses(prev => prev.map(x => x.id === gatePass.id ? gp : x));
+                  toast({ title: "Gate Pass updated", description: gp.passNumber });
+                  onSaved?.();
+                }
               } catch (e) {
                 console.warn(e);
-                toast({ title: 'Save failed', description: 'Could not save Gate Pass.', variant: 'destructive' as any });
+                toast({ title: gatePass ? 'Update failed' : 'Save failed', description: gatePass ? 'Could not update Gate Pass.' : 'Could not save Gate Pass.', variant: 'destructive' as any });
               }
             }}>
-              <Plus className="h-4 w-4 mr-2" /> Save Gate Pass
+              <Plus className="h-4 w-4 mr-2" /> {gatePass ? 'Update Gate Pass' : 'Save Gate Pass'}
             </Button>
           </div>
         </div>
@@ -1779,7 +2263,24 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
               <CardDescription>Optional file upload.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Input id="gpAttachment" type="file" onChange={e => { const f = e.target.files?.[0] || null; setAttachmentFile(f); }} />
+              <Input id="gpAttachment" type="file" accept="image/*,.pdf" onChange={e => { const f = e.target.files?.[0] || null; setAttachmentFile(f); }} />
+              {(attachmentFile || form.attachment) && (
+                <div className="mt-3">
+                  {attachmentFile ? (
+                    attachmentFile.type.startsWith('image/') ? (
+                      <img src={URL.createObjectURL(attachmentFile)} alt="Attachment preview" className="w-full max-h-64 rounded object-contain" />
+                    ) : (
+                      <iframe src={URL.createObjectURL(attachmentFile)} title="Attachment preview" className="w-full h-64 rounded" />
+                    )
+                  ) : (
+                    (String(form.attachment).toLowerCase().endsWith('.pdf')) ? (
+                      <iframe src={String(form.attachment)} title="Attachment" className="w-full h-64 rounded" />
+                    ) : (
+                      <img src={String(form.attachment)} alt="Attachment" className="w-full max-h-64 rounded object-contain" />
+                    )
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1852,7 +2353,25 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
           <div className="flex flex-col gap-1"><Label htmlFor="gpmm-vendor">Vendor</Label><Input id="gpmm-vendor" placeholder="Optional" value={form.vendor || ""} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} /></div>
           <div className="flex flex-col gap-1"><Label htmlFor="gpmm-cost">Cost</Label><Input id="gpmm-cost" type="number" placeholder="Optional" value={(form.cost || 0) as any} onChange={e => setForm(f => ({ ...f, cost: Number(e.target.value || 0) }))} /></div>
           <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="gpmm-remarks">Remarks</Label><Input id="gpmm-remarks" placeholder="Optional" value={form.remarks || ""} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} /></div>
-          <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="gpmm-attachment">Attachment</Label><Input id="gpmm-attachment" type="file" onChange={e => { const f = e.target.files?.[0] || null; setAttachmentFile(f); }} /></div>
+          <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="gpmm-attachment">Attachment</Label><Input id="gpmm-attachment" type="file" accept="image/*,.pdf" onChange={e => { const f = e.target.files?.[0] || null; setAttachmentFile(f); }} />
+            {(attachmentFile || form.attachmentUrl) && (
+              <div className="mt-3">
+                {attachmentFile ? (
+                  attachmentFile.type.startsWith('image/') ? (
+                    <img src={URL.createObjectURL(attachmentFile)} alt="Attachment preview" className="w-full max-h-64 rounded object-contain" />
+                  ) : (
+                    <iframe src={URL.createObjectURL(attachmentFile)} title="Attachment preview" className="w-full h-64 rounded" />
+                  )
+                ) : (
+                  (String(form.attachmentUrl).toLowerCase().endsWith('.pdf')) ? (
+                    <iframe src={String(form.attachmentUrl)} title="Attachment" className="w-full h-64 rounded" />
+                  ) : (
+                    <img src={String(form.attachmentUrl)} alt="Attachment" className="w-full max-h-64 rounded object-contain" />
+                  )
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1910,7 +2429,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
             <CardHeader>
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <CardTitle>Vehicle Maintenance</CardTitle>
+                  <CardTitle className="flex items-center gap-2">Vehicle Maintenance</CardTitle>
                   <CardDescription>Manage vehicle details, service, and expiry alerts.</CardDescription>
                 </div>
                 <Dialog open={addVehicleOpen} onOpenChange={setAddVehicleOpen}>
@@ -1950,7 +2469,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                   {filteredVehicles.map(v => {
                     const ins = expiryStatus(v.insuranceExpiry);
                     const reg = expiryStatus(v.registrationExpiry);
-                    const svcSoon = isWithin30Days(v.nextServiceDueDate);
+                    const insDays = daysUntil(v.insuranceExpiry);
+                    const regDays = daysUntil(v.registrationExpiry);
+                    const svcDays = daysUntil(v.nextServiceDueDate);
+                    const svcSoon = svcDays != null && svcDays >= 0 && svcDays <= 30;
                     const expiringSoon = ins.label === 'Expiring Soon' || reg.label === 'Expiring Soon' || svcSoon;
                     return (
                       <TableRow
@@ -1974,24 +2496,44 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                         <TableCell>{v.branch || '-'}</TableCell>
                         <TableCell className={((v.status || "Active") !== "Active") ? "text-orange-700 font-medium" : undefined}>{v.status || "Active"}</TableCell>
                         <TableCell>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Badge variant={ins.variant} aria-label={`Insurance ${ins.label}`}>{ins.label}</Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {v.insuranceExpiry ? `Insurance expiry: ${new Date(v.insuranceExpiry).toLocaleDateString()}` : 'No insurance expiry date'}
-                            </TooltipContent>
-                          </Tooltip>
+                          <div className="flex items-center gap-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge variant={ins.variant} aria-label={`Insurance ${ins.label}`}>{ins.label}</Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {v.insuranceExpiry ? `Insurance expiry: ${new Date(v.insuranceExpiry).toLocaleDateString()}` : 'No insurance expiry date'}
+                              </TooltipContent>
+                            </Tooltip>
+                            {insDays != null && insDays >= 0 && insDays <= 30 && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge variant="destructive" aria-label={`Insurance due in ${insDays} days`}>{insDays}d</Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>{`Insurance due in ${insDays} day${insDays === 1 ? '' : 's'}`}</TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Badge variant={reg.variant} aria-label={`Registration ${reg.label}`}>{reg.label}</Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {v.registrationExpiry ? `Registration expiry: ${new Date(v.registrationExpiry).toLocaleDateString()}` : 'No registration expiry date'}
-                            </TooltipContent>
-                          </Tooltip>
+                          <div className="flex items-center gap-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge variant={reg.variant} aria-label={`Registration ${reg.label}`}>{reg.label}</Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {v.registrationExpiry ? `Registration expiry: ${new Date(v.registrationExpiry).toLocaleDateString()}` : 'No registration expiry date'}
+                              </TooltipContent>
+                            </Tooltip>
+                            {regDays != null && regDays >= 0 && regDays <= 30 && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge variant="destructive" aria-label={`Registration due in ${regDays} days`}>{regDays}d</Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>{`Registration due in ${regDays} day${regDays === 1 ? '' : 's'}`}</TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -2005,8 +2547,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                 {v.nextServiceDueDate ? `Next service: ${new Date(v.nextServiceDueDate).toLocaleDateString()}` : 'No next service date'}
                               </TooltipContent>
                             </Tooltip>
-                            {svcSoon && (
-                              <Badge variant="destructive" aria-label="Expiring Soon">Expiring Soon</Badge>
+                            {svcDays != null && (
+                              svcDays < 0
+                                ? (<Badge variant="destructive" aria-label="Service expired">Expired</Badge>)
+                                : (svcDays <= 30 ? (<Badge variant="destructive" aria-label={`Service due in ${svcDays} days`}>{svcDays}d</Badge>) : null)
                             )}
                           </div>
                         </TableCell>
@@ -2232,9 +2776,29 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                 <div>Driver: {v.driverName || '-'}</div>
                                 <div>Driver Contact: {v.driverContact || '-'}</div>
                               </div>
-                              <div className="md:col-span-2 space-y-2">
-                                <div className="font-medium">Maintenance History</div>
-                                <Table>
+                              {Array.isArray(v.attachments) && v.attachments.length > 0 && (
+                                <div className="md:col-span-2 space-y-2">
+                                  <div className="font-medium">Vehicle Attachments</div>
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    {v.attachments.map((url, idx) => (
+                                      String(url).toLowerCase().endsWith('.pdf') ? (
+                                        <div key={idx} className="space-y-2">
+                                          <iframe src={String(url)} title="Attachment" className="w-full h-40 rounded" />
+                                          <a href={String(url)} download className="text-xs underline">Download</a>
+                                        </div>
+                                      ) : (
+                                        <div key={idx} className="space-y-2">
+                                          <img src={String(url)} alt="Attachment" className="w-full h-40 rounded object-contain bg-muted" />
+                                          <a href={String(url)} download className="text-xs underline">Download</a>
+                                        </div>
+                                      )
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+          <div className="md:col-span-2 space-y-2">
+            <div className="font-medium">Maintenance History</div>
+            <Table>
                                   <TableHeader>
                                     <TableRow>
                                       <TableHead>Date</TableHead>
@@ -2253,8 +2817,23 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                       </TableRow>
                                     ))}
                                   </TableBody>
-                                </Table>
-                              </div>
+            </Table>
+          </div>
+          <div className="md:col-span-2 space-y-2">
+            <div className="font-medium">Maintenance Attachments</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {vehicleMaintenances.filter(r => r.vehicleId === v.id && r.attachmentUrl).map(rec => (
+                String(rec.attachmentUrl).toLowerCase().endsWith('.pdf') ? (
+                  <iframe key={rec.id} src={String(rec.attachmentUrl)} title="Attachment" className="w-full h-40 rounded" />
+                ) : (
+                  <img key={rec.id} src={String(rec.attachmentUrl)} alt="Attachment" className="w-full h-40 rounded object-contain bg-muted" />
+                )
+              ))}
+              {vehicleMaintenances.filter(r => r.vehicleId === v.id && r.attachmentUrl).length === 0 && (
+                <div className="text-sm text-muted-foreground">No attachments</div>
+              )}
+            </div>
+          </div>
                             </div>
                           </DetailedModal>
                           </div>
@@ -2586,7 +3165,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                   <CardTitle>Customer Gate Pass Tracker</CardTitle>
                   <CardDescription>Track passes and expiry alerts.</CardDescription>
                 </div>
-                <Dialog>
+                <Dialog open={addGatePassOpen} onOpenChange={setAddGatePassOpen}>
                   <DialogTrigger asChild>
                     <Button size="sm">
                       <Plus className="h-4 w-4 mr-2" /> Add Gate Pass
@@ -2596,7 +3175,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                     <DialogHeader>
                       <DialogTitle>Add Gate Pass</DialogTitle>
                     </DialogHeader>
-                    <GatePassFormPro onSaved={() => { /* auto-close handled by dialog */ }} />
+                    <GatePassFormPro onSaved={() => { setAddGatePassOpen(false); }} />
                   </DialogContent>
                 </Dialog>
               </div>
@@ -2620,7 +3199,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                       <TableRow
                         key={g.id}
                         className={((g.status || "Active") !== "Active") ? "bg-orange-50 hover:bg-orange-100" : undefined}
-                        onClick={() => setSelectedGatePassId(g.id)}
+                        onClick={(e) => { if ((e as any).defaultPrevented) return; setSelectedGatePassId(g.id); }}
                       >
                         <TableCell className="font-medium">{g.customerName}</TableCell>
                         <TableCell>{g.location}</TableCell>
@@ -2660,11 +3239,11 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                               </DropdownMenuContent>
                             </DropdownMenu>
                             <Dialog open={editingGatePassId === g.id} onOpenChange={(open) => setEditingGatePassId(open ? g.id : null)}>
-                              <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
-                                <DialogHeader>
-                                  <DialogTitle>Edit Gate Pass</DialogTitle>
-                                </DialogHeader>
-                                <GatePassFormPro onSaved={() => { setEditingGatePassId(null); }} />
+                            <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
+                              <DialogHeader>
+                                <DialogTitle>Edit Gate Pass</DialogTitle>
+                              </DialogHeader>
+                                <GatePassFormPro gatePass={g} onSaved={() => { setEditingGatePassId(null); }} />
                               </DialogContent>
                             </Dialog>
                             <Dialog open={maintenanceGatePassId === g.id} onOpenChange={(open) => setMaintenanceGatePassId(open ? g.id : null)}>
@@ -2679,7 +3258,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                         <CardTitle>Add Maintenance</CardTitle>
                                       </CardHeader>
                                       <CardContent>
-                                        <GatePassMaintenanceForm gatePassId={g.id} onSaved={() => { /* updates list via state */ }} />
+                                        <GatePassMaintenanceForm gatePassId={g.id} onSaved={() => { setMaintenanceGatePassId(null); }} />
                                       </CardContent>
                                     </Card>
                                   </div>
@@ -2718,7 +3297,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                                         <DialogHeader>
                                                           <DialogTitle>Edit Maintenance</DialogTitle>
                                                         </DialogHeader>
-                                                        <GatePassMaintenanceForm gatePassId={g.id} record={rec} onSaved={() => { /* auto close by Dialog */ }} />
+                                                        <GatePassMaintenanceForm gatePassId={g.id} record={rec} onSaved={() => { setMaintenanceGatePassId(null); }} />
                                                       </DialogContent>
                                                     </Dialog>
                                                     <AlertDialog>
@@ -2794,6 +3373,17 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                               ) : (
                                 <div className="mb-4 h-32 md:h-40 w-full rounded bg-muted flex items-center justify-center text-sm text-muted-foreground">No attachment</div>
                               )}
+                              {Array.isArray((g as any).attachments) && (g as any).attachments.length > 0 && (
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                                  {(g as any).attachments.map((url: string, idx: number) => (
+                                    String(url).toLowerCase().endsWith('.pdf') ? (
+                                      <iframe key={idx} src={String(url)} title="Attachment" className="w-full h-40 rounded" />
+                                    ) : (
+                                      <img key={idx} src={String(url)} alt="Attachment" className="w-full h-40 rounded object-contain bg-muted" />
+                                    )
+                                  ))}
+                                </div>
+                              )}
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                                 <div className="rounded border p-3">
                                   <div className="text-xs text-muted-foreground">Status</div>
@@ -2830,9 +3420,9 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                   <div>Vehicle: {vehicles.find(v => v.id === g.vehicleId)?.plateNo || vehicles.find(v => v.id === g.vehicleId)?.vehicleType || g.vehicleId || '-'}</div>
                                   <div>Driver: {g.driverName || '-'}</div>
                                 </div>
-                                <div className="md:col-span-2 space-y-2">
-                                  <div className="font-medium">History</div>
-                                  <Table>
+          <div className="md:col-span-2 space-y-2">
+            <div className="font-medium">History</div>
+            <Table>
                                     <TableHeader>
                                       <TableRow>
                                         <TableHead>Date</TableHead>
@@ -2851,8 +3441,23 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                         </TableRow>
                                       ))}
                                     </TableBody>
-                                  </Table>
-                                </div>
+            </Table>
+          </div>
+          <div className="md:col-span-2 space-y-2">
+            <div className="font-medium">Maintenance Attachments</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {gatePassMaintenances.filter(r => r.gatePassId === g.id && r.attachmentUrl).map(rec => (
+                String(rec.attachmentUrl).toLowerCase().endsWith('.pdf') ? (
+                  <iframe key={rec.id} src={String(rec.attachmentUrl)} title="Attachment" className="w-full h-40 rounded" />
+                ) : (
+                  <img key={rec.id} src={String(rec.attachmentUrl)} alt="Attachment" className="w-full h-40 rounded object-contain bg-muted" />
+                )
+              ))}
+              {gatePassMaintenances.filter(r => r.gatePassId === g.id && r.attachmentUrl).length === 0 && (
+                <div className="text-sm text-muted-foreground">No attachments</div>
+              )}
+            </div>
+          </div>
                               </div>
                             </DetailedModal>
                           </div>

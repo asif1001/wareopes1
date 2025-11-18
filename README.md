@@ -76,6 +76,37 @@ The application will be available at [http://localhost:3000](http://localhost:30
 
 ## 🛠 Maintenance & Operations Reminders
 
+## 📣 Recent Changes (last 24 hours)
+
+- Event-driven refresh model across the app
+  - Removed automatic polling on the Maintenance page; vehicles list refreshes only on user actions and initial view load (`src/components/maintenance-client-page.tsx`).
+  - Dashboard navigation performs an immediate refresh on load, a one-time refresh after 20 seconds, then disables automatic refreshes; no manual refresh button is shown (`src/components/dashboard-nav.tsx`).
+
+- Modal behavior consistency
+  - Data entry/modification modals auto-close after successful saves (e.g., Gate Pass Add and Maintenance record modals) (`src/components/maintenance-client-page.tsx`).
+  - View-only modals remain open until explicitly closed by the user.
+
+- Dashboard navigation badges
+  - Tasks and Maintenance badges only appear when counts are greater than 0; hidden completely when counts are 0.
+  - Accessibility: badges include `aria-live="polite"` and `aria-atomic="true"`.
+  - Tests added: `src/__tests__/dashboard-nav-badge.test.tsx`, `src/__tests__/dashboard-nav-maintenance-badge.test.tsx`.
+
+- Add/Edit Vehicle workflow hardening
+  - Stable previews for Vehicle Image and document attachments; validations for file types and sizes.
+  - Draft persistence for Add Vehicle fields to prevent accidental data loss during re-renders.
+  - Year input now preserves empty edits without forcing `0` (`src/components/maintenance-client-page.tsx:696`).
+  - Client uploads use progress tracking with resilient fallbacks to server if Storage rules block client writes.
+
+- Server-side improvements
+  - Atomic history updates when editing vehicles; merges attachment URLs safely (`src/app/api/vehicles/[id]/route.ts`).
+
+- Documentation updates
+  - Architecture doc updated with the new event-driven refresh policy and the dashboard’s one-time follow-up refresh (`docs/blueprint.md`).
+
+Notes
+- Typecheck succeeds for the changes (`npm run typecheck`).
+- Lint warnings remain unrelated to these updates.
+
 A new dashboard card named "Maintenance & Operations Reminders" aggregates upcoming maintenance and compliance dates from Vehicles, MHEs, and Gate Passes and surfaces them in one place.
 
 What it shows
