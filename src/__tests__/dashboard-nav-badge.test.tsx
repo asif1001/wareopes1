@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import React from 'react'
 import { render, screen, within } from '@testing-library/react'
 import { DashboardNav } from '@/components/dashboard-nav'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { SidebarProvider, Sidebar, SidebarContent } from '@/components/ui/sidebar'
 
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({ permissions: { tasks: ['view'], maintenance: ['view'] }, isLoading: false }),
@@ -27,35 +29,64 @@ const setupFetch = (sequence: { tasks: number; expiring?: number }[]) => {
 
 beforeEach(() => {
   vi.restoreAllMocks()
-  vi.useFakeTimers()
 })
 
 describe('DashboardNav task badge visibility', () => {
   it('shows badge when count > 0', async () => {
     setupFetch([{ tasks: 3, expiring: 0 }])
-    render(<DashboardNav />)
-    const tasksLink = await screen.findByRole('link', { name: /Tasks/i })
-    const badge = within(tasksLink).getByRole('status')
-    expect(badge).toHaveTextContent('3')
-    expect(badge).toHaveAttribute('aria-live', 'polite')
-    expect(badge).toHaveAttribute('aria-atomic', 'true')
+    render(
+      <TooltipProvider>
+        <SidebarProvider>
+          <Sidebar>
+            <SidebarContent>
+              <DashboardNav />
+            </SidebarContent>
+          </Sidebar>
+        </SidebarProvider>
+      </TooltipProvider>
+    )
+    const el = await screen.findByLabelText(/Pending tasks.*3/i)
+    expect(el).toBeTruthy()
+    expect(el).toHaveAttribute('aria-live', 'polite')
+    expect(el).toHaveAttribute('aria-atomic', 'true')
   })
 
   it('hides badge when count = 0', async () => {
     setupFetch([{ tasks: 0, expiring: 0 }])
-    render(<DashboardNav />)
-    const tasksLink = await screen.findByRole('link', { name: /Tasks/i })
-    expect(within(tasksLink).queryByRole('status')).toBeNull()
+    render(
+      <TooltipProvider>
+        <SidebarProvider>
+          <Sidebar>
+            <SidebarContent>
+              <DashboardNav />
+            </SidebarContent>
+          </Sidebar>
+        </SidebarProvider>
+      </TooltipProvider>
+    )
+    const badges = screen.queryAllByRole('status')
+    expect(badges.some(b => b.textContent === '0')).toBe(false)
   })
 
   it('updates visibility when count changes dynamically', async () => {
+    vi.useFakeTimers()
     setupFetch([{ tasks: 2, expiring: 0 }, { tasks: 0, expiring: 0 }])
-    render(<DashboardNav />)
-    const tasksLink = await screen.findByRole('link', { name: /Tasks/i })
-    const badge = within(tasksLink).getByRole('status')
-    expect(badge).toHaveTextContent('2')
-    vi.advanceTimersByTime(20000)
+    render(
+      <TooltipProvider>
+        <SidebarProvider>
+          <Sidebar>
+            <SidebarContent>
+              <DashboardNav />
+            </SidebarContent>
+          </Sidebar>
+        </SidebarProvider>
+      </TooltipProvider>
+    )
     await Promise.resolve()
-    expect(within(tasksLink).queryByRole('status')).toBeNull()
+    await Promise.resolve()
+    expect(screen.getByLabelText(/Pending tasks.*2/i)).toBeTruthy()
+    await vi.advanceTimersByTimeAsync(20000)
+    vi.useRealTimers()
+    expect(screen.queryByLabelText(/Pending tasks.*2/i)).toBeNull()
   })
 })

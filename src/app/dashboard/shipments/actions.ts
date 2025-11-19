@@ -45,7 +45,7 @@ export async function saveShipmentAction(
     prevState: { success: boolean, error: string | null, fieldErrors?: { [key: string]: string[] } },
     formData: FormData
 ): Promise<{ success: boolean, error: string | null, fieldErrors?: { [key: string]: string[] } }> {
-    try {
+  try {
         const rawData = Object.fromEntries(formData.entries());
         
         const validated = shipmentSchema.safeParse(rawData);
@@ -69,6 +69,29 @@ export async function saveShipmentAction(
         const totalLines = data.domLines + data.bulkLines;
 
         // Convert date strings to Date objects where applicable
+        // Resolve current user name for provenance
+        let currentUserName: string = 'current-user';
+        try {
+            const c = await cookies();
+            const rawSession = c.get('session')?.value;
+            let userId: string | null = null;
+            if (rawSession) {
+                try {
+                    const parsed = JSON.parse(rawSession);
+                    userId = typeof parsed?.id === 'string' ? parsed.id : rawSession;
+                } catch {
+                    userId = rawSession;
+                }
+            }
+            if (userId) {
+                const { getAdminDb } = await import('@/lib/firebase/admin');
+                const adb = await getAdminDb();
+                const snap = await adb.collection('Users').doc(userId).get();
+                const u = snap.exists ? (snap.data() as any) : {};
+                currentUserName = String(u?.fullName || u?.name || userId);
+            }
+        } catch {}
+
         const shipmentData: Omit<Shipment, 'id' | 'createdAt' | 'updatedAt' | 'bookings'> = {
             ...data,
             bahrainEta: new Date(data.bahrainEta),
@@ -80,9 +103,8 @@ export async function saveShipmentAction(
             actualClearedDate: data.actualClearedDate ? new Date(data.actualClearedDate) : null,
             numContainers,
             totalLines,
-            // These will be dummy values for now
-            createdBy: "current-user",
-            updatedBy: "current-user",
+            createdBy: currentUserName,
+            updatedBy: currentUserName,
         };
 
         // Automatically set status to Arrived only on initial assignment

@@ -3,6 +3,7 @@
 import { SerializableTask, SerializableUserProfile } from "@/lib/task-types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { TaskPriorityBadge } from "@/components/tasks/task-priority-badge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -78,7 +79,7 @@ export function TaskTable({ tasks, users, onEdit, onDelete }: TaskTableProps) {
               <TableCell>{task.title}</TableCell>
               <TableCell>{assignee ? assignee.name : "Unassigned"}</TableCell>
               <TableCell><Badge variant="outline">{task.status}</Badge></TableCell>
-              <TableCell>{task.priority}</TableCell>
+              <TableCell><TaskPriorityBadge priority={task.priority as any} /></TableCell>
               <TableCell>
                 {task.dueDate ? (
                   <span className={dueMeta.textClass}>{format(new Date(task.dueDate), "MMM d, yyyy")}</span>

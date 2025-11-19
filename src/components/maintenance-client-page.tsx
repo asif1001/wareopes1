@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { ref, uploadBytes, getDownloadURL, deleteObject, uploadBytesResumable } from "firebase/storage";
 import { useDropzone } from "react-dropzone";
 import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
 
 // Helper: derive Storage object path from a Firebase download URL
 function storagePathFromDownloadUrl(url: string): string | null {
@@ -157,13 +158,24 @@ type GatePassMaintenanceRecord = {
   attachmentUrl?: string | null;
 };
 
+type DriverLicense = {
+  id: string;
+  driverId: string;
+  vehicleType: string;
+  licenseNumber: string;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  attachmentUrl?: string | null;
+  remarks?: string | null;
+};
+
 function expiryStatus(expiry?: string | null) {
   if (!expiry) return { label: "Active", variant: "secondary" as const };
   const today = new Date();
   const exp = new Date(expiry);
   const diffDays = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays < 0) return { label: "Expired", variant: "destructive" as const };
-  if (diffDays <= 30) return { label: "Expiring Soon", variant: "default" as const };
+  if (diffDays <= 60) return { label: "Expiring Soon", variant: "default" as const };
   return { label: "Active", variant: "secondary" as const };
 }
 
@@ -173,7 +185,7 @@ function isWithin30Days(dateISO?: string | null) {
     const now = new Date();
     const target = new Date(dateISO);
     const diffDays = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 30;
+    return diffDays >= 0 && diffDays <= 60;
   } catch { return false; }
 }
 
@@ -187,7 +199,7 @@ function daysUntil(dateISO?: string | null): number | null {
   } catch { return null; }
 }
 
-export function MaintenanceClientPage({ initialUsers, initialBranches }: { initialUsers?: User[]; initialBranches?: Branch[] }) {
+export function MaintenanceClientPage({ initialUsers, initialBranches, initialVehicles, initialMhes, initialGatePasses, initialLicenses }: { initialUsers?: User[]; initialBranches?: Branch[]; initialVehicles?: Vehicle[]; initialMhes?: Mhe[]; initialGatePasses?: GatePass[]; initialLicenses?: DriverLicense[] }) {
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
@@ -196,9 +208,9 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
   const [statusFilter, setStatusFilter] = useState("all");
 
   // Local state; wired to Firestore via API endpoints
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [mhes, setMhes] = useState<Mhe[]>([]);
-  const [gatePasses, setGatePasses] = useState<GatePass[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>(() => initialVehicles || []);
+  const [mhes, setMhes] = useState<Mhe[]>(() => initialMhes || []);
+  const [gatePasses, setGatePasses] = useState<GatePass[]>(() => initialGatePasses || []);
   const [vehicleMaintenances, setVehicleMaintenances] = useState<VehicleMaintenanceRecord[]>([]);
   const [mheMaintenances, setMheMaintenances] = useState<MheMaintenanceRecord[]>([]);
   const [users, setUsers] = useState<User[]>(() => initialUsers || []);
@@ -220,59 +232,42 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
   const [deleteGatePassId, setDeleteGatePassId] = useState<string | null>(null);
   const [gatePassMaintenances, setGatePassMaintenances] = useState<GatePassMaintenanceRecord[]>([]);
   const [addGatePassOpen, setAddGatePassOpen] = useState<boolean>(false);
+  const [licenses, setLicenses] = useState<DriverLicense[]>(() => initialLicenses || []);
+  const [addLicenseOpen, setAddLicenseOpen] = useState<boolean>(false);
+  const [editingLicenseId, setEditingLicenseId] = useState<string | null>(null);
+  const [deleteLicenseId, setDeleteLicenseId] = useState<string | null>(null);
 
   // Load MHEs from Firestore
   useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/mhes?limit=50", { method: "GET" });
-        if (!res.ok) throw new Error(`Failed to load MHEs: ${res.status}`);
-        const data = await res.json();
-        const list = (data?.items || []) as any[];
-        const normalized = (list || []).map((m: any) => ({
-          id: m.id,
-          equipmentInfo: m.equipmentInfo || "",
-          modelNo: m.modelNo ?? null,
-          serialNo: m.serialNo ?? null,
-          certification: m.certification ?? undefined,
-          battery: m.battery ?? undefined,
-          repairs: Array.isArray(m.repairs) ? m.repairs : [],
-          imageUrl: m.imageUrl ?? null,
-          status: (m.status as any) || "Active",
-        })) as Mhe[];
-        if (active) setMhes(normalized);
-      } catch (e) {
-        console.warn("Failed to fetch MHEs from Firestore", e);
-      }
-    })();
-    return () => { active = false; };
+    // Data provided server-side to reduce reads
   }, []);
 
   // Load Gate Passes from Firestore
   useEffect(() => {
+    // Data provided server-side to reduce reads
+  }, []);
+
+  useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const res = await fetch("/api/gatepasses", { method: "GET" });
-        if (!res.ok) throw new Error(`Failed to load Gate Passes: ${res.status}`);
+        const res = await fetch("/api/licenses?limit=50", { method: "GET" });
+        if (!res.ok) throw new Error(`Failed to load Licenses: ${res.status}`);
         const data = await res.json();
         const list = (data?.items || []) as any[];
-        const normalized = (list || []).map((g: any) => ({
-          id: g.id,
-          customerName: g.customerName || "",
-          location: g.location || "",
-          passNumber: g.passNumber || "",
-          issueDate: g.issueDate ?? null,
-          expiryDate: g.expiryDate ?? null,
-          attachment: Array.isArray(g.attachments) && g.attachments.length > 0 ? g.attachments[0] : null,
-          status: (g.status as any) || "Active",
-          vehicleId: g.vehicleId ?? null,
-          driverName: g.driverName ?? null,
-        })) as GatePass[];
-        if (active) setGatePasses(normalized);
+        const normalized = (list || []).map((l: any) => ({
+          id: l.id,
+          driverId: l.driverId,
+          vehicleType: l.vehicleType || "",
+          licenseNumber: l.licenseNumber || "",
+          issueDate: l.issueDate ?? null,
+          expiryDate: l.expiryDate ?? null,
+          attachmentUrl: l.attachmentUrl ?? null,
+          remarks: l.remarks ?? null,
+        })) as DriverLicense[];
+        if (active) setLicenses(normalized);
       } catch (e) {
-        console.warn("Failed to fetch Gate Passes from Firestore", e);
+        console.warn("Failed to fetch Licenses from Firestore", e);
       }
     })();
     return () => { active = false; };
@@ -280,107 +275,17 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
 
   // Load Vehicle Maintenance records from Firestore
   useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch('/api/vehicle-maintenance?limit=50', { method: 'GET' });
-        if (!res.ok) throw new Error(`Failed to load Vehicle Maintenance: ${res.status}`);
-        const data = await res.json();
-        const list = (data?.items || []) as any[];
-        const normalized = (list || []).map((r: any) => ({
-          id: r.id,
-          vehicleId: r.vehicleId,
-          date: r.date,
-          type: r.type,
-          reportedBy: r.reportedBy ?? null,
-          workDescription: r.workDescription,
-          vendor: r.vendor ?? null,
-          cost: r.cost ?? null,
-          invoiceNumber: r.invoiceNumber ?? null,
-          nextServiceDueKm: r.nextServiceDueKm ?? null,
-          nextServiceDueDate: r.nextServiceDueDate ?? null,
-          remarks: r.remarks ?? null,
-          attachmentUrl: r.attachmentUrl ?? null,
-        })) as VehicleMaintenanceRecord[];
-        if (active) setVehicleMaintenances(normalized);
-      } catch (e) {
-        console.warn('Failed to fetch Vehicle Maintenance from Firestore', e);
-      }
-    })();
-    return () => { active = false; };
+    // Load maintenance records on demand to reduce reads
   }, []);
 
   // Load MHE Maintenance records from Firestore
   useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch('/api/mhe-maintenance?limit=50', { method: 'GET' });
-        if (!res.ok) throw new Error(`Failed to load MHE Maintenance: ${res.status}`);
-        const data = await res.json();
-        const list = (data?.items || []) as any[];
-        const normalized = (list || []).map((r: any) => ({
-          id: r.id,
-          mheId: r.mheId,
-          date: r.date,
-          type: r.type,
-          reportedBy: r.reportedBy ?? null,
-          workDescription: r.workDescription,
-          vendor: r.vendor ?? null,
-          cost: r.cost ?? null,
-          nextServiceDueDate: r.nextServiceDueDate ?? null,
-          remarks: r.remarks ?? null,
-          attachmentUrl: r.attachmentUrl ?? null,
-        })) as MheMaintenanceRecord[];
-        if (active) setMheMaintenances(normalized);
-      } catch (e) {
-        console.warn('Failed to fetch MHE Maintenance from Firestore', e);
-      }
-    })();
-    return () => { active = false; };
+    // Load maintenance records on demand to reduce reads
   }, []);
 
   // Load vehicles from Firestore
   useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const params = new URLSearchParams({ limit: "50" });
-        const desiredBranch = branchFilter !== "all" ? branchFilter : (!isAdmin && user?.branch ? user.branch : undefined);
-        if (desiredBranch) params.set("branch", desiredBranch);
-        const res = await fetch(`/api/vehicles?${params.toString()}`, { method: "GET" });
-        if (!res.ok) throw new Error(`Failed to load vehicles: ${res.status}`);
-        const data = await res.json();
-        const list = (data?.items || []) as any[];
-        const normalized = (list || []).map((v: any) => ({
-          id: v.id,
-          plateNo: v.plateNo || "",
-          vehicleType: v.vehicleType || "",
-          make: v.make || "",
-          model: v.model || "",
-          year: v.year ?? null,
-          branch: v.branch || "",
-          status: (v.status as any) || "Active",
-          ownership: (v.ownership as any) || "Owned",
-          hireCompanyName: v.hireCompanyName ?? null,
-          driverName: v.driverName || "",
-          driverEmployeeId: v.driverEmployeeId ?? null,
-          driverContact: v.driverContact ?? null,
-          lastOdometerReading: v.lastOdometerReading ?? null,
-          nextServiceDueKm: v.nextServiceDueKm ?? null,
-          nextServiceDueDate: v.nextServiceDueDate ?? null,
-          insuranceExpiry: v.insuranceExpiry ?? null,
-          registrationExpiry: v.registrationExpiry ?? null,
-          fuelType: (v.fuelType as any) ?? null,
-          attachments: Array.isArray(v.attachments) ? v.attachments : [],
-          imageUrl: v.imageUrl ?? null,
-        })) as Vehicle[];
-        if (active) setVehicles(normalized);
-      } catch (e) {
-        console.warn("Failed to fetch vehicles from Firestore", e);
-      }
-    })();
-    return () => { active = false; };
+    // Vehicles provided server-side; local filters apply without new reads
   }, [branchFilter, isAdmin, user?.branch]);
 
   // Event-driven only: remove periodic polling. Vehicles refresh is triggered by user actions (add/edit/delete) and filter changes.
@@ -443,7 +348,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
         return Math.ceil((t.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
       } catch { return null; }
     };
-    const soon = (d: number | null) => d != null && d >= -30 && d <= 30;
+    const soon = (d: number | null) => d != null && d >= 0 && d <= 60;
     let count = 0;
     for (const v of vehicles) {
       const ins = days(v.insuranceExpiry ?? null);
@@ -465,6 +370,22 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     });
   }, [mhes, searchQuery, statusFilter]);
 
+  const vehicleAlert = useMemo(() => {
+    return vehicles.some(v => {
+      const d1 = daysUntil(v.insuranceExpiry)
+      const d2 = daysUntil(v.registrationExpiry)
+      const d3 = daysUntil(v.nextServiceDueDate)
+      return (d1 != null && d1 <= 60) || (d2 != null && d2 <= 60) || (d3 != null && d3 <= 60)
+    })
+  }, [vehicles])
+
+  const mheAlert = useMemo(() => {
+    return mhes.some(m => {
+      const d = daysUntil(m.certification?.expiry)
+      return d != null && d <= 60
+    })
+  }, [mhes])
+
   const filteredGatePasses = useMemo(() => {
     return gatePasses.filter(g => {
       const q = searchQuery.toLowerCase();
@@ -475,6 +396,34 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
       return matches && matchesStatus;
     });
   }, [gatePasses, searchQuery, statusFilter]);
+
+  const gatePassAlert = useMemo(() => {
+    return gatePasses.some(g => {
+      const d = daysUntil(g.expiryDate)
+      return d != null && d <= 60
+    })
+  }, [gatePasses])
+
+  const filteredLicenses = useMemo(() => {
+    return licenses.filter(l => {
+      const q = searchQuery.toLowerCase();
+      const driver = (users.find(u => u.id === l.driverId)?.name || "").toLowerCase();
+      const type = (l.vehicleType || "").toLowerCase();
+      const num = (l.licenseNumber || "").toLowerCase();
+      const matches = driver.includes(q) || type.includes(q) || num.includes(q);
+      const licStatus = expiryStatus(l.expiryDate).label.toLowerCase();
+      const normalized = licStatus === "expiring soon" ? "soon" : licStatus;
+      const matchesStatus = statusFilter === "all" || statusFilter === normalized;
+      return matches && matchesStatus;
+    });
+  }, [licenses, users, searchQuery, statusFilter]);
+
+  const licenseAlert = useMemo(() => {
+    return licenses.some(l => {
+      const d = daysUntil(l.expiryDate)
+      return d != null && d <= 60
+    })
+  }, [licenses])
 
   function VehicleForm({ onSaved, vehicle }: { onSaved?: () => void, vehicle?: Vehicle }) {
     const [form, setForm] = useState<Partial<Vehicle>>(() => vehicle ? { ...vehicle } : { ownership: "Owned", status: "Active" });
@@ -2291,6 +2240,93 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
     );
   }
 
+  function LicenseForm({ onSaved, license }: { onSaved?: () => void, license?: DriverLicense }) {
+    const [selectedDriverId, setSelectedDriverId] = useState<string>(() => license?.driverId || '')
+    const [entry, setEntry] = useState<Partial<DriverLicense>>(() => license ? { ...license } : { vehicleType: '', licenseNumber: '', issueDate: '', expiryDate: '' })
+
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex flex-col gap-1"><Label htmlFor="dl-driver">Driver<span className="text-destructive"> *</span></Label>
+            <Select value={selectedDriverId} onValueChange={(val) => { setSelectedDriverId(val) }}>
+              <SelectTrigger id="dl-driver" className="w-full"><SelectValue placeholder="Select driver" /></SelectTrigger>
+              <SelectContent>
+                {users.map(u => (<SelectItem key={u.id} value={u.id}>{(u as any).fullName || (u as any).name || u.id}</SelectItem>))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Add License</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1"><Label htmlFor={`dl-type`}>Vehicle Type<span className="text-destructive"> *</span></Label><Input id={`dl-type`} required placeholder="e.g. Light Vehicle" value={entry.vehicleType || ''} onChange={ev => setEntry(e => ({ ...e, vehicleType: ev.target.value }))} /></div>
+                <div className="flex flex-col gap-1"><Label htmlFor={`dl-no`}>License Number<span className="text-destructive"> *</span></Label><Input id={`dl-no`} required placeholder="e.g. 123456789" value={entry.licenseNumber || ''} onChange={ev => setEntry(e => ({ ...e, licenseNumber: ev.target.value }))} /></div>
+                <div className="flex flex-col gap-1"><Label htmlFor={`dl-issue`}>Issue Date<span className="text-destructive"> *</span></Label><Input id={`dl-issue`} type="date" required value={entry.issueDate || ''} onChange={ev => setEntry(e => ({ ...e, issueDate: ev.target.value }))} /></div>
+                <div className="flex flex-col gap-1"><Label htmlFor={`dl-expiry`}>Expiry Date<span className="text-destructive"> *</span></Label><Input id={`dl-expiry`} type="date" required value={entry.expiryDate || ''} onChange={ev => setEntry(e => ({ ...e, expiryDate: ev.target.value }))} /></div>
+                <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor={`dl-file`}>License Document</Label><Input id={`dl-file`} type="file" accept="image/*,application/pdf" onChange={async ev => {
+                  const file = ev.target.files?.[0]
+                  if (!file) return
+                  const filename = `${Date.now()}-${file.name}`
+                  const r = ref(storage, `licenses/${filename}`)
+                  const task = uploadBytesResumable(r, file)
+                  task.on('state_changed', () => {}, () => {}, async () => {
+                    const url = await getDownloadURL(r)
+                    setEntry(e => ({ ...e, attachmentUrl: url }))
+                  })
+                }} /></div>
+                <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor={`dl-remarks`}>Remarks</Label><Textarea id={`dl-remarks`} value={entry.remarks || ''} onChange={ev => setEntry(e => ({ ...e, remarks: ev.target.value }))} /></div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button onClick={async () => {
+            try {
+              if (!selectedDriverId) {
+                toast({ title: 'Missing required fields', description: 'Driver is required.' })
+                return
+              }
+              const valid = (entry.vehicleType && entry.licenseNumber && entry.issueDate && entry.expiryDate) ? entry : null
+              if (!valid) {
+                toast({ title: 'Missing required fields', description: 'Add at least one complete license entry.' })
+                return
+              }
+              if (license) {
+                const body = { driverId: selectedDriverId, ...valid }
+                const res = await fetch(`/api/licenses/${license.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                const data = await res.json()
+                const saved = (data?.item || { ...license, ...valid, driverId: selectedDriverId }) as DriverLicense
+                setLicenses(prev => prev.map(x => x.id === license.id ? saved : x))
+                toast({ title: 'License updated', description: `${saved.licenseNumber}` })
+                onSaved?.()
+              } else {
+                const body = { driverId: selectedDriverId, ...valid }
+                const res = await fetch('/api/licenses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                const data = await res.json()
+                const created = data?.item as DriverLicense | undefined
+                if (created) {
+                  setLicenses(prev => [created, ...prev])
+                  toast({ title: 'License saved', description: `${created.licenseNumber}` })
+                  onSaved?.()
+                }
+              }
+            } catch (e: any) {
+              toast({ title: 'Save failed', description: e?.message || 'Could not save license.', variant: 'destructive' as any })
+            }
+          }}>
+            <Plus className="h-4 w-4 mr-2" /> {license ? 'Update License' : 'Save License(s)'}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   function GatePassMaintenanceForm({ onSaved, gatePassId, record }: { onSaved?: () => void, gatePassId?: string, record?: GatePassMaintenanceRecord }) {
     const [form, setForm] = useState<Partial<GatePassMaintenanceRecord>>(() => {
       if (record) return { ...record };
@@ -2382,9 +2418,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
       <Tabs defaultValue="vehicle">
         <div className="flex items-center">
           <TabsList>
-            <TabsTrigger value="vehicle">Vehicle ({filteredVehicles.length})</TabsTrigger>
-            <TabsTrigger value="mhe">MHE ({filteredMhes.length})</TabsTrigger>
-            <TabsTrigger value="gatepass">Gate Passes ({filteredGatePasses.length})</TabsTrigger>
+            <TabsTrigger value="vehicle" className={vehicleAlert ? "text-destructive" : undefined} aria-label={vehicleAlert ? "Vehicle has expiries" : undefined}>Vehicle ({filteredVehicles.length})</TabsTrigger>
+            <TabsTrigger value="mhe" className={mheAlert ? "text-destructive" : undefined} aria-label={mheAlert ? "MHE has expiries" : undefined}>MHE ({filteredMhes.length})</TabsTrigger>
+            <TabsTrigger value="gatepass" className={gatePassAlert ? "text-destructive" : undefined} aria-label={gatePassAlert ? "Gate Passes have expiries" : undefined}>Gate Passes ({filteredGatePasses.length})</TabsTrigger>
+            <TabsTrigger value="license" className={licenseAlert ? "text-destructive" : undefined} aria-label={licenseAlert ? "License has expiries" : undefined}>License ({filteredLicenses.length})</TabsTrigger>
           </TabsList>
           <div className="ml-auto flex items-center gap-3">
             <div className="relative">
@@ -2472,7 +2509,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                     const insDays = daysUntil(v.insuranceExpiry);
                     const regDays = daysUntil(v.registrationExpiry);
                     const svcDays = daysUntil(v.nextServiceDueDate);
-                    const svcSoon = svcDays != null && svcDays >= 0 && svcDays <= 30;
+                    const svcSoon = svcDays != null && svcDays >= 0 && svcDays <= 60;
                     const expiringSoon = ins.label === 'Expiring Soon' || reg.label === 'Expiring Soon' || svcSoon;
                     return (
                       <TableRow
@@ -2505,7 +2542,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                 {v.insuranceExpiry ? `Insurance expiry: ${new Date(v.insuranceExpiry).toLocaleDateString()}` : 'No insurance expiry date'}
                               </TooltipContent>
                             </Tooltip>
-                            {insDays != null && insDays >= 0 && insDays <= 30 && (
+                            {insDays != null && insDays >= 0 && insDays <= 60 && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Badge variant="destructive" aria-label={`Insurance due in ${insDays} days`}>{insDays}d</Badge>
@@ -2525,7 +2562,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                 {v.registrationExpiry ? `Registration expiry: ${new Date(v.registrationExpiry).toLocaleDateString()}` : 'No registration expiry date'}
                               </TooltipContent>
                             </Tooltip>
-                            {regDays != null && regDays >= 0 && regDays <= 30 && (
+                            {regDays != null && regDays >= 0 && regDays <= 60 && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Badge variant="destructive" aria-label={`Registration due in ${regDays} days`}>{regDays}d</Badge>
@@ -2550,7 +2587,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                             {svcDays != null && (
                               svcDays < 0
                                 ? (<Badge variant="destructive" aria-label="Service expired">Expired</Badge>)
-                                : (svcDays <= 30 ? (<Badge variant="destructive" aria-label={`Service due in ${svcDays} days`}>{svcDays}d</Badge>) : null)
+                                : (svcDays <= 60 ? (<Badge variant="destructive" aria-label={`Service due in ${svcDays} days`}>{svcDays}d</Badge>) : null)
                             )}
                           </div>
                         </TableCell>
@@ -3053,13 +3090,13 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction onClick={async () => {
                                     try {
-                                      const res = await fetch(`/api/mhes/${m.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'Inactive' }) });
-                                      if (!res.ok) throw new Error(`Failed to update status: ${res.status}`);
+                                      const res = await fetch(`/api/mhes/${m.id}`, { method: 'DELETE' });
+                                      if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
                                       setMhes(prev => prev.filter(x => x.id !== m.id));
                                       toast({ title: "MHE deleted", description: m.equipmentInfo });
                                     } catch (e) {
                                       console.warn(e);
-                                      toast({ title: 'Delete failed', description: 'Could not update MHE status.', variant: 'destructive' as any });
+                                      toast({ title: 'Delete failed', description: 'Could not delete MHE.', variant: 'destructive' as any });
                                     }
                                   }}>Delete</AlertDialogAction>
                                 </AlertDialogFooter>
@@ -3157,7 +3194,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
           </Card>
         </TabsContent>
 
-        <TabsContent value="gatepass">
+      <TabsContent value="gatepass">
           <Card>
             <CardHeader>
               <div className="flex items-start justify-between gap-2">
@@ -3341,13 +3378,13 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction onClick={async () => {
                                     try {
-                                      const res = await fetch(`/api/gatepasses/${g.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'Expired' }) });
-                                      if (!res.ok) throw new Error(`Failed to update status: ${res.status}`);
+                                      const res = await fetch(`/api/gatepasses/${g.id}`, { method: 'DELETE' });
+                                      if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
                                       setGatePasses(prev => prev.filter(x => x.id !== g.id));
                                       toast({ title: "Gate Pass deleted", description: g.passNumber });
                                     } catch (e) {
                                       console.warn(e);
-                                      toast({ title: 'Delete failed', description: 'Could not update Gate Pass status.', variant: 'destructive' as any });
+                                      toast({ title: 'Delete failed', description: 'Could not delete Gate Pass.', variant: 'destructive' as any });
                                     }
                                   }}>Delete</AlertDialogAction>
                                 </AlertDialogFooter>
@@ -3469,7 +3506,118 @@ export function MaintenanceClientPage({ initialUsers, initialBranches }: { initi
               </Table>
             </CardContent>
           </Card>
-        </TabsContent>
+      </TabsContent>
+      <TabsContent value="license">
+        <div className="grid grid-cols-1 gap-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">Driver Licenses</CardTitle>
+                  <CardDescription>Manage driver license records and attachments.</CardDescription>
+                </div>
+                <Dialog open={addLicenseOpen} onOpenChange={setAddLicenseOpen}>
+                  <DialogTrigger asChild>
+                    <MaintenanceActionButton action="add" size="sm" label="Add License">
+                      <Plus className="h-4 w-4 mr-2" /> Add License
+                    </MaintenanceActionButton>
+                  </DialogTrigger>
+                  <DialogContent className="w-[95vw] max-w-[900px] max-h-[85vh] overflow-y-auto">
+                    <DialogHeader><DialogTitle>Add License</DialogTitle></DialogHeader>
+                    <LicenseForm onSaved={() => { setAddLicenseOpen(false); }} />
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Driver</TableHead>
+                    <TableHead>Vehicle Type</TableHead>
+                    <TableHead>License No.</TableHead>
+                    <TableHead>Issue Date</TableHead>
+                    <TableHead>Expiry Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredLicenses.slice().sort((a, b) => {
+                    const da = (users.find(u => u.id === a.driverId) as any);
+                    const db = (users.find(u => u.id === b.driverId) as any);
+                    const na = String(da?.fullName || da?.name || da?.displayName || a.driverId || '').toLowerCase();
+                    const nb = String(db?.fullName || db?.name || db?.displayName || b.driverId || '').toLowerCase();
+                    return na.localeCompare(nb);
+                  }).map(l => {
+                    const st = expiryStatus(l.expiryDate);
+                    const driver = users.find(u => u.id === l.driverId) as any;
+                    const driverName = (driver?.fullName || driver?.name || driver?.displayName || l.driverId);
+                    return (
+                      <TableRow key={l.id}>
+                        <TableCell className="font-medium">{driverName}</TableCell>
+                        <TableCell>{l.vehicleType}</TableCell>
+                        <TableCell>{l.licenseNumber}</TableCell>
+                        <TableCell>{l.issueDate ? new Date(l.issueDate).toLocaleDateString() : '-'}</TableCell>
+                        <TableCell>{l.expiryDate ? new Date(l.expiryDate).toLocaleDateString() : '-'}</TableCell>
+                        <TableCell><Badge variant={st.variant as any}>{st.label}</Badge></TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end">
+                            <DropdownMenu>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" aria-label="Open actions">
+                                      <MoreHorizontal className="h-5 w-5" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>License actions</TooltipContent>
+                              </Tooltip>
+                              <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                {l.attachmentUrl ? (
+                                  <DropdownMenuItem onSelect={() => { window.open(l.attachmentUrl as string, '_blank'); }} aria-label="Open Document">Open Document</DropdownMenuItem>
+                                ) : null}
+                                <DropdownMenuItem onSelect={() => { setEditingLicenseId(l.id); }} aria-label="Edit License"><Edit className="mr-2 h-4 w-4 text-blue-600" /> Edit</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onSelect={() => { setDeleteLicenseId(l.id); }} className="text-red-600" aria-label="Delete License"><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                            <Dialog open={editingLicenseId === l.id} onOpenChange={(open) => setEditingLicenseId(open ? l.id : null)}>
+                              <DialogContent className="w-[95vw] max-w-[900px] max-h-[85vh] overflow-y-auto">
+                                <DialogHeader><DialogTitle>Edit License</DialogTitle></DialogHeader>
+                                <LicenseForm license={l} onSaved={() => { setEditingLicenseId(null); }} />
+                              </DialogContent>
+                            </Dialog>
+                            <AlertDialog open={deleteLicenseId === l.id} onOpenChange={(open) => setDeleteLicenseId(open ? l.id : null)}>
+                              <AlertDialogContent>
+                                <AlertDialogHeader><AlertDialogTitle>Delete License</AlertDialogTitle></AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={async () => {
+                                    try {
+                                      await fetch(`/api/licenses/${l.id}`, { method: 'DELETE' });
+                                      setLicenses(prev => prev.filter(x => x.id !== l.id));
+                                      toast({ title: "License deleted", description: `${l.licenseNumber}` });
+                                    } catch {
+                                      toast({ title: 'Delete failed', description: 'Could not delete license.', variant: 'destructive' as any });
+                                    }
+                                  }}>Delete</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
+      </TabsContent>
       </Tabs>
     </div>
   );

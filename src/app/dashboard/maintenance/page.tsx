@@ -98,6 +98,15 @@ export default function MaintenancePage() {
       getBranches().catch(() => [])
     ]);
 
+    const { getAdminDb } = await import('@/lib/firebase/admin');
+    const adb = await getAdminDb();
+    const [vehiclesSnap, mhesSnap, gatePassesSnap, licensesSnap] = await Promise.all([
+      adb.collection('vehicles').orderBy('createdAt', 'desc').limit(50).get().catch(() => ({ docs: [] } as any)),
+      adb.collection('mhes').orderBy('createdAt', 'desc').limit(50).get().catch(() => ({ docs: [] } as any)),
+      adb.collection('gatepasses').orderBy('createdAt', 'desc').limit(50).get().catch(() => ({ docs: [] } as any)),
+      adb.collection('licenses').orderBy('createdAt', 'desc').limit(50).get().catch(() => ({ docs: [] } as any)),
+    ]);
+
     // Serialize Firestore Timestamp/Date fields to ISO strings to satisfy Client Component prop requirements
     const toIso = (v: any): string | undefined => {
       if (!v) return undefined;
@@ -137,12 +146,99 @@ export default function MaintenancePage() {
       code: typeof b.code === 'string' ? b.code : '',
     }));
 
+    const vehicles = (vehiclesSnap as any).docs.map((d: any) => {
+      const v = d.data() || {};
+      const num = (x: any) => (x === '' || x == null) ? null : Number(x);
+      return {
+        id: d.id,
+        plateNo: v.plateNo || '',
+        vehicleType: v.vehicleType || '',
+        make: v.make || '',
+        model: v.model || '',
+        year: num(v.year),
+        branch: v.branch || '',
+        status: v.status || 'Active',
+        ownership: v.ownership || 'Owned',
+        driverName: v.driverName || '',
+        driverEmployeeId: v.driverEmployeeId ?? null,
+        driverContact: v.driverContact ?? null,
+        lastOdometerReading: num(v.lastOdometerReading),
+        nextServiceDueKm: num(v.nextServiceDueKm),
+        nextServiceDueDate: toIso(v.nextServiceDueDate),
+        insuranceExpiry: toIso(v.insuranceExpiry),
+        registrationExpiry: toIso(v.registrationExpiry),
+        fuelType: v.fuelType ?? null,
+        attachments: Array.isArray(v.attachments) ? v.attachments : [],
+        imageUrl: v.imageUrl ?? null,
+        createdAt: toIso(v.createdAt),
+        updatedAt: toIso(v.updatedAt),
+      };
+    });
+
+    const mhes = (mhesSnap as any).docs.map((d: any) => {
+      const m = d.data() || {};
+      return {
+        id: d.id,
+        equipmentInfo: m.equipmentInfo || '',
+        modelNo: m.modelNo ?? null,
+        serialNo: m.serialNo ?? null,
+        certification: m.certification ? {
+          type: m.certification.type,
+          issueDate: toIso(m.certification.issueDate),
+          expiry: toIso(m.certification.expiry),
+          vendor: m.certification.vendor,
+          attachment: m.certification.attachment,
+          certificateNo: m.certification.certificateNo,
+        } : undefined,
+        battery: m.battery ?? undefined,
+        repairs: Array.isArray(m.repairs) ? m.repairs : [],
+        imageUrl: m.imageUrl ?? null,
+        status: m.status || 'Active',
+        createdAt: toIso(m.createdAt),
+        updatedAt: toIso(m.updatedAt),
+      };
+    });
+
+    const gatePasses = (gatePassesSnap as any).docs.map((d: any) => {
+      const g = d.data() || {};
+      return {
+        id: d.id,
+        customerName: g.customerName || '',
+        location: g.location || '',
+        passNumber: g.passNumber || '',
+        issueDate: toIso(g.issueDate),
+        expiryDate: toIso(g.expiryDate),
+        attachment: Array.isArray(g.attachments) && g.attachments.length > 0 ? g.attachments[0] : null,
+        status: g.status || 'Active',
+        vehicleId: g.vehicleId ?? null,
+        driverName: g.driverName ?? null,
+        createdAt: toIso(g.createdAt),
+        updatedAt: toIso(g.updatedAt),
+      };
+    });
+
+    const licenses = (licensesSnap as any).docs.map((d: any) => {
+      const l = d.data() || {};
+      return {
+        id: d.id,
+        driverId: l.driverId,
+        vehicleType: l.vehicleType || '',
+        licenseNumber: l.licenseNumber || '',
+        issueDate: toIso(l.issueDate),
+        expiryDate: toIso(l.expiryDate),
+        attachmentUrl: l.attachmentUrl ?? null,
+        remarks: l.remarks ?? null,
+        createdAt: toIso(l.createdAt),
+        updatedAt: toIso(l.updatedAt),
+      };
+    });
+
     return (
       <div className="flex flex-col h-full">
         <DashboardHeader title="Vehicle & MHE Maintenance" />
         <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
           <Suspense fallback={<div>Loading...</div>}>
-            <MaintenanceClientPage initialUsers={users} initialBranches={branches} />
+            <MaintenanceClientPage initialUsers={users} initialBranches={branches} initialVehicles={vehicles} initialMhes={mhes} initialGatePasses={gatePasses} initialLicenses={licenses} />
           </Suspense>
         </main>
       </div>

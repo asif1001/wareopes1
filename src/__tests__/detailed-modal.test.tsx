@@ -3,6 +3,7 @@ import React from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MaintenanceClientPage } from '@/components/maintenance-client-page'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({ user: { permissions: { maintenance: ['add','edit','delete'] } }, isAdmin: true }),
@@ -34,7 +35,11 @@ describe('Detailed modal - Vehicle', () => {
       'GET /api/gatepasses': () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
     })
 
-    render(<MaintenanceClientPage initialUsers={[{ id: 'u1' } as any]} initialBranches={[{ id: 'b1', name: 'Main' } as any]} />)
+    render(
+      <TooltipProvider>
+        <MaintenanceClientPage initialUsers={[{ id: 'u1' } as any]} initialBranches={[{ id: 'b1', name: 'Main' } as any]} />
+      </TooltipProvider>
+    )
 
     const tab = screen.getByRole('tab', { name: /Vehicle/i })
     await user.click(tab)
@@ -59,7 +64,11 @@ describe('Detailed modal - MHE', () => {
       'GET /api/vehicle-maintenance?limit=50': () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
     })
 
-    render(<MaintenanceClientPage initialUsers={[{ id: 'u1' } as any]} initialBranches={[{ id: 'b1', name: 'Main' } as any]} />)
+    render(
+      <TooltipProvider>
+        <MaintenanceClientPage initialUsers={[{ id: 'u1' } as any]} initialBranches={[{ id: 'b1', name: 'Main' } as any]} />
+      </TooltipProvider>
+    )
     const tab = screen.getByRole('tab', { name: /MHE/i })
     await user.click(tab)
     const row = await screen.findByRole('row', { name: /Forklift/i })
@@ -79,7 +88,11 @@ describe('Detailed modal - Gate Pass', () => {
       'GET /api/vehicles?limit=50': () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
     })
 
-    render(<MaintenanceClientPage initialUsers={[{ id: 'u1' } as any]} initialBranches={[{ id: 'b1', name: 'Main' } as any]} />)
+    render(
+      <TooltipProvider>
+        <MaintenanceClientPage initialUsers={[{ id: 'u1' } as any]} initialBranches={[{ id: 'b1', name: 'Main' } as any]} />
+      </TooltipProvider>
+    )
     const tab = screen.getByRole('tab', { name: /Gate Passes/i })
     await user.click(tab)
     const row = await screen.findByRole('row', { name: /ABC/i })

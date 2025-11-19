@@ -3,6 +3,7 @@ import React from 'react'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MaintenanceClientPage } from '@/components/maintenance-client-page'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({ user: { permissions: { maintenance: ['add','edit','delete'] } }, isAdmin: true }),
@@ -35,13 +36,16 @@ describe('MHE actions column', () => {
       'GET /api/vehicles?limit=50': () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
     })
 
-    render(<MaintenanceClientPage initialUsers={[{ id: 'u1' } as any]} initialBranches={[{ id: 'b1', name: 'Main' } as any]} />)
+    render(
+      <TooltipProvider>
+        <MaintenanceClientPage initialUsers={[{ id: 'u1' } as any]} initialBranches={[{ id: 'b1', name: 'Main' } as any]} />
+      </TooltipProvider>
+    )
 
     const tab = screen.getByRole('tab', { name: /MHE/i })
     await user.click(tab)
 
-    const actionsCell = screen.getByRole('cell', { name: /Actions/i })
-    const dropdownButton = within(actionsCell).getByRole('button', { name: /Open actions/i })
+    const dropdownButton = screen.getByRole('button', { name: /Open actions/i })
     await user.click(dropdownButton)
 
     const editItem = await screen.findByRole('menuitem', { name: /Edit MHE/i })
@@ -77,30 +81,32 @@ describe('Gate Pass actions column', () => {
       'GET /api/vehicles?limit=50': () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
     })
 
-    render(<MaintenanceClientPage initialUsers={[{ id: 'u1' } as any]} initialBranches={[{ id: 'b1', name: 'Main' } as any]} />)
+    render(
+      <TooltipProvider>
+        <MaintenanceClientPage initialUsers={[{ id: 'u1' } as any]} initialBranches={[{ id: 'b1', name: 'Main' } as any]} />
+      </TooltipProvider>
+    )
 
     const tab = screen.getByRole('tab', { name: /Gate Passes/i })
     await user.click(tab)
 
-    const actionsCell = screen.getByRole('cell', { name: /Actions/i })
-    const dropdownButton = within(actionsCell).getByRole('button', { name: /Open actions/i })
+    const dropdownButton = screen.getByRole('button', { name: /Open actions/i })
     await user.click(dropdownButton)
-
-    const editItem = await screen.findByRole('menuitem', { name: /Edit Gate Pass/i })
+    const editItem = await screen.findByLabelText(/Edit Gate Pass/i)
     await user.click(editItem)
     expect(await screen.findByText(/Edit Gate Pass/i)).toBeInTheDocument()
 
     await user.keyboard('{Escape}')
 
     await user.click(dropdownButton)
-    const maintenanceItem = await screen.findByRole('menuitem', { name: /Open Maintenance/i })
+    const maintenanceItem = await screen.findByLabelText(/Open Maintenance/i)
     await user.click(maintenanceItem)
     expect(await screen.findByText(/Add Maintenance/i)).toBeInTheDocument()
 
     await user.keyboard('{Escape}')
 
     await user.click(dropdownButton)
-    const deleteItem = await screen.findByRole('menuitem', { name: /Delete Gate Pass/i })
+    const deleteItem = await screen.findByLabelText(/Delete Gate Pass/i)
     await user.click(deleteItem)
     const confirm = await screen.findByRole('button', { name: /Delete/i })
     await user.click(confirm)

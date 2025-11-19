@@ -338,6 +338,16 @@ If you encounter any issues or have questions, please open an issue on GitHub.
 
 Built with ❤️ using Next.js and Firebase
 
+## 📣 Recent Changes (2025-11-19)
+- Shipment Edit modal: displays the updater’s name under `Actual Cleared Date`.
+  - While editing, shows `Updated by <current user>`; after save, shows `Last updated by <persisted user>`.
+  - Files: `src/components/shipment-form.tsx:439-451`.
+- Server actions: persist real user names for provenance on shipments.
+  - Resolves `createdBy` and `updatedBy` from the `session` cookie and Admin SDK; falls back gracefully.
+  - File: `src/app/dashboard/shipments/actions.ts:71-108`.
+- Dev note: Turbopack/webpack cache warning `Pack: Error: incorrect header check` is non-fatal.
+  - Fix: delete `.next/cache` and `node_modules/.cache` (if present), reinstall deps (`npm ci`), then `npm run dev`.
+
 ## 📣 Recent Changes (2025-10-22)
 - Navigation now filters by explicit `view` permissions using `pageKey` in `src/components/dashboard-nav.tsx`.
 - `AuthContext` exposes `permissions` and refreshes user via `/api/me` on session restore and post-login for up-to-date nav rendering.

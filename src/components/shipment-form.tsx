@@ -435,7 +435,21 @@ export function ShipmentForm({
                                             </Select>
                                         )} />
                                     </div>
-                                    <DatePickerField name="actualClearedDate" control={form.control} label="Actual Cleared Date" required={watchCleared} />
+                                    <div className="space-y-1">
+                                        <DatePickerField name="actualClearedDate" control={form.control} label="Actual Cleared Date" required={watchCleared} />
+                                        {isEditMode && (
+                                            (() => {
+                                                const watched = form.watch('actualClearedDate');
+                                                const watchedISO = watched ? format(watched, 'yyyy-MM-dd') : '';
+                                                const initialISO = shipment?.actualClearedDate ? format(parseISO(shipment.actualClearedDate), 'yyyy-MM-dd') : '';
+                                                const changed = !!watchedISO && watchedISO !== initialISO;
+                                                const lastBy = shipment?.updatedBy || '';
+                                                const currentBy = (user as any)?.fullName || (user as any)?.name || '';
+                                                const text = changed ? (currentBy ? `Updated by ${currentBy}` : '') : (lastBy ? `Last updated by ${lastBy}` : '');
+                                                return text ? (<p className="text-xs text-muted-foreground">{text}</p>) : null;
+                                            })()
+                                        )}
+                                    </div>
                                 </CardContent>
                             </Card>
                              <Card>

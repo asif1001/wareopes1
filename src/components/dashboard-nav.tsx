@@ -165,14 +165,14 @@ export function DashboardNav() {
                                                         )}
                                                         aria-live="polite"
                                                         aria-atomic="true"
-                                                        aria-label={`Expiring maintenance items within 30 days: ${expiringCount ?? 'unknown'}`}
+                                                        aria-label={`Expiring maintenance items within 60 days: ${expiringCount ?? 'unknown'}`}
                                                         role="status"
                                                     >
                                                         {expiringCount}
                                                     </Badge>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    {expiringCount === null ? 'Error loading expiring count' : 'Due or expired within 30 days'}
+                                                    {expiringCount === null ? 'Error loading expiring count' : 'Due within 60 days'}
                                                 </TooltipContent>
                                             </Tooltip>
                                         )}

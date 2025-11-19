@@ -17,7 +17,6 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "types": ["vitest", "node"],
     "plugins": [
       {
         "name": "next"
@@ -38,11 +37,6 @@
   ],
   "exclude": [
     "node_modules",
-    ".next",
-    "src/__tests__/**",
-    "**/*.test.ts",
-    "**/*.test.tsx",
-    "vitest.config.ts",
-    "vitest.setup.ts"
+    ".next"
   ]
 }

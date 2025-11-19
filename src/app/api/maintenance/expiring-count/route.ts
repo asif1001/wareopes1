@@ -25,22 +25,35 @@ export async function GET(request: NextRequest) {
     const adb = await getAdminDb();
 
     const vehiclesRef = adb.collection('vehicles');
-    // Use a Query type so branch scoping via `.where` does not cause TS errors
     const q: Query<DocumentData> = (!isAdmin(role) && branch)
       ? vehiclesRef.where('branch', '==', branch)
       : vehiclesRef;
-    const snap = await q.get();
+    const vSnap = await q.get();
     let count = 0;
 
-    snap.forEach((doc) => {
+    vSnap.forEach((doc) => {
       const v = doc.data() || {};
       const insDays = daysUntil(v.insuranceExpiry ?? null);
       const regDays = daysUntil(v.registrationExpiry ?? null);
       const svcDays = daysUntil(v.nextServiceDueDate ?? null);
-      const soon = (d: number | null) => d != null && d >= -30 && d <= 30;
-      if (soon(insDays) || soon(regDays) || soon(svcDays)) {
-        count += 1;
-      }
+      const soon = (d: number | null) => d != null && d >= 0 && d <= 60;
+      if (soon(insDays) || soon(regDays) || soon(svcDays)) count += 1;
+    });
+
+    const mSnap = await adb.collection('mhes').get();
+    mSnap.forEach((doc) => {
+      const m = doc.data() || {};
+      const soon = (d: number | null) => d != null && d >= 0 && d <= 60;
+      const certDays = daysUntil(m?.certification?.expiry ?? null);
+      if (soon(certDays)) count += 1;
+    });
+
+    const lSnap = await adb.collection('licenses').get();
+    lSnap.forEach((doc) => {
+      const l = doc.data() || {};
+      const soon = (d: number | null) => d != null && d >= 0 && d <= 60;
+      const licDays = daysUntil(l?.expiryDate ?? null);
+      if (soon(licDays)) count += 1;
     });
 
     return NextResponse.json({ success: true, count });
