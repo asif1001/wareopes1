@@ -166,6 +166,7 @@ type DriverLicense = {
   issueDate?: string | null;
   expiryDate?: string | null;
   attachmentUrl?: string | null;
+  attachments?: string[];
   remarks?: string | null;
 };
 
@@ -236,6 +237,8 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
   const [addLicenseOpen, setAddLicenseOpen] = useState<boolean>(false);
   const [editingLicenseId, setEditingLicenseId] = useState<string | null>(null);
   const [deleteLicenseId, setDeleteLicenseId] = useState<string | null>(null);
+  const [viewLicenseId, setViewLicenseId] = useState<string | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<{ url: string; name: string; type: string } | null>(null);
 
   // Load MHEs from Firestore
   useEffect(() => {
@@ -2243,6 +2246,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
   function LicenseForm({ onSaved, license }: { onSaved?: () => void, license?: DriverLicense }) {
     const [selectedDriverId, setSelectedDriverId] = useState<string>(() => license?.driverId || '')
     const [entry, setEntry] = useState<Partial<DriverLicense>>(() => license ? { ...license } : { vehicleType: '', licenseNumber: '', issueDate: '', expiryDate: '' })
+    const [licenseFile, setLicenseFile] = useState<File | null>(null)
 
     return (
       <div className="space-y-4">
@@ -2268,17 +2272,21 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                 <div className="flex flex-col gap-1"><Label htmlFor={`dl-no`}>License Number<span className="text-destructive"> *</span></Label><Input id={`dl-no`} required placeholder="e.g. 123456789" value={entry.licenseNumber || ''} onChange={ev => setEntry(e => ({ ...e, licenseNumber: ev.target.value }))} /></div>
                 <div className="flex flex-col gap-1"><Label htmlFor={`dl-issue`}>Issue Date<span className="text-destructive"> *</span></Label><Input id={`dl-issue`} type="date" required value={entry.issueDate || ''} onChange={ev => setEntry(e => ({ ...e, issueDate: ev.target.value }))} /></div>
                 <div className="flex flex-col gap-1"><Label htmlFor={`dl-expiry`}>Expiry Date<span className="text-destructive"> *</span></Label><Input id={`dl-expiry`} type="date" required value={entry.expiryDate || ''} onChange={ev => setEntry(e => ({ ...e, expiryDate: ev.target.value }))} /></div>
-                <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor={`dl-file`}>License Document</Label><Input id={`dl-file`} type="file" accept="image/*,application/pdf" onChange={async ev => {
-                  const file = ev.target.files?.[0]
-                  if (!file) return
-                  const filename = `${Date.now()}-${file.name}`
-                  const r = ref(storage, `licenses/${filename}`)
-                  const task = uploadBytesResumable(r, file)
-                  task.on('state_changed', () => {}, () => {}, async () => {
-                    const url = await getDownloadURL(r)
-                    setEntry(e => ({ ...e, attachmentUrl: url }))
-                  })
-                }} /></div>
+                <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor={`dl-file`}>License Document</Label><Input id={`dl-file`} type="file" accept="image/*,application/pdf" onChange={ev => { const f = ev.target.files?.[0] || null; setLicenseFile(f); }} />
+                {entry.attachmentUrl && (
+                  <div className="mt-3 space-y-2">
+                    {String(entry.attachmentUrl).toLowerCase().includes('.pdf') ? (
+                      <iframe src={String(entry.attachmentUrl)} title="License document" className="w-full h-64 rounded" />
+                    ) : (
+                      <img src={String(entry.attachmentUrl)} alt="License document" className="w-full max-h-64 rounded object-contain bg-muted" />
+                    )}
+                    <div className="flex gap-3">
+                      <a href={String(entry.attachmentUrl)} target="_blank" rel="noreferrer" className="text-sm text-blue-600" aria-label="Open attachment">Open</a>
+                      <a href={String(entry.attachmentUrl)} download className="text-sm text-blue-600" aria-label="Download attachment">Download</a>
+                    </div>
+                  </div>
+                )}
+                </div>
                 <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor={`dl-remarks`}>Remarks</Label><Textarea id={`dl-remarks`} value={entry.remarks || ''} onChange={ev => setEntry(e => ({ ...e, remarks: ev.target.value }))} /></div>
               </div>
             </CardContent>
@@ -2297,17 +2305,23 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                 toast({ title: 'Missing required fields', description: 'Add at least one complete license entry.' })
                 return
               }
+              const form = new FormData()
+              form.set('driverId', selectedDriverId)
+              form.set('vehicleType', String(valid.vehicleType))
+              form.set('licenseNumber', String(valid.licenseNumber))
+              form.set('issueDate', String(valid.issueDate))
+              form.set('expiryDate', String(valid.expiryDate))
+              if (entry.remarks) form.set('remarks', String(entry.remarks))
+              if (licenseFile) form.append('attachments', licenseFile)
               if (license) {
-                const body = { driverId: selectedDriverId, ...valid }
-                const res = await fetch(`/api/licenses/${license.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                const res = await fetch(`/api/licenses/${license.id}`, { method: 'PUT', body: form })
                 const data = await res.json()
                 const saved = (data?.item || { ...license, ...valid, driverId: selectedDriverId }) as DriverLicense
                 setLicenses(prev => prev.map(x => x.id === license.id ? saved : x))
                 toast({ title: 'License updated', description: `${saved.licenseNumber}` })
                 onSaved?.()
               } else {
-                const body = { driverId: selectedDriverId, ...valid }
-                const res = await fetch('/api/licenses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                const res = await fetch('/api/licenses', { method: 'POST', body: form })
                 const data = await res.json()
                 const created = data?.item as DriverLicense | undefined
                 if (created) {
@@ -3484,7 +3498,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
             <div className="font-medium">Maintenance Attachments</div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {gatePassMaintenances.filter(r => r.gatePassId === g.id && r.attachmentUrl).map(rec => (
-                String(rec.attachmentUrl).toLowerCase().endsWith('.pdf') ? (
+                /\.pdf(\?|$)/i.test(String(rec.attachmentUrl)) ? (
                   <iframe key={rec.id} src={String(rec.attachmentUrl)} title="Attachment" className="w-full h-40 rounded" />
                 ) : (
                   <img key={rec.id} src={String(rec.attachmentUrl)} alt="Attachment" className="w-full h-40 rounded object-contain bg-muted" />
@@ -3567,7 +3581,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" aria-label="Open actions">
+                                    <Button variant="ghost" size="icon" aria-label="Open actions" onClick={(ev) => ev.stopPropagation()}>
                                       <MoreHorizontal className="h-5 w-5" />
                                     </Button>
                                   </DropdownMenuTrigger>
@@ -3576,10 +3590,11 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                               </Tooltip>
                               <DropdownMenuContent align="end" className="w-44">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setViewLicenseId(l.id); setEditingLicenseId(null); setPreviewAttachment(null); }} aria-label="Preview Details">Preview</DropdownMenuItem>
                                 {l.attachmentUrl ? (
                                   <DropdownMenuItem onSelect={() => { window.open(l.attachmentUrl as string, '_blank'); }} aria-label="Open Document">Open Document</DropdownMenuItem>
                                 ) : null}
-                                <DropdownMenuItem onSelect={() => { setEditingLicenseId(l.id); }} aria-label="Edit License"><Edit className="mr-2 h-4 w-4 text-blue-600" /> Edit</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setEditingLicenseId(l.id); setViewLicenseId(null); setPreviewAttachment(null); }} aria-label="Edit License"><Edit className="mr-2 h-4 w-4 text-blue-600" /> Edit</DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onSelect={() => { setDeleteLicenseId(l.id); }} className="text-red-600" aria-label="Delete License"><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
                               </DropdownMenuContent>
@@ -3614,6 +3629,93 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                   })}
                 </TableBody>
               </Table>
+              {(() => {
+                const lic = licenses.find(x => x.id === viewLicenseId);
+                if (!lic) return null;
+                const driver = users.find(u => u.id === lic.driverId) as any;
+                const driverName = (driver?.fullName || driver?.name || driver?.displayName || lic.driverId);
+                const status = expiryStatus(lic.expiryDate);
+                const items: { url: string; name: string; type: string }[] = Array.isArray(lic.attachments)
+                  ? (lic.attachments as string[]).map(u => ({ url: String(u), name: String(u).split('?')[0].split('/').pop() || 'attachment', type: '' })).filter(x => x.url)
+                  : (lic.attachmentUrl ? [{ url: String(lic.attachmentUrl), name: String(lic.attachmentUrl).split('?')[0].split('/').pop() || 'attachment', type: '' }] : []);
+                return (
+                  <DetailedModal open={!!viewLicenseId} onOpenChange={(open) => { if (!open) { setViewLicenseId(null); setPreviewAttachment(null); } }} title="License Details">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="md:col-span-2 space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <div className="text-sm text-muted-foreground">License ID</div>
+                            <div className="font-medium break-all">{lic.id}</div>
+                          </div>
+                          <div>
+                            <div className="text-sm text-muted-foreground">License Type</div>
+                            <div className="font-medium">{lic.vehicleType || '-'}</div>
+                          </div>
+                          <div>
+                            <div className="text-sm text-muted-foreground">Issue Date</div>
+                            <div className="font-medium">{lic.issueDate ? new Date(lic.issueDate).toLocaleDateString() : '-'}</div>
+                          </div>
+                          <div>
+                            <div className="text-sm text-muted-foreground">Expiration Date</div>
+                            <div className="font-medium">{lic.expiryDate ? new Date(lic.expiryDate).toLocaleDateString() : '-'}</div>
+                          </div>
+                          <div>
+                            <div className="text-sm text-muted-foreground">Status</div>
+                            <div className="font-medium"><Badge variant={status.variant as any}>{status.label}</Badge></div>
+                          </div>
+                          <div>
+                            <div className="text-sm text-muted-foreground">Associated Person</div>
+                            <div className="font-medium">{driverName}</div>
+                          </div>
+                          <div className="md:col-span-2">
+                            <div className="text-sm text-muted-foreground">Special Conditions / Notes</div>
+                            <div className="font-medium whitespace-pre-wrap">{lic.remarks || '-'}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="font-medium">Attachments</div>
+                        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                          {items.length === 0 && <div className="text-sm text-muted-foreground">No attachments</div>}
+                          {items.map((it, idx) => {
+                            const isImage = /(\.png|\.jpg|\.jpeg|\.gif|\.webp)(\?|$)/i.test(it.url);
+                            const isPdf = /(\.pdf)(\?|$)/i.test(it.url);
+                            return (
+                              <div key={idx} className="space-y-1">
+                                <button type="button" className="block w-full" aria-label="Preview attachment" onClick={() => setPreviewAttachment({ url: it.url, name: it.name, type: isImage ? 'image' : (isPdf ? 'pdf' : (it.type || 'file')) })}>
+                                  {isImage ? (
+                                    <img src={it.url} alt={it.name} className="w-full h-28 rounded object-cover bg-muted" loading="lazy" />
+                                  ) : (
+                                    <div className="w-full h-28 rounded bg-muted flex items-center justify-center text-sm">{isPdf ? 'PDF' : (it.type || 'FILE')}</div>
+                                  )}
+                                </button>
+                                <div className="text-xs truncate" title={it.name}>{it.name}</div>
+                                <div className="flex gap-2">
+                                  <a href={it.url} download className="text-xs text-blue-600" aria-label="Download attachment">Download</a>
+                                  <a href={it.url} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground" aria-label="Open attachment">Open</a>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                    <Dialog open={!!previewAttachment} onOpenChange={(open) => { if (!open) setPreviewAttachment(null); }}>
+                      <DialogContent className="w-[90vw] max-w-[1000px] max-h-[85vh] overflow-y-auto p-0">
+                        {previewAttachment && (previewAttachment.type === 'image' ? (
+                          <img src={previewAttachment.url} alt={previewAttachment.name} className="w-full h-auto" />
+                        ) : previewAttachment.type === 'pdf' ? (
+                          <iframe src={previewAttachment.url} title={previewAttachment.name} className="w-full h-[80vh]" />
+                        ) : (
+                          <div className="p-6">
+                            <a href={previewAttachment.url} target="_blank" rel="noreferrer" className="text-blue-600">Open file</a>
+                          </div>
+                        ))}
+                      </DialogContent>
+                    </Dialog>
+                  </DetailedModal>
+                );
+              })()}
             </CardContent>
           </Card>
         </div>

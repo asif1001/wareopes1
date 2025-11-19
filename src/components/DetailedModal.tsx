@@ -2,6 +2,7 @@
 import * as React from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
 
 type DetailedModalProps = {
   open: boolean;
@@ -19,7 +20,9 @@ export default function DetailedModal(props: DetailedModalProps) {
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogClose asChild>
-            <Button variant="outline" size="sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpenChange(false); }}>Close</Button>
+            <Button aria-label="Close" variant="ghost" size="icon" className="absolute right-4 top-4" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpenChange(false); }}>
+              <X className="h-4 w-4" />
+            </Button>
           </DialogClose>
         </DialogHeader>
         <div className="space-y-4">
