@@ -48,12 +48,12 @@ export async function GET(request: NextRequest) {
       if (soon(certDays)) count += 1;
     });
 
-    const lSnap = await adb.collection('licenses').get();
-    lSnap.forEach((doc) => {
-      const l = doc.data() || {};
+    const gSnap = await adb.collection('gatepasses').get();
+    gSnap.forEach((doc) => {
+      const g = doc.data() || {};
       const soon = (d: number | null) => d != null && d >= 0 && d <= 60;
-      const licDays = daysUntil(l?.expiryDate ?? null);
-      if (soon(licDays)) count += 1;
+      const passDays = daysUntil(g?.expiryDate ?? null);
+      if (soon(passDays)) count += 1;
     });
 
     return NextResponse.json({ success: true, count });

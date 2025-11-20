@@ -15,6 +15,7 @@ const navItems = [
     { href: "/dashboard/shipments", label: "Shipments", icon: Flag, pageKey: "shipments" as AppPageKey },
     { href: "/dashboard/production", label: "Production", icon: Package, pageKey: "production" as AppPageKey },
     { href: "/dashboard/maintenance", label: "Maintenance", icon: Package, pageKey: "maintenance" as AppPageKey },
+    { href: "/dashboard/driver-license", label: "Driver License", icon: FileText, pageKey: "licenses" as AppPageKey },
     { href: "/dashboard/tasks", label: "Tasks", icon: GanttChartSquare, pageKey: "tasks" as AppPageKey },
     { href: "/dashboard/productivity", label: "Productivity", icon: BarChart3, pageKey: "productivity" as AppPageKey },
     { href: "/dashboard/feedback", label: "Feedback", icon: MessageSquareWarning },
@@ -55,6 +56,9 @@ export function DashboardNav() {
     };
 
     const [expiringLoading, setExpiringLoading] = useState<boolean>(false);
+    const [licensesExpiringCount, setLicensesExpiringCount] = useState<number | null>(null);
+    const [licensesAnimate, setLicensesAnimate] = useState(false);
+    const prevLicensesRef = useRef<number | null>(null);
     const refreshExpiringCount = async () => {
         setExpiringLoading(true);
         try {
@@ -76,19 +80,41 @@ export function DashboardNav() {
         }
     };
 
+    const [licensesLoading, setLicensesLoading] = useState<boolean>(false);
+    const refreshLicensesExpiringCount = async () => {
+        setLicensesLoading(true);
+        try {
+            const res = await fetch('/api/licenses/expiring-count?days=60');
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            const newCount = Number(data?.count ?? 0);
+            if (prevLicensesRef.current !== null && prevLicensesRef.current !== newCount) {
+                setLicensesAnimate(true);
+                setTimeout(() => setLicensesAnimate(false), 800);
+            }
+            prevLicensesRef.current = newCount;
+            setLicensesExpiringCount(newCount);
+        } catch (err) {
+            setLicensesExpiringCount(null);
+            console.error('Failed to load expiring licenses count:', err);
+        } finally {
+            setLicensesLoading(false);
+        }
+    };
+
     // Initial auto refresh on load, then a one-time refresh after 20s, and no further automatic refreshes
     useEffect(() => {
         let cancelled = false;
         const initial = async () => {
             try {
-                await Promise.all([refreshPendingCount(), refreshExpiringCount()]);
+                await Promise.all([refreshPendingCount(), refreshExpiringCount(), refreshLicensesExpiringCount()]);
             } catch (_) {}
         };
         initial();
         const timer = setTimeout(async () => {
             if (cancelled) return;
             try {
-                await Promise.all([refreshPendingCount(), refreshExpiringCount()]);
+                await Promise.all([refreshPendingCount(), refreshExpiringCount(), refreshLicensesExpiringCount()]);
             } catch (_) {}
         }, 20000);
         return () => { cancelled = true; clearTimeout(timer); };
@@ -173,6 +199,28 @@ export function DashboardNav() {
                                                 </TooltipTrigger>
                                                 <TooltipContent>
                                                     {expiringCount === null ? 'Error loading expiring count' : 'Due within 60 days'}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        )}
+                                        {item.href === "/dashboard/driver-license" && (licensesExpiringCount !== null && licensesExpiringCount > 0) && (
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Badge
+                                                        variant="destructive"
+                                                        className={cn(
+                                                            "ml-1 px-1.5 py-0.5 text-[11px] rounded-sm",
+                                                            licensesAnimate && "animate-bounce",
+                                                        )}
+                                                        aria-live="polite"
+                                                        aria-atomic="true"
+                                                        aria-label={`Expiring soon licenses (≤60d): ${licensesExpiringCount ?? 'unknown'}`}
+                                                        role="status"
+                                                    >
+                                                        {licensesExpiringCount}
+                                                    </Badge>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    {licensesExpiringCount === null ? 'Error loading expiring licenses' : 'Due within 60 days'}
                                                 </TooltipContent>
                                             </Tooltip>
                                         )}

@@ -338,6 +338,63 @@ If you encounter any issues or have questions, please open an issue on GitHub.
 
 Built with ❤️ using Next.js and Firebase
 
+## 📣 Recent Changes (2025-11-20)
+- Driver Licenses module enhancements
+  - Add/Edit modals now support remarks and multi-file attachments; attachments preview with Download/Open/Delete actions.
+  - Attachment uploads save under `licenses/<licenseId>/attachments/<timestamp>-<id>-<sanitizedName>` using the Firebase Admin SDK.
+  - Bucket resolution hardened to use env and normalize `*.firebasestorage.app` → `*.appspot.com` for Admin (`src/lib/firebase/admin.ts`), and upload handlers reuse the same resolver (`src/app/api/licenses/route.ts`, `src/app/api/licenses/[id]/route.ts`).
+  - Attachment removal in Edit deletes objects from Storage and updates Firestore history; deletion targets the exact bucket parsed from the URL.
+  - Edit modal header includes an “Open Document” button for quick access to the first attachment.
+  - Branch displays correctly in Edit by loading `branch` with license normalization.
+  - Table presentation compacted and grouped: Driver cell merges across rows with center alignment; actions include Edit and Delete.
+  - CSV export uses driver name instead of ID and omits attachment URLs; includes `Remarks`.
+
+- Access Control & Permissions
+  - Introduced a dedicated `licenses` permission key and surfaced it in Edit User → Permissions (`src/lib/types.ts`, `src/lib/role-utils.ts`, `src/components/settings-edit-forms.tsx`).
+  - Navigation for Driver License now gates on `licenses:view` (`src/components/dashboard-nav.tsx`).
+  - APIs enforce granular actions for both `licenses:*` and legacy `maintenance:*` permissions (`src/app/api/licenses/route.ts`, `src/app/api/licenses/[id]/route.ts`).
+  - Client UI hides Add/Edit/Delete based on user permissions (`src/components/driver-license-client-page.tsx`).
+
+- Dashboard Navigation Badges
+  - New Driver License badge shows count of licenses expiring within 60 days (`GET /api/licenses/expiring-count`, `src/components/dashboard-nav.tsx`).
+  - Maintenance badge scope excludes Driver License; counts only Vehicles, MHEs and Gate Passes (`src/app/api/maintenance/expiring-count/route.ts`).
+
+- UI/UX Improvements
+  - Edit User dialog is scrollable to fit long forms (`src/components/user-edit-dialog.tsx`).
+  - Remark fields in Add/Edit License use consistent input styling.
+  - Attachment action row aligned: Download, Open, Delete in a single compact line.
+  - Removed table-level “Open Document”; kept modal header shortcut.
+
+### Driver Licenses — Document Attachment Flow
+
+### Driver Licenses — Document Attachment Flow
+1. Create or edit a license in the Driver Licenses page (`src/components/driver-license-client-page.tsx`).
+2. Attach files in the modal:
+   - Add modal: uploads are queued and posted via `POST /api/licenses`.
+   - Edit modal: new files are appended; existing files can be deleted inline before saving.
+3. Server receives multipart form data (`src/app/api/licenses/route.ts`, `src/app/api/licenses/[id]/route.ts`):
+   - Resolves a working Storage bucket (env-driven, normalized).
+   - Saves each file to `licenses/<licenseId>/attachments/...` and generates a public download URL with a token.
+   - Persists URLs in Firestore: `attachments[]` and `attachmentUrl` (first), with history entries.
+4. Client UI shows existing attachments with image previews or a file badge and provides actions:
+   - Download: direct link to the file.
+   - Open: opens the file in a new tab.
+   - Delete: marks URL for removal; on save, the server deletes Storage objects and updates Firestore.
+
+### Notable UI/UX Updates
+- Edit modal: “Open Document” shortcut in header; remark fields use consistent styling with other inputs.
+- Table: driver grouping with `rowSpan`, compact cells, zebra rows, and centered Driver column.
+- Actions: removed table-level “Open Document”; kept Edit and Delete (with icon). Deletion confirms and updates the list.
+- Export CSV: driver name, remarks included; attachment links excluded.
+
+### Key References
+- Client: `src/components/driver-license-client-page.tsx`
+- Uploads (create): `src/app/api/licenses/route.ts`
+- Uploads, deletions (edit): `src/app/api/licenses/[id]/route.ts`
+- Admin bucket setup: `src/lib/firebase/admin.ts`
+- Driver License badge: `src/app/api/licenses/expiring-count/route.ts`, `src/components/dashboard-nav.tsx`
+- Maintenance badge scope: `src/app/api/maintenance/expiring-count/route.ts`
+
 ## 📣 Recent Changes (2025-11-19)
 - Shipment Edit modal: displays the updater’s name under `Actual Cleared Date`.
   - While editing, shows `Updated by <current user>`; after save, shows `Last updated by <persisted user>`.

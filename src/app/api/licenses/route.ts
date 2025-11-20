@@ -18,7 +18,7 @@ function timestampToISO(ts: any): string | null {
 export async function GET(request: NextRequest) {
   try {
     const { ok, role, permissions } = await getCurrentUserPermissions()
-    const canView = ok && (isAdmin(role) || hasPermission(permissions, 'maintenance', 'view'))
+    const canView = ok && (isAdmin(role) || hasPermission(permissions, 'licenses', 'view') || hasPermission(permissions, 'maintenance', 'view'))
     if (!canView) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
 
     const adb = await getAdminDb()
@@ -49,11 +49,39 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { ok, role, permissions, userId } = await getCurrentUserPermissions()
-    const canAdd = ok && (isAdmin(role) || hasPermission(permissions, 'maintenance', 'add'))
+    const canAdd = ok && (isAdmin(role) || hasPermission(permissions, 'licenses', 'add') || hasPermission(permissions, 'maintenance', 'add'))
     if (!canAdd) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
     const ct = request.headers.get('content-type') || ''
     const adb = await getAdminDb()
     const admin = await getAdmin()
+    async function resolveBucket() {
+      const storage = getStorage()
+      const envBucket = (process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '').replace(/^gs:\/\//, '')
+      const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || ''
+      const candidates: string[] = []
+      if (envBucket) {
+        const proj = envBucket.split('.')[0]
+        if (envBucket.endsWith('.appspot.com')) {
+          candidates.push(envBucket)
+          if (proj) candidates.push(`${proj}.firebasestorage.app`)
+        } else if (envBucket.endsWith('.firebasestorage.app')) {
+          candidates.push(envBucket)
+          if (proj) candidates.push(`${proj}.appspot.com`)
+        } else {
+          candidates.push(`${envBucket}.appspot.com`, `${envBucket}.firebasestorage.app`)
+        }
+      } else if (projectId) {
+        candidates.push(`${projectId}.appspot.com`, `${projectId}.firebasestorage.app`)
+      }
+      for (const cand of candidates) {
+        try {
+          const b = storage.bucket(cand)
+          const [exists] = await b.exists()
+          if (exists) return b
+        } catch {}
+      }
+      return storage.bucket()
+    }
     if (ct.includes('multipart/form-data')) {
       const formData = await request.formData()
       const raw = Object.fromEntries(formData.entries())
@@ -67,6 +95,7 @@ export async function POST(request: NextRequest) {
         licenseNumber: String(raw.licenseNumber),
         issueDate: String(raw.issueDate),
         expiryDate: String(raw.expiryDate),
+        ...(raw.branch ? { branch: String(raw.branch) } : {}),
         remarks: raw.remarks ? String(raw.remarks) : null,
         attachments: [],
         attachmentUrl: null,
@@ -80,8 +109,7 @@ export async function POST(request: NextRequest) {
       const files = (filesRaw as any[]).filter(x => x && typeof x.arrayBuffer === 'function') as any[]
       if (files.length) {
         try {
-          const storage = getStorage()
-          const bucket = storage.bucket()
+          const bucket = await resolveBucket()
           const urls: string[] = []
           for (const file of files) {
             const name = String((file as any).name || 'file')
@@ -108,7 +136,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, item }, { status: 201 })
     } else {
       const body = await request.json()
-      const { driverId, vehicleType, licenseNumber, issueDate, expiryDate, attachmentUrl, remarks } = body || {}
+      const { driverId, vehicleType, licenseNumber, issueDate, expiryDate, attachmentUrl, remarks, branch } = body || {}
       const required = ['driverId', 'vehicleType', 'licenseNumber', 'issueDate', 'expiryDate']
       const missing = required.filter((k) => !body?.[k])
       if (missing.length) return NextResponse.json({ success: false, error: `Missing required fields: ${missing.join(', ')}` }, { status: 400 })
@@ -118,6 +146,7 @@ export async function POST(request: NextRequest) {
         licenseNumber: String(licenseNumber),
         issueDate: String(issueDate),
         expiryDate: String(expiryDate),
+        ...(branch ? { branch: String(branch) } : {}),
         attachmentUrl: attachmentUrl ? String(attachmentUrl) : null,
         attachments: attachmentUrl ? [String(attachmentUrl)] : [],
         remarks: remarks ? String(remarks) : null,

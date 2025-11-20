@@ -265,6 +265,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
           licenseNumber: l.licenseNumber || "",
           issueDate: l.issueDate ?? null,
           expiryDate: l.expiryDate ?? null,
+          attachments: Array.isArray(l.attachments) ? (l.attachments as string[]) : (l.attachmentUrl ? [String(l.attachmentUrl)] : []),
           attachmentUrl: l.attachmentUrl ?? null,
           remarks: l.remarks ?? null,
         })) as DriverLicense[];
@@ -2245,8 +2246,19 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
 
   function LicenseForm({ onSaved, license }: { onSaved?: () => void, license?: DriverLicense }) {
     const [selectedDriverId, setSelectedDriverId] = useState<string>(() => license?.driverId || '')
-    const [entry, setEntry] = useState<Partial<DriverLicense>>(() => license ? { ...license } : { vehicleType: '', licenseNumber: '', issueDate: '', expiryDate: '' })
-    const [licenseFile, setLicenseFile] = useState<File | null>(null)
+    const [entry, setEntry] = useState<Partial<DriverLicense>>(() => {
+      if (license) {
+        const first = Array.isArray(license.attachments) && (license.attachments as string[]).length > 0 ? (license.attachments as string[])[0] : null
+        return { ...license, attachmentUrl: license.attachmentUrl || first || null }
+      }
+      return { vehicleType: '', licenseNumber: '', issueDate: '', expiryDate: '' }
+    })
+    const [licenseFiles, setLicenseFiles] = useState<File[]>([])
+    useEffect(() => {
+      if (!license && !selectedDriverId && users.length > 0) {
+        setSelectedDriverId(users[0].id)
+      }
+    }, [users])
 
     return (
       <div className="space-y-4">
@@ -2272,8 +2284,31 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                 <div className="flex flex-col gap-1"><Label htmlFor={`dl-no`}>License Number<span className="text-destructive"> *</span></Label><Input id={`dl-no`} required placeholder="e.g. 123456789" value={entry.licenseNumber || ''} onChange={ev => setEntry(e => ({ ...e, licenseNumber: ev.target.value }))} /></div>
                 <div className="flex flex-col gap-1"><Label htmlFor={`dl-issue`}>Issue Date<span className="text-destructive"> *</span></Label><Input id={`dl-issue`} type="date" required value={entry.issueDate || ''} onChange={ev => setEntry(e => ({ ...e, issueDate: ev.target.value }))} /></div>
                 <div className="flex flex-col gap-1"><Label htmlFor={`dl-expiry`}>Expiry Date<span className="text-destructive"> *</span></Label><Input id={`dl-expiry`} type="date" required value={entry.expiryDate || ''} onChange={ev => setEntry(e => ({ ...e, expiryDate: ev.target.value }))} /></div>
-                <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor={`dl-file`}>License Document</Label><Input id={`dl-file`} type="file" accept="image/*,application/pdf" onChange={ev => { const f = ev.target.files?.[0] || null; setLicenseFile(f); }} />
-                {entry.attachmentUrl && (
+                <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor={`dl-file`}>License Document</Label><Input id={`dl-file`} type="file" accept="image/*,application/pdf" multiple onChange={ev => { const files = Array.from(ev.target.files || []); setLicenseFiles(files); }} />
+                {licenseFiles.length > 0 && (
+                  <div className="mt-3">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {licenseFiles.map((f, idx) => {
+                        const isImage = (f.type || '').startsWith('image/')
+                        const isPdf = (f.type || '') === 'application/pdf' || /\.pdf$/i.test(f.name || '')
+                        const url = URL.createObjectURL(f)
+                        return (
+                          <div key={idx} className="space-y-1">
+                            {isImage ? (
+                              <img src={url} alt="Selected attachment" className="w-full h-28 rounded object-cover bg-muted" />
+                            ) : isPdf ? (
+                              <iframe src={url} title="Selected PDF" className="w-full h-28 rounded" />
+                            ) : (
+                              <div className="w-full h-28 rounded bg-muted flex items-center justify-center text-sm">FILE</div>
+                            )}
+                            <div className="text-xs truncate" title={f.name}>{f.name}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+                {entry.attachmentUrl && licenseFiles.length === 0 && (
                   <div className="mt-3 space-y-2">
                     {String(entry.attachmentUrl).toLowerCase().includes('.pdf') ? (
                       <iframe src={String(entry.attachmentUrl)} title="License document" className="w-full h-64 rounded" />
@@ -2287,6 +2322,45 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                   </div>
                 )}
                 </div>
+                {license && Array.isArray(license.attachments) && license.attachments.length > 0 && (
+                  <div className="md:col-span-2">
+                    <div className="text-sm text-muted-foreground mb-2">Existing Attachments</div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {license.attachments.map((u, idx) => {
+                        const isImage = /\.(png|jpg|jpeg|gif|webp)(\?|$)/i.test(u)
+                        const isPdf = /\.(pdf)(\?|$)/i.test(u)
+                        return (
+                          <div key={idx} className="space-y-1">
+                            {isImage ? (
+                              <img src={u} alt="Attachment" className="w-full h-28 rounded object-cover bg-muted" />
+                            ) : (
+                              <div className="w-full h-28 rounded bg-muted flex items-center justify-center text-sm">{isPdf ? 'PDF' : 'FILE'}</div>
+                            )}
+                            <div className="flex gap-2">
+                              <a href={u} download className="text-xs text-blue-600" aria-label="Download attachment">Download</a>
+                              <a href={u} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground" aria-label="Open attachment">Open</a>
+                              <button type="button" className="text-xs text-destructive" onClick={async () => {
+                                try {
+                                  const fd = new FormData()
+                                  fd.set('removeAttachmentsUrls', JSON.stringify([u]))
+                                  const res = await fetch(`/api/licenses/${license.id}`, { method: 'PUT', body: fd })
+                                  const data = await res.json()
+                                  const updated = data?.item as DriverLicense | undefined
+                                  if (!updated) throw new Error('Invalid server response')
+                                  setLicenses(prev => prev.map(x => x.id === license.id ? updated : x))
+                                  setEntry(e => ({ ...e, attachments: updated.attachments, attachmentUrl: updated.attachmentUrl }))
+                                  toast({ title: 'Attachment removed', description: (updated.licenseNumber || license.licenseNumber) })
+                                } catch (err: any) {
+                                  toast({ title: 'Remove failed', description: err?.message || 'Could not remove attachment.', variant: 'destructive' as any })
+                                }
+                              }}>Remove</button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor={`dl-remarks`}>Remarks</Label><Textarea id={`dl-remarks`} value={entry.remarks || ''} onChange={ev => setEntry(e => ({ ...e, remarks: ev.target.value }))} /></div>
               </div>
             </CardContent>
@@ -2312,23 +2386,36 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
               form.set('issueDate', String(valid.issueDate))
               form.set('expiryDate', String(valid.expiryDate))
               if (entry.remarks) form.set('remarks', String(entry.remarks))
-              if (licenseFile) form.append('attachments', licenseFile)
+              if (licenseFiles.length) {
+                for (const f of licenseFiles) form.append('attachments', f)
+              }
               if (license) {
                 const res = await fetch(`/api/licenses/${license.id}`, { method: 'PUT', body: form })
+                if (!res.ok) {
+                  const err = await res.json().catch(() => ({}))
+                  throw new Error(err?.error || 'Update failed')
+                }
                 const data = await res.json()
-                const saved = (data?.item || { ...license, ...valid, driverId: selectedDriverId }) as DriverLicense
+                const saved = data?.item as DriverLicense | undefined
+                if (!saved) throw new Error('Invalid server response')
                 setLicenses(prev => prev.map(x => x.id === license.id ? saved : x))
                 toast({ title: 'License updated', description: `${saved.licenseNumber}` })
                 onSaved?.()
               } else {
                 const res = await fetch('/api/licenses', { method: 'POST', body: form })
+                if (!res.ok) {
+                  if (res.status === 403) {
+                    throw new Error('Forbidden: you do not have permission to add licenses')
+                  }
+                  const err = await res.json().catch(() => ({}))
+                  throw new Error(err?.error || 'Save failed')
+                }
                 const data = await res.json()
                 const created = data?.item as DriverLicense | undefined
-                if (created) {
-                  setLicenses(prev => [created, ...prev])
-                  toast({ title: 'License saved', description: `${created.licenseNumber}` })
-                  onSaved?.()
-                }
+                if (!created) throw new Error('Invalid server response')
+                setLicenses(prev => [created, ...prev])
+                toast({ title: 'License saved', description: `${created.licenseNumber}` })
+                onSaved?.()
               }
             } catch (e: any) {
               toast({ title: 'Save failed', description: e?.message || 'Could not save license.', variant: 'destructive' as any })
@@ -2435,7 +2522,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
             <TabsTrigger value="vehicle" className={vehicleAlert ? "text-destructive" : undefined} aria-label={vehicleAlert ? "Vehicle has expiries" : undefined}>Vehicle ({filteredVehicles.length})</TabsTrigger>
             <TabsTrigger value="mhe" className={mheAlert ? "text-destructive" : undefined} aria-label={mheAlert ? "MHE has expiries" : undefined}>MHE ({filteredMhes.length})</TabsTrigger>
             <TabsTrigger value="gatepass" className={gatePassAlert ? "text-destructive" : undefined} aria-label={gatePassAlert ? "Gate Passes have expiries" : undefined}>Gate Passes ({filteredGatePasses.length})</TabsTrigger>
-            <TabsTrigger value="license" className={licenseAlert ? "text-destructive" : undefined} aria-label={licenseAlert ? "License has expiries" : undefined}>License ({filteredLicenses.length})</TabsTrigger>
+            
           </TabsList>
           <div className="ml-auto flex items-center gap-3">
             <div className="relative">
@@ -3521,205 +3608,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
             </CardContent>
           </Card>
       </TabsContent>
-      <TabsContent value="license">
-        <div className="grid grid-cols-1 gap-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <CardTitle className="flex items-center gap-2">Driver Licenses</CardTitle>
-                  <CardDescription>Manage driver license records and attachments.</CardDescription>
-                </div>
-                <Dialog open={addLicenseOpen} onOpenChange={setAddLicenseOpen}>
-                  <DialogTrigger asChild>
-                    <MaintenanceActionButton action="add" size="sm" label="Add License">
-                      <Plus className="h-4 w-4 mr-2" /> Add License
-                    </MaintenanceActionButton>
-                  </DialogTrigger>
-                  <DialogContent className="w-[95vw] max-w-[900px] max-h-[85vh] overflow-y-auto">
-                    <DialogHeader><DialogTitle>Add License</DialogTitle></DialogHeader>
-                    <LicenseForm onSaved={() => { setAddLicenseOpen(false); }} />
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Driver</TableHead>
-                    <TableHead>Vehicle Type</TableHead>
-                    <TableHead>License No.</TableHead>
-                    <TableHead>Issue Date</TableHead>
-                    <TableHead>Expiry Date</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredLicenses.slice().sort((a, b) => {
-                    const da = (users.find(u => u.id === a.driverId) as any);
-                    const db = (users.find(u => u.id === b.driverId) as any);
-                    const na = String(da?.fullName || da?.name || da?.displayName || a.driverId || '').toLowerCase();
-                    const nb = String(db?.fullName || db?.name || db?.displayName || b.driverId || '').toLowerCase();
-                    return na.localeCompare(nb);
-                  }).map(l => {
-                    const st = expiryStatus(l.expiryDate);
-                    const driver = users.find(u => u.id === l.driverId) as any;
-                    const driverName = (driver?.fullName || driver?.name || driver?.displayName || l.driverId);
-                    return (
-                      <TableRow key={l.id}>
-                        <TableCell className="font-medium">{driverName}</TableCell>
-                        <TableCell>{l.vehicleType}</TableCell>
-                        <TableCell>{l.licenseNumber}</TableCell>
-                        <TableCell>{l.issueDate ? new Date(l.issueDate).toLocaleDateString() : '-'}</TableCell>
-                        <TableCell>{l.expiryDate ? new Date(l.expiryDate).toLocaleDateString() : '-'}</TableCell>
-                        <TableCell><Badge variant={st.variant as any}>{st.label}</Badge></TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end">
-                            <DropdownMenu>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" aria-label="Open actions" onClick={(ev) => ev.stopPropagation()}>
-                                      <MoreHorizontal className="h-5 w-5" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                </TooltipTrigger>
-                                <TooltipContent>License actions</TooltipContent>
-                              </Tooltip>
-                              <DropdownMenuContent align="end" className="w-44">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setViewLicenseId(l.id); setEditingLicenseId(null); setPreviewAttachment(null); }} aria-label="Preview Details">Preview</DropdownMenuItem>
-                                {l.attachmentUrl ? (
-                                  <DropdownMenuItem onSelect={() => { window.open(l.attachmentUrl as string, '_blank'); }} aria-label="Open Document">Open Document</DropdownMenuItem>
-                                ) : null}
-                                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setEditingLicenseId(l.id); setViewLicenseId(null); setPreviewAttachment(null); }} aria-label="Edit License"><Edit className="mr-2 h-4 w-4 text-blue-600" /> Edit</DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onSelect={() => { setDeleteLicenseId(l.id); }} className="text-red-600" aria-label="Delete License"><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                            <Dialog open={editingLicenseId === l.id} onOpenChange={(open) => setEditingLicenseId(open ? l.id : null)}>
-                              <DialogContent className="w-[95vw] max-w-[900px] max-h-[85vh] overflow-y-auto">
-                                <DialogHeader><DialogTitle>Edit License</DialogTitle></DialogHeader>
-                                <LicenseForm license={l} onSaved={() => { setEditingLicenseId(null); }} />
-                              </DialogContent>
-                            </Dialog>
-                            <AlertDialog open={deleteLicenseId === l.id} onOpenChange={(open) => setDeleteLicenseId(open ? l.id : null)}>
-                              <AlertDialogContent>
-                                <AlertDialogHeader><AlertDialogTitle>Delete License</AlertDialogTitle></AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={async () => {
-                                    try {
-                                      await fetch(`/api/licenses/${l.id}`, { method: 'DELETE' });
-                                      setLicenses(prev => prev.filter(x => x.id !== l.id));
-                                      toast({ title: "License deleted", description: `${l.licenseNumber}` });
-                                    } catch {
-                                      toast({ title: 'Delete failed', description: 'Could not delete license.', variant: 'destructive' as any });
-                                    }
-                                  }}>Delete</AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-              {(() => {
-                const lic = licenses.find(x => x.id === viewLicenseId);
-                if (!lic) return null;
-                const driver = users.find(u => u.id === lic.driverId) as any;
-                const driverName = (driver?.fullName || driver?.name || driver?.displayName || lic.driverId);
-                const status = expiryStatus(lic.expiryDate);
-                const items: { url: string; name: string; type: string }[] = Array.isArray(lic.attachments)
-                  ? (lic.attachments as string[]).map(u => ({ url: String(u), name: String(u).split('?')[0].split('/').pop() || 'attachment', type: '' })).filter(x => x.url)
-                  : (lic.attachmentUrl ? [{ url: String(lic.attachmentUrl), name: String(lic.attachmentUrl).split('?')[0].split('/').pop() || 'attachment', type: '' }] : []);
-                return (
-                  <DetailedModal open={!!viewLicenseId} onOpenChange={(open) => { if (!open) { setViewLicenseId(null); setPreviewAttachment(null); } }} title="License Details">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="md:col-span-2 space-y-3">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <div className="text-sm text-muted-foreground">License ID</div>
-                            <div className="font-medium break-all">{lic.id}</div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-muted-foreground">License Type</div>
-                            <div className="font-medium">{lic.vehicleType || '-'}</div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-muted-foreground">Issue Date</div>
-                            <div className="font-medium">{lic.issueDate ? new Date(lic.issueDate).toLocaleDateString() : '-'}</div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-muted-foreground">Expiration Date</div>
-                            <div className="font-medium">{lic.expiryDate ? new Date(lic.expiryDate).toLocaleDateString() : '-'}</div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-muted-foreground">Status</div>
-                            <div className="font-medium"><Badge variant={status.variant as any}>{status.label}</Badge></div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-muted-foreground">Associated Person</div>
-                            <div className="font-medium">{driverName}</div>
-                          </div>
-                          <div className="md:col-span-2">
-                            <div className="text-sm text-muted-foreground">Special Conditions / Notes</div>
-                            <div className="font-medium whitespace-pre-wrap">{lic.remarks || '-'}</div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="font-medium">Attachments</div>
-                        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-3">
-                          {items.length === 0 && <div className="text-sm text-muted-foreground">No attachments</div>}
-                          {items.map((it, idx) => {
-                            const isImage = /(\.png|\.jpg|\.jpeg|\.gif|\.webp)(\?|$)/i.test(it.url);
-                            const isPdf = /(\.pdf)(\?|$)/i.test(it.url);
-                            return (
-                              <div key={idx} className="space-y-1">
-                                <button type="button" className="block w-full" aria-label="Preview attachment" onClick={() => setPreviewAttachment({ url: it.url, name: it.name, type: isImage ? 'image' : (isPdf ? 'pdf' : (it.type || 'file')) })}>
-                                  {isImage ? (
-                                    <img src={it.url} alt={it.name} className="w-full h-28 rounded object-cover bg-muted" loading="lazy" />
-                                  ) : (
-                                    <div className="w-full h-28 rounded bg-muted flex items-center justify-center text-sm">{isPdf ? 'PDF' : (it.type || 'FILE')}</div>
-                                  )}
-                                </button>
-                                <div className="text-xs truncate" title={it.name}>{it.name}</div>
-                                <div className="flex gap-2">
-                                  <a href={it.url} download className="text-xs text-blue-600" aria-label="Download attachment">Download</a>
-                                  <a href={it.url} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground" aria-label="Open attachment">Open</a>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                    <Dialog open={!!previewAttachment} onOpenChange={(open) => { if (!open) setPreviewAttachment(null); }}>
-                      <DialogContent className="w-[90vw] max-w-[1000px] max-h-[85vh] overflow-y-auto p-0">
-                        {previewAttachment && (previewAttachment.type === 'image' ? (
-                          <img src={previewAttachment.url} alt={previewAttachment.name} className="w-full h-auto" />
-                        ) : previewAttachment.type === 'pdf' ? (
-                          <iframe src={previewAttachment.url} title={previewAttachment.name} className="w-full h-[80vh]" />
-                        ) : (
-                          <div className="p-6">
-                            <a href={previewAttachment.url} target="_blank" rel="noreferrer" className="text-blue-600">Open file</a>
-                          </div>
-                        ))}
-                      </DialogContent>
-                    </Dialog>
-                  </DetailedModal>
-                );
-              })()}
-            </CardContent>
-          </Card>
-        </div>
-      </TabsContent>
+      
       </Tabs>
     </div>
   );

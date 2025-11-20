@@ -54,6 +54,13 @@ export async function getAdminDb() {
         // Retry initialization with exponential backoff
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
           try {
+            const resolveStorageBucket = () => {
+              const envBucket = process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+              const pid = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+              const normalized = envBucket ? envBucket.replace(/\.firebasestorage\.app$/i, '.appspot.com') : undefined;
+              return normalized || (pid ? `${pid}.appspot.com` : undefined);
+            }
+            const storageBucket = resolveStorageBucket();
             // First, try base64-encoded credentials if present
             if (credsB64) {
               try {
@@ -62,6 +69,7 @@ export async function getAdminDb() {
                 initializeApp({
                   credential: cert(serviceAccount),
                   projectId: (serviceAccount.project_id as string) || envProjectId,
+                  storageBucket,
                 });
                 return;
               } catch (e) {
@@ -76,6 +84,7 @@ export async function getAdminDb() {
                 initializeApp({
                   credential: cert(serviceAccount),
                   projectId: (serviceAccount.project_id as string) || envProjectId,
+                  storageBucket,
                 });
                 return;
               } catch (e) {
@@ -99,6 +108,7 @@ export async function getAdminDb() {
                   initializeApp({
                     credential: cert(serviceAccount),
                     projectId: (serviceAccount.project_id as string) || envProjectId,
+                    storageBucket,
                   });
                   return;
                 }
@@ -114,6 +124,7 @@ export async function getAdminDb() {
             initializeApp({
               credential: applicationDefault(),
               projectId: envProjectId,
+              storageBucket,
             });
             return; // Success, exit retry loop
             

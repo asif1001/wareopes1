@@ -46,6 +46,13 @@ const nextConfig: NextConfig = {
     }
     return [];
   },
+  webpack(config, { dev }) {
+    if (dev) {
+      config.cache = false;
+      config.infrastructureLogging = { level: 'error' } as any;
+    }
+    return config;
+  },
 };
 
 export default nextConfig;

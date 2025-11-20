@@ -100,11 +100,10 @@ export default function MaintenancePage() {
 
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
-    const [vehiclesSnap, mhesSnap, gatePassesSnap, licensesSnap] = await Promise.all([
+    const [vehiclesSnap, mhesSnap, gatePassesSnap] = await Promise.all([
       adb.collection('vehicles').orderBy('createdAt', 'desc').limit(50).get().catch(() => ({ docs: [] } as any)),
       adb.collection('mhes').orderBy('createdAt', 'desc').limit(50).get().catch(() => ({ docs: [] } as any)),
       adb.collection('gatepasses').orderBy('createdAt', 'desc').limit(50).get().catch(() => ({ docs: [] } as any)),
-      adb.collection('licenses').orderBy('createdAt', 'desc').limit(50).get().catch(() => ({ docs: [] } as any)),
     ]);
 
     // Serialize Firestore Timestamp/Date fields to ISO strings to satisfy Client Component prop requirements
@@ -217,28 +216,12 @@ export default function MaintenancePage() {
       };
     });
 
-    const licenses = (licensesSnap as any).docs.map((d: any) => {
-      const l = d.data() || {};
-      return {
-        id: d.id,
-        driverId: l.driverId,
-        vehicleType: l.vehicleType || '',
-        licenseNumber: l.licenseNumber || '',
-        issueDate: toIso(l.issueDate),
-        expiryDate: toIso(l.expiryDate),
-        attachmentUrl: l.attachmentUrl ?? null,
-        remarks: l.remarks ?? null,
-        createdAt: toIso(l.createdAt),
-        updatedAt: toIso(l.updatedAt),
-      };
-    });
-
     return (
       <div className="flex flex-col h-full">
         <DashboardHeader title="Vehicle & MHE Maintenance" />
         <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
           <Suspense fallback={<div>Loading...</div>}>
-            <MaintenanceClientPage initialUsers={users} initialBranches={branches} initialVehicles={vehicles} initialMhes={mhes} initialGatePasses={gatePasses} initialLicenses={licenses} />
+            <MaintenanceClientPage initialUsers={users} initialBranches={branches} initialVehicles={vehicles} initialMhes={mhes} initialGatePasses={gatePasses} />
           </Suspense>
         </main>
       </div>
