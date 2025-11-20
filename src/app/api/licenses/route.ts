@@ -76,14 +76,16 @@ export async function POST(request: NextRequest) {
       } as any
 
       const ref = await adb.collection('licenses').add(base)
-      const files = formData.getAll('attachments').filter(x => x instanceof File) as File[]
+      const filesRaw = formData.getAll('attachments')
+      const files = (filesRaw as any[]).filter(x => x && typeof x.arrayBuffer === 'function') as any[]
       if (files.length) {
         try {
           const storage = getStorage()
           const bucket = storage.bucket()
           const urls: string[] = []
           for (const file of files) {
-            const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+            const name = String((file as any).name || 'file')
+            const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_')
             const storagePath = `licenses/${ref.id}/attachments/${Date.now()}-${nanoid()}-${safe}`
             const buffer = Buffer.from(await file.arrayBuffer())
             const downloadToken = nanoid()

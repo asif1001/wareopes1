@@ -38,7 +38,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }
       const before = await ref.get()
-      const files = formData.getAll('attachments').filter(x => x instanceof File) as File[]
+      const filesRaw = formData.getAll('attachments')
+      const files = (filesRaw as any[]).filter(x => x && typeof x.arrayBuffer === 'function') as any[]
       let addedCount = 0
       if (files.length) {
         try {
@@ -46,7 +47,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           const bucket = storage.bucket()
           const urls: string[] = []
           for (const file of files) {
-            const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+            const name = String((file as any).name || 'file')
+            const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_')
             const storagePath = `licenses/${params.id}/attachments/${Date.now()}-${nanoid()}-${safe}`
             const buffer = Buffer.from(await file.arrayBuffer())
             const downloadToken = nanoid()
