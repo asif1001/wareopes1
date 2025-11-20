@@ -96,7 +96,9 @@ export async function POST(request: NextRequest) {
             urls.push(url)
           }
           await ref.update({ attachments: urls, attachmentUrl: urls[0] || null, updatedAt: admin.firestore.FieldValue.serverTimestamp() })
-        } catch (_) {}
+        } catch (e) {
+          console.error('POST /api/licenses upload error:', e)
+        }
       }
       const snap = await ref.get()
       const data = snap.data() || {}

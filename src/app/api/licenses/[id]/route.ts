@@ -39,6 +39,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       }
       const before = await ref.get()
       const files = formData.getAll('attachments').filter(x => x instanceof File) as File[]
+      let addedCount = 0
       if (files.length) {
         try {
           const storage = getStorage()
@@ -60,7 +61,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           const prev = Array.isArray((before.data() as any)?.attachments) ? ((before.data() as any).attachments as string[]) : []
           update.attachments = [...prev, ...urls]
           update.attachmentUrl = (update.attachments[0] || prev[0] || null)
-        } catch (_) {}
+          addedCount += urls.length
+        } catch (e) {
+          console.error('PUT /api/licenses upload error:', e)
+        }
       }
       const urlsRaw = (raw as any).attachmentsUrls as string | undefined
       if (urlsRaw) {
@@ -69,8 +73,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           const prev = Array.isArray((before.data() as any)?.attachments) ? ((before.data() as any).attachments as string[]) : []
           update.attachments = [...prev, ...urls]
           update.attachmentUrl = (update.attachments[0] || prev[0] || null)
-        } catch (_) {}
+          addedCount += urls.length
+        } catch (e) {
+          console.error('PUT /api/licenses attachmentsUrls parse error:', e)
+        }
       }
+      const prevHistory = Array.isArray((before.data() as any)?.history) ? ((before.data() as any).history as any[]) : []
+      const historyEntry = { id: nanoid(), timestamp: admin.firestore.Timestamp.now(), userId: String(userId || 'system'), action: addedCount > 0 ? `Updated license (added attachments: ${addedCount})` : 'Updated license' }
+      update.history = [...prevHistory, historyEntry]
       await ref.update(update)
       const snap = await ref.get()
       const data = snap.data() || {}
