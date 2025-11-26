@@ -402,6 +402,38 @@ Built with ❤️ using Next.js and Firebase
 - Server actions: persist real user names for provenance on shipments.
   - Resolves `createdBy` and `updatedBy` from the `session` cookie and Admin SDK; falls back gracefully.
   - File: `src/app/dashboard/shipments/actions.ts:71-108`.
+
+## 📣 Recent Changes (2025-11-26)
+
+- Vehicle forms — conditional “On Hire” fields
+  - Add/Edit Vehicle forms show three required fields when Ownership Type is “On Hire”: Contract Start Date, Contract End Date, Hire Company Name.
+  - Immediate show/hide on ownership change; values are cleared when switching away from “On Hire”.
+  - Date validation ensures End Date is after Start Date; submission includes these fields only when ownership is “On Hire”.
+  - Backend create/update routes store `contractStartDate` and `contractEndDate` only for “Hired”; values are nulled when switching to “Owned”.
+  - Files: `src/components/maintenance-client-page.tsx`, `src/app/api/vehicles/route.ts`, `src/app/api/vehicles/[id]/route.ts`.
+
+- Dashboard — Upcoming Container Bookings card
+  - Enhanced to show Source alongside Container No; Branch display removed per directive.
+  - Branch name resolution via `branches` collection supported, then removed with layout update; tests adjusted accordingly.
+  - Files: `src/components/recent-shipments.tsx`, `src/__tests__/recent-shipments.test.tsx`, `src/lib/firebase/firestore.ts#getBranches`.
+
+- Dashboard navigation — hardened badge fetches
+  - Client fetches use absolute URLs with `credentials: 'same-origin'` and `cache: 'no-store'`; non-ok responses set counts to `null` without throwing.
+  - File: `src/components/dashboard-nav.tsx`.
+
+- Dashboard stat card — Pending Total Lines
+  - Renamed stat card from “Shipments in Transit” to “Pending Total Lines”.
+  - Value computed server-side: sum of `totalLines` for Arrived shipments where `productionUploaded !== true`.
+  - Files: `src/lib/data.ts` (title), `src/lib/firebase/firestore.ts` (`getPendingArrivedTotalLines`), `src/app/dashboard/page.tsx` (value injection).
+
+- Dashboard SSR resilience — Firestore fallbacks
+  - Wrapped dashboard Firestore queries with error handling returning safe defaults.
+  - Replaced `Promise.all` with `Promise.allSettled` to avoid page failure when a call rejects.
+  - Files: `src/lib/firebase/firestore.ts` (`getUpcomingShipments`, `getClearedShipmentsMonthlySummary`, `getClearedContainerSummary`), `src/app/dashboard/page.tsx`.
+
+Verification
+- Typecheck: `npm run typecheck` — passes.
+- Tests: `RecentShipments` card tests updated and pass (`npm test -- -t RecentShipments`).
 - Dev note: Turbopack/webpack cache warning `Pack: Error: incorrect header check` is non-fatal.
   - Fix: delete `.next/cache` and `node_modules/.cache` (if present), reinstall deps (`npm ci`), then `npm run dev`.
 

@@ -54,6 +54,8 @@ type Vehicle = {
   status?: "Active" | "Breakdown" | "Accident Repair" | "Replacement" | "Under Maintenance" | "Out of Service";
   ownership: "Owned" | "Hired";
   hireCompanyName?: string | null;
+  contractStartDate?: string | null;
+  contractEndDate?: string | null;
   driverName: string;
   driverEmployeeId?: string | null;
   driverContact?: string | null;
@@ -239,6 +241,27 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
   const [deleteLicenseId, setDeleteLicenseId] = useState<string | null>(null);
   const [viewLicenseId, setViewLicenseId] = useState<string | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<{ url: string; name: string; type: string } | null>(null);
+
+  const refreshMhes = async () => {
+    try {
+      const res = await fetch("/api/mhes?limit=50", { method: "GET" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = (data?.items || []) as any[];
+      const normalized = (list || []).map((m: any) => ({
+        id: m.id,
+        equipmentInfo: m.equipmentInfo || "",
+        modelNo: m.modelNo ?? null,
+        serialNo: m.serialNo ?? null,
+        certification: m.certification ?? undefined,
+        battery: m.battery ?? undefined,
+        repairs: Array.isArray(m.repairs) ? m.repairs : [],
+        imageUrl: m.imageUrl ?? null,
+        status: m.status || "Active",
+      })) as Mhe[];
+      setMhes(normalized);
+    } catch {}
+  };
 
   // Load MHEs from Firestore
   useEffect(() => {
@@ -828,39 +851,63 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button
-              onClick={() => {
-                if (!form.plateNo || !form.vehicleType || !form.driverName || !form.branch || !form.ownership) {
-                  toast({
-                    title: "Missing required fields",
-                    description:
-                      "Plate No, Vehicle Type, Driver, Branch, and Ownership are required.",
-                  });
-                  return;
-                }
-                if (imageFile) {
-                  if (!validImage(imageFile)) { toast({ title: 'Invalid image', description: 'Please select a valid image file', variant: 'destructive' }); return; }
-                  if (imageFile.size > MAX_IMAGE_BYTES) { toast({ title: 'Image too large', description: 'Image must be under 5 MB', variant: 'destructive' }); return; }
-                }
-                const doSave = async () => {
-                  setIsSaving(true);
-                  if (vehicle) {
+              <Button
+                onClick={() => {
+                  if (!form.plateNo || !form.vehicleType || !form.driverName || !form.branch || !form.ownership) {
+                    toast({
+                      title: "Missing required fields",
+                      description:
+                        "Plate No, Vehicle Type, Driver, Branch, and Ownership are required.",
+                    });
+                    return;
+                  }
+                  if (imageFile) {
+                    if (!validImage(imageFile)) { toast({ title: 'Invalid image', description: 'Please select a valid image file', variant: 'destructive' }); return; }
+                    if (imageFile.size > MAX_IMAGE_BYTES) { toast({ title: 'Image too large', description: 'Image must be under 5 MB', variant: 'destructive' }); return; }
+                  }
+                  if (form.ownership === "Hired") {
+                    const s = form.contractStartDate || '';
+                    const e = form.contractEndDate || '';
+                    const hc = (form.hireCompanyName || '').trim();
+                    if (!s || !e || !hc) {
+                      toast({ title: 'Missing hire details', description: 'Contract dates and Hire Company Name are required for On Hire', variant: 'destructive' });
+                      return;
+                    }
                     try {
-                      const fd = new FormData();
-                      fd.append('plateNo', form.plateNo || '');
-                      fd.append('vehicleType', form.vehicleType || '');
-                      if (form.make) fd.append('make', form.make);
-                      if (form.model) fd.append('model', form.model);
-                      if (form.year != null) fd.append('year', String(form.year));
-                      fd.append('branch', form.branch || '');
-                      fd.append('ownership', String(form.ownership || 'Owned'));
-                      if (form.hireCompanyName) fd.append('hireCompanyName', form.hireCompanyName);
-                      fd.append('driverName', form.driverName || '');
-                      if (form.driverEmployeeId) fd.append('driverEmployeeId', form.driverEmployeeId);
-                      if (form.driverContact) fd.append('driverContact', form.driverContact);
-                      if (form.lastOdometerReading != null) fd.append('lastOdometerReading', String(form.lastOdometerReading));
-                      if (form.nextServiceDueKm != null) fd.append('nextServiceDueKm', String(form.nextServiceDueKm));
-                      if (form.nextServiceDueDate) fd.append('nextServiceDueDate', form.nextServiceDueDate);
+                      const sd = new Date(s).getTime();
+                      const ed = new Date(e).getTime();
+                      if (!(ed > sd)) {
+                        toast({ title: 'Invalid contract dates', description: 'End date must be after start date', variant: 'destructive' });
+                        return;
+                      }
+                    } catch {
+                      toast({ title: 'Invalid contract dates', description: 'Provide valid start and end dates', variant: 'destructive' });
+                      return;
+                    }
+                  }
+                  const doSave = async () => {
+                    setIsSaving(true);
+                    if (vehicle) {
+                      try {
+                        const fd = new FormData();
+                        fd.append('plateNo', form.plateNo || '');
+                        fd.append('vehicleType', form.vehicleType || '');
+                        if (form.make) fd.append('make', form.make);
+                        if (form.model) fd.append('model', form.model);
+                        if (form.year != null) fd.append('year', String(form.year));
+                        fd.append('branch', form.branch || '');
+                        fd.append('ownership', String(form.ownership || 'Owned'));
+                        if (form.ownership === 'Hired') {
+                          if (form.hireCompanyName) fd.append('hireCompanyName', form.hireCompanyName);
+                          if (form.contractStartDate) fd.append('contractStartDate', form.contractStartDate);
+                          if (form.contractEndDate) fd.append('contractEndDate', form.contractEndDate);
+                        }
+                        fd.append('driverName', form.driverName || '');
+                        if (form.driverEmployeeId) fd.append('driverEmployeeId', form.driverEmployeeId);
+                        if (form.driverContact) fd.append('driverContact', form.driverContact);
+                        if (form.lastOdometerReading != null) fd.append('lastOdometerReading', String(form.lastOdometerReading));
+                        if (form.nextServiceDueKm != null) fd.append('nextServiceDueKm', String(form.nextServiceDueKm));
+                        if (form.nextServiceDueDate) fd.append('nextServiceDueDate', form.nextServiceDueDate);
                       if (form.insuranceExpiry) fd.append('insuranceExpiry', form.insuranceExpiry);
                       if (form.registrationExpiry) fd.append('registrationExpiry', form.registrationExpiry);
                       if (form.fuelType) fd.append('fuelType', String(form.fuelType as any));
@@ -890,23 +937,27 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                     } finally {
                       setIsSaving(false);
                     }
-                  } else {
-                    try {
-                      const fd = new FormData();
-                      fd.append('plateNo', form.plateNo || '');
-                      fd.append('vehicleType', form.vehicleType || '');
-                      if (form.make) fd.append('make', form.make);
-                      if (form.model) fd.append('model', form.model);
-                      if (form.year != null) fd.append('year', String(form.year));
-                      fd.append('branch', form.branch || '');
-                      fd.append('ownership', String(form.ownership || 'Owned'));
-                      if (form.hireCompanyName) fd.append('hireCompanyName', form.hireCompanyName);
-                      fd.append('driverName', form.driverName || '');
-                      if (form.driverEmployeeId) fd.append('driverEmployeeId', form.driverEmployeeId);
-                      if (form.driverContact) fd.append('driverContact', form.driverContact);
-                      if (form.lastOdometerReading != null) fd.append('lastOdometerReading', String(form.lastOdometerReading));
-                      if (form.nextServiceDueKm != null) fd.append('nextServiceDueKm', String(form.nextServiceDueKm));
-                      if (form.nextServiceDueDate) fd.append('nextServiceDueDate', form.nextServiceDueDate);
+                      } else {
+                        try {
+                          const fd = new FormData();
+                          fd.append('plateNo', form.plateNo || '');
+                          fd.append('vehicleType', form.vehicleType || '');
+                          if (form.make) fd.append('make', form.make);
+                          if (form.model) fd.append('model', form.model);
+                          if (form.year != null) fd.append('year', String(form.year));
+                          fd.append('branch', form.branch || '');
+                          fd.append('ownership', String(form.ownership || 'Owned'));
+                          if (form.ownership === 'Hired') {
+                            if (form.hireCompanyName) fd.append('hireCompanyName', form.hireCompanyName);
+                            if (form.contractStartDate) fd.append('contractStartDate', form.contractStartDate);
+                            if (form.contractEndDate) fd.append('contractEndDate', form.contractEndDate);
+                          }
+                          fd.append('driverName', form.driverName || '');
+                          if (form.driverEmployeeId) fd.append('driverEmployeeId', form.driverEmployeeId);
+                          if (form.driverContact) fd.append('driverContact', form.driverContact);
+                          if (form.lastOdometerReading != null) fd.append('lastOdometerReading', String(form.lastOdometerReading));
+                          if (form.nextServiceDueKm != null) fd.append('nextServiceDueKm', String(form.nextServiceDueKm));
+                          if (form.nextServiceDueDate) fd.append('nextServiceDueDate', form.nextServiceDueDate);
                       if (form.insuranceExpiry) fd.append('insuranceExpiry', form.insuranceExpiry);
                       if (form.registrationExpiry) fd.append('registrationExpiry', form.registrationExpiry);
                       if (form.fuelType) fd.append('fuelType', String(form.fuelType as any));
@@ -1280,7 +1331,11 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                   </div>
                   <div className="flex flex-col gap-1">
                     <Label htmlFor="ownership">Ownership Type<span className="text-destructive"> *</span></Label>
-                    <Select value={(form.ownership || "") as any} onValueChange={(val) => setForm((f) => ({ ...f, ownership: (val === "Hired" ? "Hired" : "Owned") }))}>
+                    <Select value={(form.ownership || "") as any} onValueChange={(val) => setForm((f) => ({
+                      ...f,
+                      ownership: (val === "Hired" ? "Hired" : "Owned"),
+                      ...(val === "Hired" ? {} : { hireCompanyName: "", contractStartDate: null, contractEndDate: null })
+                    }))}>
                       <SelectTrigger id="ownership" className="w-full">
                         <SelectValue placeholder="Select ownership" />
                       </SelectTrigger>
@@ -1290,15 +1345,40 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <Label htmlFor="hireCompanyName">Hire Company Name</Label>
-                    <Input
-                      id="hireCompanyName"
-                      placeholder="e.g. Al Ahlia"
-                      value={form.hireCompanyName || ""}
-                      onChange={(e) => setForm((f) => ({ ...f, hireCompanyName: e.target.value }))}
-                    />
-                  </div>
+                  {form.ownership === "Hired" && (
+                    <>
+                      <div className="flex flex-col gap-1">
+                        <Label htmlFor="contractStartDate">Contract Start Date<span className="text-destructive"> *</span></Label>
+                        <Input
+                          id="contractStartDate"
+                          type="date"
+                          required
+                          value={(form.contractStartDate || "").split("T")[0]}
+                          onChange={(e) => setForm((f) => ({ ...f, contractStartDate: new Date(e.target.value).toISOString() }))}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <Label htmlFor="contractEndDate">Contract End Date<span className="text-destructive"> *</span></Label>
+                        <Input
+                          id="contractEndDate"
+                          type="date"
+                          required
+                          value={(form.contractEndDate || "").split("T")[0]}
+                          onChange={(e) => setForm((f) => ({ ...f, contractEndDate: new Date(e.target.value).toISOString() }))}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <Label htmlFor="hireCompanyName">Hire Company Name<span className="text-destructive"> *</span></Label>
+                        <Input
+                          id="hireCompanyName"
+                          required
+                          placeholder="e.g. Al Ahlia"
+                          value={form.hireCompanyName || ""}
+                          onChange={(e) => setForm((f) => ({ ...f, hireCompanyName: e.target.value }))}
+                        />
+                      </div>
+                    </>
+                  )}
                   <div className="flex flex-col gap-1">
                     <Label htmlFor="driverName">Assigned Driver<span className="text-destructive"> *</span></Label>
                     <Select value={selectedDriverId} onValueChange={(val) => {
@@ -1620,7 +1700,19 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
           </Select>
         </div>
         <div className="flex flex-col gap-1"><Label htmlFor="mm-date">Date<span className="text-destructive"> *</span></Label><Input id="mm-date" type="date" value={(form.date || "").split("T")[0]} onChange={e => setForm(f => ({ ...f, date: new Date(e.target.value).toISOString() }))} /></div>
-        <div className="flex flex-col gap-1"><Label htmlFor="mm-type">Type of Maintenance<span className="text-destructive"> *</span></Label><Input id="mm-type" placeholder="Routine / Breakdown / Inspection" value={form.type || ""} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} /></div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="mm-type">Type of Maintenance<span className="text-destructive"> *</span></Label>
+          <Select value={form.type || undefined} onValueChange={(val) => setForm(f => ({ ...f, type: val }))}>
+            <SelectTrigger id="mm-type" className="w-full">
+              <SelectValue placeholder="Select type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Breakdown">Breakdown</SelectItem>
+              <SelectItem value="Routine">Routine</SelectItem>
+              <SelectItem value="Inspection">Inspection</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex flex-col gap-1"><Label htmlFor="mm-reportedBy">Reported By</Label><Input id="mm-reportedBy" placeholder="Operator or Supervisor" value={form.reportedBy || ""} onChange={e => setForm(f => ({ ...f, reportedBy: e.target.value }))} /></div>
         <div className="flex flex-col gap-1 md:col-span-2"><Label htmlFor="mm-work">Work Description<span className="text-destructive"> *</span></Label><Input id="mm-work" placeholder="e.g. Hydraulic hose replacement, chain tension" value={form.workDescription || ""} onChange={e => setForm(f => ({ ...f, workDescription: e.target.value }))} /></div>
         <div className="flex flex-col gap-1"><Label htmlFor="mm-vendor">Workshop / Vendor</Label><Input id="mm-vendor" placeholder="Name + Contact" value={form.vendor || ""} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} /></div>
@@ -3005,7 +3097,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                     <DialogHeader>
                       <DialogTitle>Add MHE</DialogTitle>
                     </DialogHeader>
-                    <MheFormPro onSaved={() => { setAddMheOpen(false); }} />
+                    <MheFormPro onSaved={() => { refreshMhes(); setAddMheOpen(false); }} />
                   </DialogContent>
                 </Dialog>
               </div>
@@ -3085,13 +3177,13 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                             </DropdownMenu>
 
                             <Dialog open={editingMheId === m.id} onOpenChange={(open) => setEditingMheId(open ? m.id : null)}>
-                              <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
-                                <DialogHeader>
-                                  <DialogTitle>Edit MHE</DialogTitle>
-                                </DialogHeader>
-                                <MheFormPro mhe={m} onSaved={() => { setEditingMheId(null); }} />
-                              </DialogContent>
-                            </Dialog>
+                            <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
+                              <DialogHeader>
+                                <DialogTitle>Edit MHE</DialogTitle>
+                              </DialogHeader>
+                              <MheFormPro mhe={m} onSaved={() => { refreshMhes(); setEditingMheId(null); }} />
+                            </DialogContent>
+                          </Dialog>
 
                             <Dialog open={maintenanceMheId === m.id} onOpenChange={(open) => setMaintenanceMheId(open ? m.id : null)}>
                               <DialogContent className="w-[95vw] max-w-[1400px] h-[90vh] overflow-y-auto p-4">
@@ -3195,6 +3287,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                                       if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
                                       setMhes(prev => prev.filter(x => x.id !== m.id));
                                       toast({ title: "MHE deleted", description: m.equipmentInfo });
+                                      await refreshMhes();
                                     } catch (e) {
                                       console.warn(e);
                                       toast({ title: 'Delete failed', description: 'Could not delete MHE.', variant: 'destructive' as any });

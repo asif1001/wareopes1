@@ -37,16 +37,20 @@ export function DashboardNav() {
     const refreshPendingCount = async () => {
         setPendingLoading(true);
         try {
-            const res = await fetch('/api/tasks/pending-count');
-            if (!res.ok) throw new Error(await res.text());
-            const data = await res.json();
-            const newCount = Number(data?.count ?? 0);
-            if (prevCountRef.current !== null && prevCountRef.current !== newCount) {
-                setAnimate(true);
-                setTimeout(() => setAnimate(false), 800);
+            const url = typeof window !== 'undefined' ? new URL('/api/tasks/pending-count', window.location.origin).toString() : '/api/tasks/pending-count';
+            const res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'same-origin' });
+            if (res.ok) {
+                const data = await res.json();
+                const newCount = Number(data?.count ?? 0);
+                if (prevCountRef.current !== null && prevCountRef.current !== newCount) {
+                    setAnimate(true);
+                    setTimeout(() => setAnimate(false), 800);
+                }
+                prevCountRef.current = newCount;
+                setPendingCount(newCount);
+            } else {
+                setPendingCount(null);
             }
-            prevCountRef.current = newCount;
-            setPendingCount(newCount);
         } catch (err) {
             setPendingCount(null);
             console.error('Failed to load pending task count:', err);
@@ -62,16 +66,20 @@ export function DashboardNav() {
     const refreshExpiringCount = async () => {
         setExpiringLoading(true);
         try {
-            const res = await fetch('/api/maintenance/expiring-count');
-            if (!res.ok) throw new Error(await res.text());
-            const data = await res.json();
-            const newCount = Number(data?.count ?? 0);
-            if (prevExpiringRef.current !== null && prevExpiringRef.current !== newCount) {
-                setExpiringAnimate(true);
-                setTimeout(() => setExpiringAnimate(false), 800);
+            const url = typeof window !== 'undefined' ? new URL('/api/maintenance/expiring-count', window.location.origin).toString() : '/api/maintenance/expiring-count';
+            const res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'same-origin' });
+            if (res.ok) {
+                const data = await res.json();
+                const newCount = Number(data?.count ?? 0);
+                if (prevExpiringRef.current !== null && prevExpiringRef.current !== newCount) {
+                    setExpiringAnimate(true);
+                    setTimeout(() => setExpiringAnimate(false), 800);
+                }
+                prevExpiringRef.current = newCount;
+                setExpiringCount(newCount);
+            } else {
+                setExpiringCount(null);
             }
-            prevExpiringRef.current = newCount;
-            setExpiringCount(newCount);
         } catch (err) {
             setExpiringCount(null);
             console.error('Failed to load expiring maintenance count:', err);
@@ -84,16 +92,20 @@ export function DashboardNav() {
     const refreshLicensesExpiringCount = async () => {
         setLicensesLoading(true);
         try {
-            const res = await fetch('/api/licenses/expiring-count?days=60');
-            if (!res.ok) throw new Error(await res.text());
-            const data = await res.json();
-            const newCount = Number(data?.count ?? 0);
-            if (prevLicensesRef.current !== null && prevLicensesRef.current !== newCount) {
-                setLicensesAnimate(true);
-                setTimeout(() => setLicensesAnimate(false), 800);
+            const url = typeof window !== 'undefined' ? new URL('/api/licenses/expiring-count?days=60', window.location.origin).toString() : '/api/licenses/expiring-count?days=60';
+            const res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'same-origin' });
+            if (res.ok) {
+                const data = await res.json();
+                const newCount = Number(data?.count ?? 0);
+                if (prevLicensesRef.current !== null && prevLicensesRef.current !== newCount) {
+                    setLicensesAnimate(true);
+                    setTimeout(() => setLicensesAnimate(false), 800);
+                }
+                prevLicensesRef.current = newCount;
+                setLicensesExpiringCount(newCount);
+            } else {
+                setLicensesExpiringCount(null);
             }
-            prevLicensesRef.current = newCount;
-            setLicensesExpiringCount(newCount);
         } catch (err) {
             setLicensesExpiringCount(null);
             console.error('Failed to load expiring licenses count:', err);

@@ -3,7 +3,7 @@ import { Truck, Package, PackageCheck, AlertTriangle, Users, FileText, CheckCirc
 
 export const statCards: StatCard[] = [
   {
-    title: 'Shipments in Transit',
+    title: 'Pending Total Lines',
     value: '1,204',
     change: '+12.5%',
     changeType: 'increase',

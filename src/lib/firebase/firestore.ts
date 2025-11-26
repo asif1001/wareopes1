@@ -449,12 +449,21 @@ export async function getBranches(): Promise<Branch[]> {
     if (typeof window === 'undefined') {
         const { getAdminDb } = await import('./admin');
         const adb = await getAdminDb();
-        const snap = await adb.collection('Branches').get();
-        return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Branch));
+        try {
+            const snap = await adb.collection('branches').get();
+            if (!snap.empty) return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Branch));
+        } catch {}
+        const snap2 = await adb.collection('Branches').get();
+        return snap2.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Branch));
     }
-    const branchesCol = collection(db, 'Branches');
-    const branchSnapshot = await getDocs(branchesCol);
-    return branchSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Branch));
+    try {
+        const branchesCol = collection(db, 'branches');
+        const branchSnapshot = await getDocs(branchesCol);
+        if (!branchSnapshot.empty) return branchSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Branch));
+    } catch {}
+    const branchesCol2 = collection(db, 'Branches');
+    const branchSnapshot2 = await getDocs(branchesCol2);
+    return branchSnapshot2.docs.map(doc => ({ id: doc.id, ...doc.data() } as Branch));
 }
 
 export async function addBranch(branch: Omit<Branch, 'id'>) {
@@ -547,160 +556,199 @@ export async function getWipShipments(): Promise<SerializableShipment[]> {
 }
 
 export async function getUpcomingShipments(): Promise<SerializableShipment[]> {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    const fifteenDaysAgo = subDays(new Date(), 15);
-    fifteenDaysAgo.setHours(0, 0, 0, 0);
+    try {
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
+        const fifteenDaysAgo = subDays(new Date(), 15);
+        fifteenDaysAgo.setHours(0, 0, 0, 0);
 
-    // Use Admin SDK on the server to bypass rules
-    if (typeof window === 'undefined') {
-    const { getAdminDb } = await import('./admin');
-    const adb = await getAdminDb();
-        const shipmentsRef: any = adb.collection('shipments');
-        const snap = await shipmentsRef
-            .where('actualClearedDate', '>=', fifteenDaysAgo)
-            .where('actualClearedDate', '<=', today)
-            .orderBy('actualClearedDate', 'desc')
-            .get();
-        return snap.docs.map((d: any) => docToShipment(d));
+        if (typeof window === 'undefined') {
+            const { getAdminDb } = await import('./admin');
+            const adb = await getAdminDb();
+            const shipmentsRef: any = adb.collection('shipments');
+            const snap = await shipmentsRef
+                .where('actualClearedDate', '>=', fifteenDaysAgo)
+                .where('actualClearedDate', '<=', today)
+                .orderBy('actualClearedDate', 'desc')
+                .get();
+            return snap.docs.map((d: any) => docToShipment(d));
+        }
+
+        const shipmentsCol = collection(db, 'shipments');
+        const q = query(
+            shipmentsCol,
+            where('actualClearedDate', '>=', fifteenDaysAgo),
+            where('actualClearedDate', '<=', today),
+            orderBy('actualClearedDate', 'desc')
+        );
+        const shipmentSnapshot = await getDocs(q);
+        return shipmentSnapshot.docs.map(docToShipment);
+    } catch (e) {
+        return [];
     }
-
-    const shipmentsCol = collection(db, 'shipments');
-    const q = query(
-        shipmentsCol,
-        where('actualClearedDate', '>=', fifteenDaysAgo),
-        where('actualClearedDate', '<=', today),
-        orderBy('actualClearedDate', 'desc')
-    );
-    const shipmentSnapshot = await getDocs(q);
-    return shipmentSnapshot.docs.map(docToShipment);
 }
 
 export async function getClearedShipmentsMonthlySummary(): Promise<{ month: string; domLines: number; bulkLines: number }[]> {
-    const twelveMonthsAgo = subMonths(new Date(), 12);
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
+    try {
+        const twelveMonthsAgo = subMonths(new Date(), 12);
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
 
-    let docs: any[] = [];
-    if (typeof window === 'undefined') {
-        const { getAdminDb } = await import('./admin');
-        const adb = await getAdminDb();
-        const snap = await adb
-            .collection('shipments')
-            .where('actualClearedDate', '>=', twelveMonthsAgo)
-            .where('actualClearedDate', '<=', today)
-            .get();
-        docs = snap.docs;
-    } else {
-        const shipmentsCol = collection(db, 'shipments');
-        const qy = query(
-            shipmentsCol,
-            where('actualClearedDate', '>=', twelveMonthsAgo),
-            where('actualClearedDate', '<=', today)
-        );
-        const shipmentSnapshot = await getDocs(qy);
-        docs = shipmentSnapshot.docs;
-    }
-
-    const monthlySummary: { [key: string]: { domLines: number; bulkLines: number } } = {};
-
-    docs.forEach((doc: any) => {
-        const data = typeof doc.data === 'function' ? doc.data() : doc;
-        const clearedDate = data.actualClearedDate?.toDate();
-
-        if (clearedDate) {
-            const monthYear = format(clearedDate, "MMM yy");
-
-            if (!monthlySummary[monthYear]) {
-                monthlySummary[monthYear] = { domLines: 0, bulkLines: 0 };
-            }
-            monthlySummary[monthYear].domLines += data.domLines || 0;
-            monthlySummary[monthYear].bulkLines += data.bulkLines || 0;
+        let docs: any[] = [];
+        if (typeof window === 'undefined') {
+            const { getAdminDb } = await import('./admin');
+            const adb = await getAdminDb();
+            const snap = await adb
+                .collection('shipments')
+                .where('actualClearedDate', '>=', twelveMonthsAgo)
+                .where('actualClearedDate', '<=', today)
+                .get();
+            docs = snap.docs;
+        } else {
+            const shipmentsCol = collection(db, 'shipments');
+            const qy = query(
+                shipmentsCol,
+                where('actualClearedDate', '>=', twelveMonthsAgo),
+                where('actualClearedDate', '<=', today)
+            );
+            const shipmentSnapshot = await getDocs(qy);
+            docs = shipmentSnapshot.docs;
         }
-    });
 
-    const sortedMonths = Object.keys(monthlySummary).sort((a, b) => {
-        const dateA = parse(a, 'MMM yy', new Date());
-        const dateB = parse(b, 'MMM yy', new Date());
-        return compareAsc(dateA, dateB);
-    });
+        const monthlySummary: { [key: string]: { domLines: number; bulkLines: number } } = {};
 
-    return sortedMonths.map(month => ({
-        month,
-        domLines: monthlySummary[month].domLines,
-        bulkLines: monthlySummary[month].bulkLines,
-    }));
+        docs.forEach((doc: any) => {
+            const data = typeof doc.data === 'function' ? doc.data() : doc;
+            const clearedDate = data.actualClearedDate?.toDate();
+
+            if (clearedDate) {
+                const monthYear = format(clearedDate, "MMM yy");
+
+                if (!monthlySummary[monthYear]) {
+                    monthlySummary[monthYear] = { domLines: 0, bulkLines: 0 };
+                }
+                monthlySummary[monthYear].domLines += data.domLines || 0;
+                monthlySummary[monthYear].bulkLines += data.bulkLines || 0;
+            }
+        });
+
+        const sortedMonths = Object.keys(monthlySummary).sort((a, b) => {
+            const dateA = parse(a, 'MMM yy', new Date());
+            const dateB = parse(b, 'MMM yy', new Date());
+            return compareAsc(dateA, dateB);
+        });
+
+        return sortedMonths.map(month => ({
+            month,
+            domLines: monthlySummary[month].domLines,
+            bulkLines: monthlySummary[month].bulkLines,
+        }));
+    } catch (e) {
+        return [];
+    }
 }
 
 export async function getClearedContainerSummary(): Promise<ClearedContainerSummary> {
-    const twelveMonthsAgo = subMonths(new Date(), 12);
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
+    try {
+        const twelveMonthsAgo = subMonths(new Date(), 12);
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
 
-    let docs: any[] = [];
+        let docs: any[] = [];
+        if (typeof window === 'undefined') {
+            const { getAdminDb } = await import('./admin');
+            const adb = await getAdminDb();
+            const snap = await adb
+                .collection('shipments')
+                .where('actualClearedDate', '>=', twelveMonthsAgo)
+                .where('actualClearedDate', '<=', today)
+                .get();
+            docs = snap.docs;
+        } else {
+            const shipmentsCol = collection(db, 'shipments');
+            const qy = query(
+                shipmentsCol,
+                where('actualClearedDate', '>=', twelveMonthsAgo),
+                where('actualClearedDate', '<=', today)
+            );
+            const shipmentSnapshot = await getDocs(qy);
+            docs = shipmentSnapshot.docs;
+        }
+
+        const monthlySummary: { [key: string]: number } = {};
+        const sourceSummary: { [key: string]: number } = {};
+        let totalContainers = 0;
+
+        docs.forEach((doc: any) => {
+            const data = typeof doc.data === 'function' ? doc.data() : doc;
+            const clearedDate = data.actualClearedDate?.toDate();
+
+            if (clearedDate && data.bookings && data.bookings.length > 0) {
+                const monthYear = format(clearedDate, "MMM yy");
+                const numContainersInShipment = data.bookings.length;
+
+                if (!monthlySummary[monthYear]) {
+                    monthlySummary[monthYear] = 0;
+                }
+                monthlySummary[monthYear] += numContainersInShipment;
+
+                const source = data.source || 'Unknown';
+                if (!sourceSummary[source]) {
+                    sourceSummary[source] = 0;
+                }
+                sourceSummary[source] += numContainersInShipment;
+
+                totalContainers += numContainersInShipment;
+            }
+        });
+
+        const sortedMonths = Object.keys(monthlySummary).sort((a, b) => {
+            const dateA = parse(a, 'MMM yy', new Date());
+            const dateB = parse(b, 'MMM yy', new Date());
+            return compareAsc(dateA, dateB);
+        });
+
+        const monthlyData = sortedMonths.map(month => ({
+            month,
+            containers: monthlySummary[month],
+        }));
+
+        return {
+            totalContainers,
+            monthlyData,
+            sourceData: sourceSummary
+        };
+    } catch (e) {
+        return { totalContainers: 0, monthlyData: [], sourceData: {} };
+    }
+}
+
+export async function getPendingArrivedTotalLines(): Promise<number> {
     if (typeof window === 'undefined') {
         const { getAdminDb } = await import('./admin');
         const adb = await getAdminDb();
         const snap = await adb
             .collection('shipments')
-            .where('actualClearedDate', '>=', twelveMonthsAgo)
-            .where('actualClearedDate', '<=', today)
+            .where('status', '==', 'Arrived')
             .get();
-        docs = snap.docs;
-    } else {
-        const shipmentsCol = collection(db, 'shipments');
-        const qy = query(
-            shipmentsCol,
-            where('actualClearedDate', '>=', twelveMonthsAgo),
-            where('actualClearedDate', '<=', today)
-        );
-        const shipmentSnapshot = await getDocs(qy);
-        docs = shipmentSnapshot.docs;
+        let total = 0;
+        snap.docs.forEach((d: any) => {
+            const data = d.data ? d.data() : d;
+            const pending = data?.productionUploaded !== true;
+            if (pending) total += Number(data?.totalLines || 0);
+        });
+        return total;
     }
-
-    const monthlySummary: { [key: string]: number } = {};
-    const sourceSummary: { [key: string]: number } = {};
-    let totalContainers = 0;
-
-    docs.forEach((doc: any) => {
-        const data = typeof doc.data === 'function' ? doc.data() : doc;
-        const clearedDate = data.actualClearedDate?.toDate();
-
-        if (clearedDate && data.bookings && data.bookings.length > 0) {
-            const monthYear = format(clearedDate, "MMM yy");
-            const numContainersInShipment = data.bookings.length;
-
-            if (!monthlySummary[monthYear]) {
-                monthlySummary[monthYear] = 0;
-            }
-            monthlySummary[monthYear] += numContainersInShipment;
-
-            const source = data.source || 'Unknown';
-            if (!sourceSummary[source]) {
-                sourceSummary[source] = 0;
-            }
-            sourceSummary[source] += numContainersInShipment;
-
-            totalContainers += numContainersInShipment;
-        }
+    const shipmentsCol = collection(db, 'shipments');
+    const qy = query(shipmentsCol, where('status', '==', 'Arrived'));
+    const shipmentSnapshot = await getDocs(qy);
+    let total = 0;
+    shipmentSnapshot.docs.forEach(doc => {
+        const data: any = doc.data();
+        const pending = data?.productionUploaded !== true;
+        if (pending) total += Number(data?.totalLines || 0);
     });
-
-    const sortedMonths = Object.keys(monthlySummary).sort((a, b) => {
-        const dateA = parse(a, 'MMM yy', new Date());
-        const dateB = parse(b, 'MMM yy', new Date());
-        return compareAsc(dateA, dateB);
-    });
-
-    const monthlyData = sortedMonths.map(month => ({
-        month,
-        containers: monthlySummary[month],
-    }));
-
-    return {
-        totalContainers,
-        monthlyData,
-        sourceData: sourceSummary
-    };
+    return total;
 }
 
 

@@ -14,6 +14,7 @@ type UpcomingBooking = {
     invoice: string;
     containerNo: string;
     bookingDate: string;
+    source?: string | null;
 }
 
 type GroupedBookings = {
@@ -52,6 +53,7 @@ export function RecentShipments({ shipments }: { shipments: SerializableShipment
                 invoice: shipment.invoice,
                 containerNo: booking.containerNo,
                 bookingDate: booking.bookingDate,
+                source: shipment.source ?? null,
             }))
         )
         .filter(booking => !booking.bookingDate || new Date(booking.bookingDate) >= today)
@@ -95,10 +97,16 @@ export function RecentShipments({ shipments }: { shipments: SerializableShipment
                                             <div key={invoice}>
                                                 <p className="text-xs text-muted-foreground">Inv No - <span className="font-medium text-foreground">{invoice}</span></p>
                                                 <div className="mt-1">
-                                                    <p className="text-xs font-medium text-muted-foreground">Container No</p>
+                                                    <div className="grid grid-cols-2 gap-2 text-xs font-medium text-muted-foreground">
+                                                        <div>Container No</div>
+                                                        <div>Source</div>
+                                                    </div>
                                                     <div className="pl-4 text-sm">
                                                         {groupedBookings[dateStr][invoice].map((booking, index) => (
-                                                            <p key={index} className="text-foreground">{booking.containerNo}</p>
+                                                            <div key={index} className="grid grid-cols-2 gap-2">
+                                                                <div className="text-foreground">{booking.containerNo}</div>
+                                                                <div className="text-foreground">{booking.source || ''}</div>
+                                                            </div>
                                                         ))}
                                                     </div>
                                                 </div>

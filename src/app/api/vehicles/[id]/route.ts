@@ -70,6 +70,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       ...(raw.branch != null ? { branch: String(raw.branch) } : {}),
       ...(raw.ownership != null ? { ownership: String(raw.ownership) } : {}),
       ...(raw.hireCompanyName != null ? { hireCompanyName: String(raw.hireCompanyName) } : {}),
+      ...(raw.contractStartDate != null ? { contractStartDate: String(raw.contractStartDate) } : {}),
+      ...(raw.contractEndDate != null ? { contractEndDate: String(raw.contractEndDate) } : {}),
       ...(raw.driverName != null ? { driverName: String(raw.driverName) } : {}),
       ...(raw.driverEmployeeId != null ? { driverEmployeeId: String(raw.driverEmployeeId) } : {}),
       ...(raw.driverContact != null ? { driverContact: String(raw.driverContact) } : {}),
@@ -82,6 +84,12 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       ...(raw.status != null ? { status: String(raw.status) } : {}),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
+
+    if (String(raw.ownership || '') === 'Owned') {
+      updatePayload.hireCompanyName = null;
+      updatePayload.contractStartDate = null;
+      updatePayload.contractEndDate = null;
+    }
 
     // Image handling
     const image = formData.get('image');

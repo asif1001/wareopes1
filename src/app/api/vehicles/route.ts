@@ -122,6 +122,7 @@ export async function POST(request: NextRequest) {
     // Normalize numeric fields
     const num = (v: any) => (v === '' || v == null ? null : Number(v));
 
+    const ownership = String(raw.ownership || 'Owned');
     const basePayload: any = {
       plateNo: String(raw.plateNo || ''),
       vehicleType: String(raw.vehicleType || ''),
@@ -129,8 +130,10 @@ export async function POST(request: NextRequest) {
       model: raw.model ? String(raw.model) : null,
       year: raw.year ? num(raw.year) : null,
       branch: String(raw.branch || ''),
-      ownership: String(raw.ownership || 'Owned'),
-      hireCompanyName: raw.hireCompanyName ? String(raw.hireCompanyName) : null,
+      ownership,
+      hireCompanyName: ownership === 'Hired' && raw.hireCompanyName ? String(raw.hireCompanyName) : null,
+      contractStartDate: ownership === 'Hired' && raw.contractStartDate ? String(raw.contractStartDate) : null,
+      contractEndDate: ownership === 'Hired' && raw.contractEndDate ? String(raw.contractEndDate) : null,
       driverName: String(raw.driverName || ''),
       driverEmployeeId: raw.driverEmployeeId ? String(raw.driverEmployeeId) : null,
       driverContact: raw.driverContact ? String(raw.driverContact) : null,
