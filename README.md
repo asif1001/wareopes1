@@ -1,6 +1,6 @@
 # WareOps - Warehouse Operations Management System
 
-A modern warehouse management application built with Next.js 15.3.3, Firebase, and TypeScript. WareOps provides comprehensive tools for managing shipments, inventory, analytics, and warehouse operations.
+A modern warehouse management application built with Next.js 16.1.1, Firebase, and TypeScript. WareOps provides comprehensive tools for managing shipments, inventory, analytics, and warehouse operations.
 
 ## 🚀 Features
 
@@ -16,7 +16,7 @@ A modern warehouse management application built with Next.js 15.3.3, Firebase, a
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: Next.js 15.3.3, React, TypeScript
+- **Frontend**: Next.js 16.1.1, React, TypeScript
 - **Styling**: Tailwind CSS, shadcn/ui
 - **Backend**: Firebase (Firestore, Authentication)
 - **Development**: Turbopack for fast development builds
@@ -78,6 +78,14 @@ The application will be available at [http://localhost:3000](http://localhost:30
 ## 🛠 Maintenance & Operations Reminders
 
 ## 📣 Recent Changes
+
+### Next.js 16 Upgrade & Security Fixes
+- **Framework Upgrade**: Upgraded core framework to Next.js 16.1.1.
+- **Security Patch**: Resolved critical security vulnerability CVE-2025-66478.
+- **Dependency Resolution**: 
+  - Updated `@genkit-ai/next` and related Genkit packages to v1.27.0 to resolve peer dependency conflicts with Next.js 16.
+  - Removed deprecated `eslint` and `webpack` configurations from `next.config.ts`.
+- **Build System**: Fully migrated to Turbopack as the default development bundler in Next.js 16.
 
 ### Oil Status Monitoring Enhancements
 - **Enhanced 3D Tank Visualization**
