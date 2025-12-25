@@ -54,8 +54,10 @@ async function withRetry<T>(operation: () => Promise<T>, operationName: string):
 export async function POST(request: NextRequest) {
     try {
         const { employeeNo, password } = await request.json();
+        console.log(`Login attempt for employeeNo: ${employeeNo}`);
 
         if (!employeeNo || !password) {
+            console.log('Login failed: Missing credentials');
             return NextResponse.json({ error: 'Employee number and password are required' }, { status: 400 });
         }
 
@@ -84,8 +86,10 @@ export async function POST(request: NextRequest) {
         
         for (const c of candidates) {
             try {
+                console.log(`Trying query: collection=${c.col}, val=${c.val} (${typeof c.val})`);
                 const snap = await tryQuery(c.col, c.val);
                 if (!snap.empty) {
+                    console.log(`Found user in collection=${c.col} with val=${c.val}`);
                     userDoc = snap.docs[0];
                     break;
                 }
@@ -96,16 +100,22 @@ export async function POST(request: NextRequest) {
         }
 
         if (!userDoc) {
+            console.log('Login failed: User not found in any collection');
             return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
         }
 
         const userData = userDoc.data();
+        console.log('User data found. Verifying password...');
         
         // Verify password (plaintext comparison; migrate to hashed passwords in production)
         const isValidPassword = userData?.password === password;
         if (!isValidPassword) {
+            console.log('Login failed: Invalid password');
+            console.log(`Stored password length: ${userData?.password?.length}, Provided password length: ${password?.length}`);
             return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
         }
+        
+        console.log('Login successful');
 
         // Create session cookie
         const sessionData = {

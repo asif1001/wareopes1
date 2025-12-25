@@ -1,7 +1,7 @@
 import { AppPageKey, PermissionAction } from "./types";
 
 // Centralized lists of pages and actions used across forms and server actions
-export const APP_PAGES: AppPageKey[] = ["shipments", "tasks", "settings", "production", "productivity", "maintenance", "licenses"];
+export const APP_PAGES: AppPageKey[] = ["shipments", "tasks", "settings", "production", "productivity", "maintenance", "licenses", "oil_status"];
 export const PERMISSION_ACTIONS: PermissionAction[] = ["view", "add", "edit", "delete"];
 
 // Existing utilities
