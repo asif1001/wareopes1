@@ -5,10 +5,6 @@ const nextConfig: NextConfig = {
     // Only ignore build errors in development
     ignoreBuildErrors: process.env.NODE_ENV === 'development',
   },
-  eslint: {
-    // Ignore ESLint during builds to prevent deployment blocking on warnings
-    ignoreDuringBuilds: true,
-  },
   // Optimize for Firebase App Hosting
   serverExternalPackages: ['firebase-admin'],
   images: {
@@ -45,13 +41,6 @@ const nextConfig: NextConfig = {
       ];
     }
     return [];
-  },
-  webpack(config, { dev }) {
-    if (dev) {
-      config.cache = false;
-      config.infrastructureLogging = { level: 'error' } as any;
-    }
-    return config;
   },
 };
 
