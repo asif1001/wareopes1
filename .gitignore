@@ -5,6 +5,7 @@ node_modules/
 .next/
 .next_temp/
 .next_build/
+.next_temp_final/
 .next-old/
 out/
 dist/
