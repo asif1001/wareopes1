@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  distDir: '.next_temp_build',
   typescript: {
     // Only ignore build errors in development
     ignoreBuildErrors: process.env.NODE_ENV === 'development',
@@ -42,26 +41,6 @@ const nextConfig: NextConfig = {
       ];
     }
     return [];
-  },
-  webpack(config, { dev }) {
-    if (dev) {
-      const ignored = [
-        '**/src/app/api/fb-debug/**',
-        '**/src/app/api/files/[taskId]/[fileId]/**',
-        '**/src/app/api/tasks/[id]/comments/**',
-      ];
-      // Preserve existing ignored patterns if present
-      const currentIgnored = (config.watchOptions as any)?.ignored;
-      const combined =
-        Array.isArray(currentIgnored)
-          ? [...currentIgnored, ...ignored]
-          : ignored;
-      config.watchOptions = {
-        ...(config.watchOptions || {}),
-        ignored: combined,
-      };
-    }
-    return config;
   },
 };
 
