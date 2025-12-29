@@ -3,6 +3,8 @@ node_modules/
 
 # build outputs
 .next/
+.next_temp/
+.next-old/
 out/
 dist/
 build/

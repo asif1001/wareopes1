@@ -4,7 +4,8 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import { DynamicFormClient } from "./DynamicFormClient";
 
 // Client form moved to './DynamicFormClient'
-export default async function FormPage({ params }: { params: { slug: string } }) {
+export default async function FormPage(props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   const res = await getFormTemplateBySlugAction(params.slug);
   return (
     <div className="flex flex-col h-full">

@@ -477,6 +477,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
               }
               const doSave = async () => {
                 if (vehicle) {
+                  if (!vehicle.id) {
+                    toast({ title: "Error", description: "Vehicle ID is missing", variant: "destructive" });
+                    return;
+                  }
                   try {
                     const fd = new FormData();
                     fd.append('plateNo', form.plateNo || '');
@@ -888,6 +892,11 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                   const doSave = async () => {
                     setIsSaving(true);
                     if (vehicle) {
+                      if (!vehicle.id) {
+                        toast({ title: "Error", description: "Vehicle ID is missing", variant: "destructive" });
+                        setIsSaving(false);
+                        return;
+                      }
                       try {
                         const fd = new FormData();
                         fd.append('plateNo', form.plateNo || '');

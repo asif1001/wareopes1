@@ -44,7 +44,8 @@ async function resolveBucket() {
   return storage.bucket();
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const { ok, role, permissions, userId } = await getCurrentUserPermissions();
     const canEdit = ok && (isAdmin(role) || hasPermission(permissions, 'maintenance', 'edit'));
@@ -215,7 +216,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const { ok, role, permissions, userId } = await getCurrentUserPermissions();
     const canDelete = ok && (isAdmin(role) || hasPermission(permissions, 'maintenance', 'delete'));

@@ -85,6 +85,8 @@ The application will be available at [http://localhost:3000](http://localhost:30
 - **Dependency Resolution**: 
   - Updated `@genkit-ai/next` and related Genkit packages to v1.27.0 to resolve peer dependency conflicts with Next.js 16.
   - Removed deprecated `eslint` and `webpack` configurations from `next.config.ts`.
+- **API Route Compatibility**: Updated all dynamic API routes (`[id]`, `[slug]`) to correctly await `params` as required by Next.js 16 async route param behavior.
+- **Windows File Locking Fix**: Configured `distDir: '.next_temp'` in `next.config.ts` to bypass Windows EPERM/file locking issues with the standard `.next` directory.
 - **Build System**: Fully migrated to Turbopack as the default development bundler in Next.js 16.
 
 ### Oil Status Monitoring Enhancements
@@ -98,11 +100,3 @@ The application will be available at [http://localhost:3000](http://localhost:30
   - Added a detailed breakdown of total current stock by oil type in the "Current Stock" summary card.
 - **Stability Fixes**
   - Fixed React "unique key prop" errors in branch and tank lists.
-  - Fixed filtering logic crashes caused by undefined branch names or locations.
-  - Resolved TypeScript and Test configuration errors by installing missing peer dependencies (`@testing-library/dom`, `@fullcalendar/core`).
-
-### Previous Updates
-- **Event-driven refresh model**: Removed automatic polling; dashboard refreshes on load and user action.
-- **Modal Consistency**: Auto-close on save for data entry; view-only modals remain open.
-- **Dashboard Badges**: Tasks/Maintenance badges only show when count > 0; added accessibility attributes.
-- **Vehicle Workflow**: Improved file previews, validations, and draft persistence.
