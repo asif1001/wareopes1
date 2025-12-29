@@ -4,6 +4,7 @@ node_modules/
 # build outputs
 .next/
 .next_temp/
+.next_build/
 .next-old/
 out/
 dist/
