@@ -79,6 +79,13 @@ The application will be available at [http://localhost:3000](http://localhost:30
 
 ## 📣 Recent Changes
 
+### Windows Environment & Vercel Deployment Fixes (Dec 2025)
+- **Windows Environment Fix**: Migrated development environment to `C:\wareopes_fix` (NTFS volume) to resolve persistent EPERM/file locking issues on exFAT/network drives.
+- **Vercel Compatibility**:
+  - **Restored Default Build Directory**: Removed `distDir` configuration from `next.config.ts`. Vercel requires the default `.next` output directory.
+  - **Turbopack Migration**: Removed custom `webpack` configuration that was conflicting with Next.js 16's default Turbopack compiler.
+  - **Middleware Update**: Renamed `middleware.ts` to `src/proxy.ts` to resolve deprecation warnings and "empty module" errors during build.
+
 ### Next.js 16 Upgrade & Security Fixes
 - **Framework Upgrade**: Upgraded core framework to Next.js 16.1.1.
 - **Security Patch**: Resolved critical security vulnerability CVE-2025-66478.
@@ -86,7 +93,6 @@ The application will be available at [http://localhost:3000](http://localhost:30
   - Updated `@genkit-ai/next` and related Genkit packages to v1.27.0 to resolve peer dependency conflicts with Next.js 16.
   - Removed deprecated `eslint` and `webpack` configurations from `next.config.ts`.
 - **API Route Compatibility**: Updated all dynamic API routes (`[id]`, `[slug]`) to correctly await `params` as required by Next.js 16 async route param behavior.
-- **Windows File Locking Fix**: Configured `distDir: '.next_temp'` in `next.config.ts` to bypass Windows EPERM/file locking issues with the standard `.next` directory.
 - **Build System**: Fully migrated to Turbopack as the default development bundler in Next.js 16.
 
 ### Oil Status Monitoring Enhancements
