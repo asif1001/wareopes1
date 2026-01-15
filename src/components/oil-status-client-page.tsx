@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { DashboardHeader } from "@/components/dashboard-header";
-import { getBranches, subscribeToBranches, getTankLogs } from "@/lib/firebase/onedelivery";
+import { getBranches, getTankLogs } from "@/lib/firebase/onedelivery";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Branch, OilTank } from "@/types/onedelivery";
@@ -52,36 +52,38 @@ export function OilStatusClientPage() {
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
   useEffect(() => {
-    let unsubscribeBranches: () => void;
-
-    const initData = async () => {
+    const loadBranches = async () => {
       setLoading(true);
       setError(null);
       try {
-        // Initial fetch for logs
-        const logsResult = await getTankLogs(parseInt(timeRange));
-        setLogs(logsResult);
-
-        // Real-time subscription for branches
-        unsubscribeBranches = subscribeToBranches((updatedBranches) => {
-          setBranches(updatedBranches);
-          setLastRefreshed(new Date());
-          console.log("Updated Branches:", updatedBranches);
-          setLoading(false); // Ensure loading is false after first update
-        });
-
+        const branchesResult = await getBranches();
+        setBranches(branchesResult);
+        setLastRefreshed(new Date());
       } catch (err: any) {
-        console.error("Failed to init data:", err);
+        console.error("Failed to load branches:", err);
         setError(err.message || "Failed to connect to OneDelivery database");
+      } finally {
         setLoading(false);
       }
     };
 
-    initData();
+    loadBranches();
+  }, []);
 
-    return () => {
-      if (unsubscribeBranches) unsubscribeBranches();
+  useEffect(() => {
+    const loadLogs = async () => {
+      setError(null);
+      try {
+        const logsResult = await getTankLogs(parseInt(timeRange));
+        setLogs(logsResult);
+        setLastRefreshed(new Date());
+      } catch (err: any) {
+        console.error("Failed to load tank logs:", err);
+        setError(err.message || "Failed to load tank logs");
+      }
     };
+
+    loadLogs();
   }, [timeRange]);
 
   const refreshLogs = async () => {

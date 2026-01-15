@@ -227,6 +227,7 @@ export type ClearedContainerSummary = {
     totalContainers: number;
     monthlyData: { month: string; containers: number }[];
     sourceData: { [key: string]: number };
+    monthlyBySource?: { [source: string]: { month: string; containers: number }[] };
 }
 
 export type FormFieldType = 'text' | 'number' | 'textarea' | 'dropdown' | 'checkbox' | 'date';

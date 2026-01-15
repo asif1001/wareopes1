@@ -29,7 +29,7 @@ async function AsyncDashboard() {
     getClearedContainerSummary(),
   ]);
   const upcomingShipments = results[0].status === 'fulfilled' ? results[0].value : [];
-  const shipmentLinesData = results[1].status === 'fulfilled' ? results[1].value : [];
+  const shipmentLinesData = results[1].status === 'fulfilled' ? results[1].value : { monthlyData: [], sourceData: {}, monthlyBySource: {} };
   const containerData = results[2].status === 'fulfilled' ? results[2].value : { totalContainers: 0, monthlyData: [], sourceData: {} } as any;
 
   return (

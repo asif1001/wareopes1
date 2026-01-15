@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -18,10 +17,9 @@ import {
 } from "@/components/ui/card";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -84,7 +82,7 @@ function ShipmentTable({ shipments, sources, containerSizes, today, branches }: 
                     <TableHead>Containers</TableHead>
                     <TableHead>Bahrain ETA</TableHead>
                     <TableHead>Actual Bahrain ETA</TableHead>
-                    <TableHead>Cleared</TableHead>
+                    <TableHead>Arrived @ Port</TableHead>
                     <TableHead></TableHead>
                 </TableRow>
             </TableHeader>
@@ -131,12 +129,27 @@ export function ShipmentsClientPage({
     branches: Branch[];
 }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState<string[]>([]);
   const [today, setToday] = useState<Date | null>(null);
 
   useEffect(() => {
     setToday(startOfDay(new Date()));
+    const saved = localStorage.getItem("shipmentSourceFilter");
+    if (saved) {
+        try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+                setSourceFilter(parsed);
+            }
+        } catch (e) {
+            console.error("Failed to parse source filter", e);
+        }
+    }
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("shipmentSourceFilter", JSON.stringify(sourceFilter));
+  }, [sourceFilter]);
 
 
   const filteredShipments = useMemo(() => {
@@ -147,7 +160,7 @@ export function ShipmentsClientPage({
             shipment.billOfLading.toLowerCase().includes(query);
 
         const matchesFilter = 
-            sourceFilter === "all" || shipment.source === sourceFilter;
+            sourceFilter.length === 0 || sourceFilter.includes(shipment.source);
 
         return matchesSearch && matchesFilter;
     });
@@ -193,19 +206,41 @@ export function ShipmentsClientPage({
                     <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
                       Filter
                     </span>
+                    {sourceFilter.length > 0 && (
+                      <Badge variant="secondary" className="ml-1 rounded-sm px-1 font-normal lg:hidden">
+                          {sourceFilter.length}
+                      </Badge>
+                    )}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel>Filter by Source</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuRadioGroup value={sourceFilter} onValueChange={setSourceFilter}>
-                    <DropdownMenuRadioItem value="all">All Sources</DropdownMenuRadioItem>
-                    {sources.map(source => (
-                        <DropdownMenuRadioItem key={source.id} value={source.shortName}>
-                            {source.shortName}
-                        </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
+                  <DropdownMenuCheckboxItem
+                      checked={sourceFilter.length === 0}
+                      onCheckedChange={(checked) => {
+                          if (checked) setSourceFilter([]);
+                      }}
+                  >
+                      All Sources
+                  </DropdownMenuCheckboxItem>
+                  {sources.map(source => (
+                      <DropdownMenuCheckboxItem
+                          key={source.id}
+                          checked={sourceFilter.includes(source.shortName)}
+                          onCheckedChange={(checked) => {
+                              setSourceFilter(prev => {
+                                  if (checked) {
+                                      return [...prev, source.shortName];
+                                  } else {
+                                      return prev.filter(s => s !== source.shortName);
+                                  }
+                              });
+                          }}
+                      >
+                          {source.shortName}
+                      </DropdownMenuCheckboxItem>
+                  ))}
                 </DropdownMenuContent>
               </DropdownMenu>
               <ShipmentForm sources={sources} containerSizes={containerSizes} branches={branches} />

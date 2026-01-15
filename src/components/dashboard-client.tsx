@@ -6,13 +6,13 @@ import type { ClearedContainerSummary, SerializableShipment } from "@/lib/types"
 
 // Props provided by the server page
 export type DashboardClientProps = {
-  shipmentLinesData: any[];
+  shipmentLinesData: any;
   containerData: ClearedContainerSummary;
   upcomingShipments: SerializableShipment[];
 };
 
 // Explicit generics to satisfy component prop types
-type OverviewChartProps = { data: any[] };
+type OverviewChartProps = { data: any };
 type ContainerOverviewProps = { data: ClearedContainerSummary };
 type RecentShipmentsProps = { shipments: SerializableShipment[] };
 

@@ -588,7 +588,11 @@ export async function getUpcomingShipments(): Promise<SerializableShipment[]> {
     }
 }
 
-export async function getClearedShipmentsMonthlySummary(): Promise<{ month: string; domLines: number; bulkLines: number }[]> {
+export async function getClearedShipmentsMonthlySummary(): Promise<{
+  monthlyData: { month: string; domLines: number; bulkLines: number }[];
+  sourceData: { [key: string]: number };
+  monthlyBySource: { [key: string]: { month: string; domLines: number; bulkLines: number }[] };
+}> {
     try {
         const twelveMonthsAgo = subMonths(new Date(), 12);
         const today = new Date();
@@ -616,6 +620,8 @@ export async function getClearedShipmentsMonthlySummary(): Promise<{ month: stri
         }
 
         const monthlySummary: { [key: string]: { domLines: number; bulkLines: number } } = {};
+        const sourceSummary: { [key: string]: number } = {};
+        const monthlyBySource: { [source: string]: { [month: string]: { domLines: number; bulkLines: number } } } = {};
 
         docs.forEach((doc: any) => {
             const data = typeof doc.data === 'function' ? doc.data() : doc;
@@ -627,8 +633,22 @@ export async function getClearedShipmentsMonthlySummary(): Promise<{ month: stri
                 if (!monthlySummary[monthYear]) {
                     monthlySummary[monthYear] = { domLines: 0, bulkLines: 0 };
                 }
-                monthlySummary[monthYear].domLines += data.domLines || 0;
-                monthlySummary[monthYear].bulkLines += data.bulkLines || 0;
+                const dom = Number(data.domLines || 0);
+                const bulk = Number(data.bulkLines || 0);
+                monthlySummary[monthYear].domLines += dom;
+                monthlySummary[monthYear].bulkLines += bulk;
+
+                const source = data.source || 'Unknown';
+                sourceSummary[source] = (sourceSummary[source] ?? 0) + dom + bulk;
+
+                if (!monthlyBySource[source]) {
+                    monthlyBySource[source] = {};
+                }
+                if (!monthlyBySource[source][monthYear]) {
+                    monthlyBySource[source][monthYear] = { domLines: 0, bulkLines: 0 };
+                }
+                monthlyBySource[source][monthYear].domLines += dom;
+                monthlyBySource[source][monthYear].bulkLines += bulk;
             }
         });
 
@@ -638,13 +658,33 @@ export async function getClearedShipmentsMonthlySummary(): Promise<{ month: stri
             return compareAsc(dateA, dateB);
         });
 
-        return sortedMonths.map(month => ({
+        const monthlyData = sortedMonths.map(month => ({
             month,
             domLines: monthlySummary[month].domLines,
             bulkLines: monthlySummary[month].bulkLines,
         }));
+
+        const monthlyBySourceArr: { [key: string]: { month: string; domLines: number; bulkLines: number }[] } = {};
+        Object.entries(monthlyBySource).forEach(([source, map]) => {
+            const months = Object.keys(map).sort((a, b) => {
+                const dateA = parse(a, 'MMM yy', new Date());
+                const dateB = parse(b, 'MMM yy', new Date());
+                return compareAsc(dateA, dateB);
+            });
+            monthlyBySourceArr[source] = months.map(m => ({
+                month: m,
+                domLines: map[m].domLines,
+                bulkLines: map[m].bulkLines,
+            }));
+        });
+
+        return {
+            monthlyData,
+            sourceData: sourceSummary,
+            monthlyBySource: monthlyBySourceArr,
+        };
     } catch (e) {
-        return [];
+        return { monthlyData: [], sourceData: {}, monthlyBySource: {} };
     }
 }
 
@@ -677,6 +717,7 @@ export async function getClearedContainerSummary(): Promise<ClearedContainerSumm
 
         const monthlySummary: { [key: string]: number } = {};
         const sourceSummary: { [key: string]: number } = {};
+        const monthlyBySource: { [source: string]: { [month: string]: number } } = {};
         let totalContainers = 0;
 
         docs.forEach((doc: any) => {
@@ -698,6 +739,14 @@ export async function getClearedContainerSummary(): Promise<ClearedContainerSumm
                 }
                 sourceSummary[source] += numContainersInShipment;
 
+                if (!monthlyBySource[source]) {
+                    monthlyBySource[source] = {};
+                }
+                if (!monthlyBySource[source][monthYear]) {
+                    monthlyBySource[source][monthYear] = 0;
+                }
+                monthlyBySource[source][monthYear] += numContainersInShipment;
+
                 totalContainers += numContainersInShipment;
             }
         });
@@ -713,13 +762,24 @@ export async function getClearedContainerSummary(): Promise<ClearedContainerSumm
             containers: monthlySummary[month],
         }));
 
+        const monthlyBySourceArr: { [key: string]: { month: string; containers: number }[] } = {};
+        Object.entries(monthlyBySource).forEach(([source, map]) => {
+            const months = Object.keys(map).sort((a, b) => {
+                const dateA = parse(a, 'MMM yy', new Date());
+                const dateB = parse(b, 'MMM yy', new Date());
+                return compareAsc(dateA, dateB);
+            });
+            monthlyBySourceArr[source] = months.map(m => ({ month: m, containers: map[m] }));
+        });
+
         return {
             totalContainers,
             monthlyData,
-            sourceData: sourceSummary
+            sourceData: sourceSummary,
+            monthlyBySource: monthlyBySourceArr
         };
     } catch (e) {
-        return { totalContainers: 0, monthlyData: [], sourceData: {} };
+        return { totalContainers: 0, monthlyData: [], sourceData: {}, monthlyBySource: {} };
     }
 }
 
