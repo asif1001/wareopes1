@@ -1,4 +1,3 @@
-
 "use client";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
@@ -28,56 +27,76 @@ export function ContainerOverview({ data }: { data: ClearedContainerSummary }) {
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
 
   const chartData = useMemo(() => {
-    const useAllSources = selectedSources.length === 0;
-    const baseMonthly =
-      !useAllSources && data.monthlyBySource
-        ? (() => {
-            const acc: Record<string, number> = {};
-            for (const src of selectedSources) {
-              const series = data.monthlyBySource?.[src] || [];
-              for (const item of series) {
-                acc[item.month] = (acc[item.month] ?? 0) + item.containers;
-              }
+    if (!data) return [];
+    
+    // Select base dataset
+    let baseData: any[] = [];
+    let sourceMap: any = {};
+
+    if (period === 'week') {
+        baseData = data.weeklyData || [];
+        sourceMap = data.bySource?.weekly || {};
+    } else if (period === 'year') {
+        baseData = data.yearlyData || [];
+        sourceMap = data.bySource?.yearly || {};
+    } else {
+        baseData = data.monthlyData || [];
+        sourceMap = data.bySource?.monthly || {};
+    }
+
+    // Filter logic
+    if (selectedSources.length === 0) {
+        return baseData;
+    }
+
+    const keyName = period === 'week' ? 'week' : period === 'year' ? 'year' : 'month';
+
+    // Aggregate selected sources
+    const aggregated: Record<string, number> = {};
+    
+    // Initialize with 0
+    baseData.forEach((item) => {
+        aggregated[item[keyName]] = 0;
+    });
+
+    selectedSources.forEach(src => {
+        const srcData = sourceMap[src] || [];
+        srcData.forEach((item: any) => {
+            const key = item[keyName];
+            if (aggregated[key] !== undefined) {
+                aggregated[key] += item.containers;
+            } else {
+                 // If baseData is missing this key (shouldn't happen if base covers all), add it?
+                 // For now, assume baseData covers the timeline.
             }
-            const months = Object.keys(acc).sort((a, b) => {
-              const dateA = new Date(a);
-              const dateB = new Date(b);
-              return dateA.getTime() - dateB.getTime();
-            });
-            return months.map((m) => ({ month: m, containers: acc[m] }));
-          })()
-        : data.monthlyData;
+        });
+    });
 
-    if (period === "month") {
-      return baseMonthly;
-    }
-
-    if (period === "week") {
-      const length = baseMonthly.length;
-      if (length <= 4) {
-        return baseMonthly;
-      }
-      return baseMonthly.slice(length - 4);
-    }
-
-    const yearMap: Record<string, number> = {};
-    for (const item of baseMonthly) {
-      const parts = item.month.split(" ");
-      const rawYear = parts[1] ?? parts[0];
-      const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
-      yearMap[year] = (yearMap[year] ?? 0) + item.containers;
-    }
-    return Object.entries(yearMap).map(([year, containers]) => ({
-      month: year,
-      containers,
-    }));
-  }, [data.monthlyData, data.monthlyBySource, period, selectedSources]);
+    return baseData.map((item) => {
+        const key = item[keyName];
+        return {
+            [keyName]: key,
+            containers: aggregated[key] ?? 0
+        };
+    });
+  }, [data, period, selectedSources]);
 
   const allSources = useMemo(() => Object.keys(data.sourceData), [data.sourceData]);
+  
   const totalForSelection = useMemo(() => {
     if (selectedSources.length === 0) return data.totalContainers;
     return selectedSources.reduce((sum, s) => sum + (data.sourceData[s] ?? 0), 0);
   }, [selectedSources, data.sourceData, data.totalContainers]);
+
+  const formatXAxis = (tick: string) => {
+      if (period === 'week') {
+          const parts = tick.split(' ');
+          if (parts.length >= 1) {
+             return `W${parts[0]}`; 
+          }
+      }
+      return tick;
+  };
 
   return (
     <Card>
@@ -85,7 +104,9 @@ export function ContainerOverview({ data }: { data: ClearedContainerSummary }) {
         <div className="flex items-center justify-between gap-4">
           <div>
             <CardTitle>Container Overview</CardTitle>
-            <CardDescription>Monthly cleared container volume</CardDescription>
+            <CardDescription>
+                {period === 'week' ? 'Weekly' : period === 'year' ? 'Yearly' : 'Monthly'} cleared container volume
+            </CardDescription>
           </div>
           <div className="flex items-center gap-1 rounded-md border bg-muted p-0.5 text-xs">
             <button
@@ -157,10 +178,11 @@ export function ContainerOverview({ data }: { data: ClearedContainerSummary }) {
           <BarChart data={chartData} margin={{ left: -20, right: 16, top: 8, bottom: 8 }}>
             <CartesianGrid vertical={false} />
             <XAxis
-              dataKey="month"
+              dataKey={period === 'week' ? 'week' : period === 'year' ? 'year' : 'month'}
               tickLine={false}
               axisLine={false}
               tickMargin={8}
+              tickFormatter={formatXAxis}
             />
             <YAxis tickLine={false} axisLine={false} tickMargin={8} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />

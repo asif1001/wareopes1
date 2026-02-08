@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import type { ClearedShipmentSummary } from "@/lib/types";
 
 const chartConfig = {
   domLines: {
@@ -25,70 +26,91 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-export function OverviewChart({ data }: { data: any }) {
+export function OverviewChart({ data }: { data: ClearedShipmentSummary }) {
   const [period, setPeriod] = useState<"week" | "month" | "year">("month");
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
 
-  const monthlyDataAll = useMemo(() => {
-    if (Array.isArray(data)) return data as Array<{ month: string; domLines: number; bulkLines: number }>;
-    return (data?.monthlyData ?? []) as Array<{ month: string; domLines: number; bulkLines: number }>;
-  }, [data]);
+  // Memoize the available data based on period
+  const chartData = useMemo(() => {
+    if (!data) return [];
+    
+    // Select base dataset
+    let baseData: any[] = [];
+    let sourceMap: any = {};
 
-  const monthlyBySource = useMemo(() => {
-    if (Array.isArray(data)) return {} as Record<string, Array<{ month: string; domLines: number; bulkLines: number }>>;
-    return (data?.monthlyBySource ?? {}) as Record<string, Array<{ month: string; domLines: number; bulkLines: number }>>;
-  }, [data]);
+    if (period === 'week') {
+        baseData = data.weeklyData || [];
+        sourceMap = data.bySource?.weekly || {};
+    } else if (period === 'year') {
+        baseData = data.yearlyData || [];
+        sourceMap = data.bySource?.yearly || {};
+    } else {
+        baseData = data.monthlyData || [];
+        sourceMap = data.bySource?.monthly || {};
+    }
+
+    // Filter logic
+    if (selectedSources.length === 0) {
+        return baseData;
+    }
+
+    // Key name based on period
+    const keyName = period === 'week' ? 'week' : period === 'year' ? 'year' : 'month';
+
+    // Aggregate selected sources
+    // Instead of re-aggregating, we can map over baseData keys to ensure consistent X-axis
+    // But baseData contains ALL sources aggregated.
+    // If we select specific sources, we should sum them up.
+    
+    // Create a map of key -> { dom, bulk }
+    const aggregated: Record<string, { domLines: number, bulkLines: number }> = {};
+    
+    // Initialize with 0 for all keys present in baseData to maintain x-axis continuity?
+    // Or only show keys present in selected sources?
+    // Usually, charts keep the timeline consistent. Let's use baseData keys as the "timeline".
+    
+    baseData.forEach((item) => {
+        aggregated[item[keyName]] = { domLines: 0, bulkLines: 0 };
+    });
+
+    selectedSources.forEach(src => {
+        const srcData = sourceMap[src] || [];
+        srcData.forEach((item: any) => {
+            const key = item[keyName];
+            if (aggregated[key]) {
+                aggregated[key].domLines += item.domLines;
+                aggregated[key].bulkLines += item.bulkLines;
+            }
+        });
+    });
+
+    // Convert back to array
+    return baseData.map((item) => {
+        const key = item[keyName];
+        return {
+            [keyName]: key,
+            domLines: aggregated[key].domLines,
+            bulkLines: aggregated[key].bulkLines
+        };
+    });
+
+  }, [data, period, selectedSources]);
 
   const allSources = useMemo(() => {
-    if (Array.isArray(data)) return [] as string[];
     return Object.keys(data?.sourceData ?? {});
   }, [data]);
 
-  const baseMonthly = useMemo(() => {
-    if (selectedSources.length === 0 || !monthlyBySource || Object.keys(monthlyBySource).length === 0) {
-      return monthlyDataAll;
-    }
-    const acc: Record<string, { domLines: number; bulkLines: number }> = {};
-    for (const src of selectedSources) {
-      const series = monthlyBySource[src] || [];
-      for (const item of series) {
-        acc[item.month] = acc[item.month] || { domLines: 0, bulkLines: 0 };
-        acc[item.month].domLines += item.domLines;
-        acc[item.month].bulkLines += item.bulkLines;
+  // Formatter for XAxis
+  const formatXAxis = (tick: string) => {
+      if (period === 'week') {
+          // tick is "w yyyy" e.g. "1 2024"
+          const parts = tick.split(' ');
+          if (parts.length >= 1) {
+             return `W${parts[0]}`; 
+          }
       }
-    }
-    const months = Object.keys(acc).sort((a, b) => {
-      const da = new Date(a);
-      const db = new Date(b);
-      return da.getTime() - db.getTime();
-    });
-    return months.map((m) => ({ month: m, domLines: acc[m].domLines, bulkLines: acc[m].bulkLines }));
-  }, [monthlyDataAll, monthlyBySource, selectedSources]);
-
-  const chartData = useMemo(() => {
-    if (period === "month") {
-      return baseMonthly;
-    }
-    if (period === "week") {
-      const len = baseMonthly.length;
-      if (len <= 4) return baseMonthly;
-      return baseMonthly.slice(len - 4);
-    }
-    const yearMap: Record<string, { domLines: number; bulkLines: number }> = {};
-    for (const item of baseMonthly) {
-      const parts = item.month.split(" ");
-      const rawYear = parts[1] ?? parts[0];
-      const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
-      yearMap[year] = yearMap[year] || { domLines: 0, bulkLines: 0 };
-      yearMap[year].domLines += item.domLines;
-      yearMap[year].bulkLines += item.bulkLines;
-    }
-    return Object.entries(yearMap).map(([year, v]) => ({
-      month: year,
-      domLines: v.domLines,
-      bulkLines: v.bulkLines,
-    }));
-  }, [baseMonthly, period]);
+      return tick;
+  };
 
   return (
     <Card>
@@ -96,7 +118,9 @@ export function OverviewChart({ data }: { data: any }) {
         <div className="flex items-center justify-between gap-4">
           <div>
             <CardTitle>Shipment Overview</CardTitle>
-            <CardDescription>Monthly DOM vs. Bulk lines for cleared shipments</CardDescription>
+            <CardDescription>
+                {period === 'week' ? 'Weekly' : period === 'year' ? 'Yearly' : 'Monthly'} DOM vs. Bulk lines for cleared shipments
+            </CardDescription>
           </div>
           <div className="flex items-center gap-1 rounded-md border bg-muted p-0.5 text-xs">
             <button
@@ -122,8 +146,7 @@ export function OverviewChart({ data }: { data: any }) {
             </button>
           </div>
         </div>
-        {!Array.isArray(data) && (
-          <div className="mt-2">
+        <div className="mt-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8 gap-1">
@@ -162,18 +185,18 @@ export function OverviewChart({ data }: { data: any }) {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-        )}
+        </div>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig} className="h-[300px] w-full">
           <AreaChart data={chartData} margin={{ left: -20, right: 16, top: 8, bottom: 8 }}>
             <CartesianGrid vertical={false} />
             <XAxis
-              dataKey="month"
+              dataKey={period === 'week' ? 'week' : period === 'year' ? 'year' : 'month'}
               tickLine={false}
               axisLine={false}
               tickMargin={8}
+              tickFormatter={formatXAxis}
             />
             <YAxis tickLine={false} axisLine={false} tickMargin={8} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />

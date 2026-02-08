@@ -226,9 +226,29 @@ export type Branch = {
 export type ClearedContainerSummary = {
     totalContainers: number;
     monthlyData: { month: string; containers: number }[];
+    weeklyData: { week: string; containers: number }[];
+    yearlyData: { year: string; containers: number }[];
     sourceData: { [key: string]: number };
+    bySource: {
+        monthly: { [source: string]: { month: string; containers: number }[] };
+        weekly: { [source: string]: { week: string; containers: number }[] };
+        yearly: { [source: string]: { year: string; containers: number }[] };
+    };
+    // For backward compatibility (optional)
     monthlyBySource?: { [source: string]: { month: string; containers: number }[] };
-}
+};
+
+export type ClearedShipmentSummary = {
+  monthlyData: { month: string; domLines: number; bulkLines: number }[];
+  weeklyData: { week: string; domLines: number; bulkLines: number }[];
+  yearlyData: { year: string; domLines: number; bulkLines: number }[];
+  sourceData: { [key: string]: number };
+  bySource: {
+    monthly: { [key: string]: { month: string; domLines: number; bulkLines: number }[] };
+    weekly: { [key: string]: { week: string; domLines: number; bulkLines: number }[] };
+    yearly: { [key: string]: { year: string; domLines: number; bulkLines: number }[] };
+  };
+};
 
 export type FormFieldType = 'text' | 'number' | 'textarea' | 'dropdown' | 'checkbox' | 'date';
 

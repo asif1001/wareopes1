@@ -3,7 +3,7 @@ import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc, query, where, s
 import type { Shipment, User, Source, ContainerSize, Department, Branch, ContainerBooking, Container, ClearedContainerSummary, Role } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
 import type { SerializableShipment } from '@/lib/types';
-import { format, subMonths, startOfMonth, parse, compareAsc, subDays } from 'date-fns';
+import { format, subMonths, startOfMonth, parse, compareAsc, subDays, subYears } from 'date-fns';
 
 function docToShipment(doc: any): SerializableShipment {
         const data = typeof doc.data === 'function' ? doc.data() : doc; // support admin and client snapshots
@@ -590,11 +590,17 @@ export async function getUpcomingShipments(): Promise<SerializableShipment[]> {
 
 export async function getClearedShipmentsMonthlySummary(): Promise<{
   monthlyData: { month: string; domLines: number; bulkLines: number }[];
+  weeklyData: { week: string; domLines: number; bulkLines: number }[];
+  yearlyData: { year: string; domLines: number; bulkLines: number }[];
   sourceData: { [key: string]: number };
-  monthlyBySource: { [key: string]: { month: string; domLines: number; bulkLines: number }[] };
+  bySource: {
+    monthly: { [key: string]: { month: string; domLines: number; bulkLines: number }[] };
+    weekly: { [key: string]: { week: string; domLines: number; bulkLines: number }[] };
+    yearly: { [key: string]: { year: string; domLines: number; bulkLines: number }[] };
+  };
 }> {
     try {
-        const twelveMonthsAgo = subMonths(new Date(), 12);
+        const fiveYearsAgo = subYears(new Date(), 5);
         const today = new Date();
         today.setHours(23, 59, 59, 999);
 
@@ -604,7 +610,7 @@ export async function getClearedShipmentsMonthlySummary(): Promise<{
             const adb = await getAdminDb();
             const snap = await adb
                 .collection('shipments')
-                .where('actualClearedDate', '>=', twelveMonthsAgo)
+                .where('actualClearedDate', '>=', fiveYearsAgo)
                 .where('actualClearedDate', '<=', today)
                 .get();
             docs = snap.docs;
@@ -612,85 +618,115 @@ export async function getClearedShipmentsMonthlySummary(): Promise<{
             const shipmentsCol = collection(db, 'shipments');
             const qy = query(
                 shipmentsCol,
-                where('actualClearedDate', '>=', twelveMonthsAgo),
+                where('actualClearedDate', '>=', fiveYearsAgo),
                 where('actualClearedDate', '<=', today)
             );
             const shipmentSnapshot = await getDocs(qy);
             docs = shipmentSnapshot.docs;
         }
 
-        const monthlySummary: { [key: string]: { domLines: number; bulkLines: number } } = {};
-        const sourceSummary: { [key: string]: number } = {};
-        const monthlyBySource: { [source: string]: { [month: string]: { domLines: number; bulkLines: number } } } = {};
+        const monthlySummary: Record<string, { domLines: number; bulkLines: number }> = {};
+        const weeklySummary: Record<string, { domLines: number; bulkLines: number }> = {};
+        const yearlySummary: Record<string, { domLines: number; bulkLines: number }> = {};
+        const sourceSummary: Record<string, number> = {};
+        const bySourceMonthly: Record<string, Record<string, { domLines: number; bulkLines: number }>> = {};
+        const bySourceWeekly: Record<string, Record<string, { domLines: number; bulkLines: number }>> = {};
+        const bySourceYearly: Record<string, Record<string, { domLines: number; bulkLines: number }>> = {};
 
         docs.forEach((doc: any) => {
             const data = typeof doc.data === 'function' ? doc.data() : doc;
             const clearedDate = data.actualClearedDate?.toDate();
 
             if (clearedDate) {
-                const monthYear = format(clearedDate, "MMM yy");
+                const monthKey = format(clearedDate, "MMM yy");
+                const weekKey = format(clearedDate, "w yyyy");
+                const yearKey = format(clearedDate, "yyyy");
 
-                if (!monthlySummary[monthYear]) {
-                    monthlySummary[monthYear] = { domLines: 0, bulkLines: 0 };
-                }
                 const dom = Number(data.domLines || 0);
                 const bulk = Number(data.bulkLines || 0);
-                monthlySummary[monthYear].domLines += dom;
-                monthlySummary[monthYear].bulkLines += bulk;
-
+                const total = dom + bulk;
                 const source = data.source || 'Unknown';
-                sourceSummary[source] = (sourceSummary[source] ?? 0) + dom + bulk;
 
-                if (!monthlyBySource[source]) {
-                    monthlyBySource[source] = {};
-                }
-                if (!monthlyBySource[source][monthYear]) {
-                    monthlyBySource[source][monthYear] = { domLines: 0, bulkLines: 0 };
-                }
-                monthlyBySource[source][monthYear].domLines += dom;
-                monthlyBySource[source][monthYear].bulkLines += bulk;
+                if (!monthlySummary[monthKey]) monthlySummary[monthKey] = { domLines: 0, bulkLines: 0 };
+                monthlySummary[monthKey].domLines += dom;
+                monthlySummary[monthKey].bulkLines += bulk;
+
+                if (!weeklySummary[weekKey]) weeklySummary[weekKey] = { domLines: 0, bulkLines: 0 };
+                weeklySummary[weekKey].domLines += dom;
+                weeklySummary[weekKey].bulkLines += bulk;
+
+                if (!yearlySummary[yearKey]) yearlySummary[yearKey] = { domLines: 0, bulkLines: 0 };
+                yearlySummary[yearKey].domLines += dom;
+                yearlySummary[yearKey].bulkLines += bulk;
+
+                sourceSummary[source] = (sourceSummary[source] ?? 0) + total;
+
+                if (!bySourceMonthly[source]) bySourceMonthly[source] = {};
+                if (!bySourceMonthly[source][monthKey]) bySourceMonthly[source][monthKey] = { domLines: 0, bulkLines: 0 };
+                bySourceMonthly[source][monthKey].domLines += dom;
+                bySourceMonthly[source][monthKey].bulkLines += bulk;
+
+                if (!bySourceWeekly[source]) bySourceWeekly[source] = {};
+                if (!bySourceWeekly[source][weekKey]) bySourceWeekly[source][weekKey] = { domLines: 0, bulkLines: 0 };
+                bySourceWeekly[source][weekKey].domLines += dom;
+                bySourceWeekly[source][weekKey].bulkLines += bulk;
+
+                if (!bySourceYearly[source]) bySourceYearly[source] = {};
+                if (!bySourceYearly[source][yearKey]) bySourceYearly[source][yearKey] = { domLines: 0, bulkLines: 0 };
+                bySourceYearly[source][yearKey].domLines += dom;
+                bySourceYearly[source][yearKey].bulkLines += bulk;
             }
         });
 
-        const sortedMonths = Object.keys(monthlySummary).sort((a, b) => {
-            const dateA = parse(a, 'MMM yy', new Date());
-            const dateB = parse(b, 'MMM yy', new Date());
-            return compareAsc(dateA, dateB);
+        const sortMonths = (keys: string[]) => keys.sort((a, b) => compareAsc(parse(a, 'MMM yy', new Date()), parse(b, 'MMM yy', new Date())));
+        const sortWeeks = (keys: string[]) => keys.sort((a, b) => {
+             const [wa, ya] = a.split(' ').map(Number);
+             const [wb, yb] = b.split(' ').map(Number);
+             if (ya !== yb) return ya - yb;
+             return wa - wb;
         });
+        const sortYears = (keys: string[]) => keys.sort();
 
-        const monthlyData = sortedMonths.map(month => ({
-            month,
-            domLines: monthlySummary[month].domLines,
-            bulkLines: monthlySummary[month].bulkLines,
-        }));
+        const toArray = (summary: any, keyName: string, sortFn: (k: string[]) => string[]) => {
+            return sortFn(Object.keys(summary)).map(k => ({ [keyName]: k, ...summary[k] }));
+        };
 
-        const monthlyBySourceArr: { [key: string]: { month: string; domLines: number; bulkLines: number }[] } = {};
-        Object.entries(monthlyBySource).forEach(([source, map]) => {
-            const months = Object.keys(map).sort((a, b) => {
-                const dateA = parse(a, 'MMM yy', new Date());
-                const dateB = parse(b, 'MMM yy', new Date());
-                return compareAsc(dateA, dateB);
-            });
-            monthlyBySourceArr[source] = months.map(m => ({
-                month: m,
-                domLines: map[m].domLines,
-                bulkLines: map[m].bulkLines,
-            }));
-        });
+        const bySource = {
+            monthly: {} as any,
+            weekly: {} as any,
+            yearly: {} as any
+        };
+
+        Object.keys(bySourceMonthly).forEach(src => bySource.monthly[src] = toArray(bySourceMonthly[src], 'month', sortMonths));
+        Object.keys(bySourceWeekly).forEach(src => bySource.weekly[src] = toArray(bySourceWeekly[src], 'week', sortWeeks));
+        Object.keys(bySourceYearly).forEach(src => bySource.yearly[src] = toArray(bySourceYearly[src], 'year', sortYears));
 
         return {
-            monthlyData,
+            monthlyData: toArray(monthlySummary, 'month', sortMonths),
+            weeklyData: toArray(weeklySummary, 'week', sortWeeks),
+            yearlyData: toArray(yearlySummary, 'year', sortYears),
             sourceData: sourceSummary,
-            monthlyBySource: monthlyBySourceArr,
+            bySource,
         };
     } catch (e) {
-        return { monthlyData: [], sourceData: {}, monthlyBySource: {} };
+        return { monthlyData: [], weeklyData: [], yearlyData: [], sourceData: {}, bySource: { monthly: {}, weekly: {}, yearly: {} } };
     }
 }
 
-export async function getClearedContainerSummary(): Promise<ClearedContainerSummary> {
+export async function getClearedContainerSummary(): Promise<{
+    totalContainers: number;
+    monthlyData: { month: string; containers: number }[];
+    weeklyData: { week: string; containers: number }[];
+    yearlyData: { year: string; containers: number }[];
+    sourceData: { [key: string]: number };
+    bySource: {
+        monthly: { [key: string]: { month: string; containers: number }[] };
+        weekly: { [key: string]: { week: string; containers: number }[] };
+        yearly: { [key: string]: { year: string; containers: number }[] };
+    };
+}> {
     try {
-        const twelveMonthsAgo = subMonths(new Date(), 12);
+        const fiveYearsAgo = subYears(new Date(), 5);
         const today = new Date();
         today.setHours(23, 59, 59, 999);
 
@@ -700,7 +736,7 @@ export async function getClearedContainerSummary(): Promise<ClearedContainerSumm
             const adb = await getAdminDb();
             const snap = await adb
                 .collection('shipments')
-                .where('actualClearedDate', '>=', twelveMonthsAgo)
+                .where('actualClearedDate', '>=', fiveYearsAgo)
                 .where('actualClearedDate', '<=', today)
                 .get();
             docs = snap.docs;
@@ -708,16 +744,20 @@ export async function getClearedContainerSummary(): Promise<ClearedContainerSumm
             const shipmentsCol = collection(db, 'shipments');
             const qy = query(
                 shipmentsCol,
-                where('actualClearedDate', '>=', twelveMonthsAgo),
+                where('actualClearedDate', '>=', fiveYearsAgo),
                 where('actualClearedDate', '<=', today)
             );
             const shipmentSnapshot = await getDocs(qy);
             docs = shipmentSnapshot.docs;
         }
 
-        const monthlySummary: { [key: string]: number } = {};
-        const sourceSummary: { [key: string]: number } = {};
-        const monthlyBySource: { [source: string]: { [month: string]: number } } = {};
+        const monthlySummary: Record<string, number> = {};
+        const weeklySummary: Record<string, number> = {};
+        const yearlySummary: Record<string, number> = {};
+        const sourceSummary: Record<string, number> = {};
+        const bySourceMonthly: Record<string, Record<string, number>> = {};
+        const bySourceWeekly: Record<string, Record<string, number>> = {};
+        const bySourceYearly: Record<string, Record<string, number>> = {};
         let totalContainers = 0;
 
         docs.forEach((doc: any) => {
@@ -725,61 +765,64 @@ export async function getClearedContainerSummary(): Promise<ClearedContainerSumm
             const clearedDate = data.actualClearedDate?.toDate();
 
             if (clearedDate && data.bookings && data.bookings.length > 0) {
-                const monthYear = format(clearedDate, "MMM yy");
+                const monthKey = format(clearedDate, "MMM yy");
+                const weekKey = format(clearedDate, "w yyyy");
+                const yearKey = format(clearedDate, "yyyy");
                 const numContainersInShipment = data.bookings.length;
-
-                if (!monthlySummary[monthYear]) {
-                    monthlySummary[monthYear] = 0;
-                }
-                monthlySummary[monthYear] += numContainersInShipment;
-
                 const source = data.source || 'Unknown';
-                if (!sourceSummary[source]) {
-                    sourceSummary[source] = 0;
-                }
-                sourceSummary[source] += numContainersInShipment;
 
-                if (!monthlyBySource[source]) {
-                    monthlyBySource[source] = {};
-                }
-                if (!monthlyBySource[source][monthYear]) {
-                    monthlyBySource[source][monthYear] = 0;
-                }
-                monthlyBySource[source][monthYear] += numContainersInShipment;
+                monthlySummary[monthKey] = (monthlySummary[monthKey] || 0) + numContainersInShipment;
+                weeklySummary[weekKey] = (weeklySummary[weekKey] || 0) + numContainersInShipment;
+                yearlySummary[yearKey] = (yearlySummary[yearKey] || 0) + numContainersInShipment;
+                
+                sourceSummary[source] = (sourceSummary[source] || 0) + numContainersInShipment;
+
+                if (!bySourceMonthly[source]) bySourceMonthly[source] = {};
+                bySourceMonthly[source][monthKey] = (bySourceMonthly[source][monthKey] || 0) + numContainersInShipment;
+
+                if (!bySourceWeekly[source]) bySourceWeekly[source] = {};
+                bySourceWeekly[source][weekKey] = (bySourceWeekly[source][weekKey] || 0) + numContainersInShipment;
+
+                if (!bySourceYearly[source]) bySourceYearly[source] = {};
+                bySourceYearly[source][yearKey] = (bySourceYearly[source][yearKey] || 0) + numContainersInShipment;
 
                 totalContainers += numContainersInShipment;
             }
         });
 
-        const sortedMonths = Object.keys(monthlySummary).sort((a, b) => {
-            const dateA = parse(a, 'MMM yy', new Date());
-            const dateB = parse(b, 'MMM yy', new Date());
-            return compareAsc(dateA, dateB);
+        const sortMonths = (keys: string[]) => keys.sort((a, b) => compareAsc(parse(a, 'MMM yy', new Date()), parse(b, 'MMM yy', new Date())));
+        const sortWeeks = (keys: string[]) => keys.sort((a, b) => {
+             const [wa, ya] = a.split(' ').map(Number);
+             const [wb, yb] = b.split(' ').map(Number);
+             if (ya !== yb) return ya - yb;
+             return wa - wb;
         });
+        const sortYears = (keys: string[]) => keys.sort();
 
-        const monthlyData = sortedMonths.map(month => ({
-            month,
-            containers: monthlySummary[month],
-        }));
+        const toArray = (summary: any, keyName: string, sortFn: (k: string[]) => string[]) => {
+            return sortFn(Object.keys(summary)).map(k => ({ [keyName]: k, containers: summary[k] }));
+        };
 
-        const monthlyBySourceArr: { [key: string]: { month: string; containers: number }[] } = {};
-        Object.entries(monthlyBySource).forEach(([source, map]) => {
-            const months = Object.keys(map).sort((a, b) => {
-                const dateA = parse(a, 'MMM yy', new Date());
-                const dateB = parse(b, 'MMM yy', new Date());
-                return compareAsc(dateA, dateB);
-            });
-            monthlyBySourceArr[source] = months.map(m => ({ month: m, containers: map[m] }));
-        });
+        const bySource = {
+            monthly: {} as any,
+            weekly: {} as any,
+            yearly: {} as any
+        };
+
+        Object.keys(bySourceMonthly).forEach(src => bySource.monthly[src] = toArray(bySourceMonthly[src], 'month', sortMonths));
+        Object.keys(bySourceWeekly).forEach(src => bySource.weekly[src] = toArray(bySourceWeekly[src], 'week', sortWeeks));
+        Object.keys(bySourceYearly).forEach(src => bySource.yearly[src] = toArray(bySourceYearly[src], 'year', sortYears));
 
         return {
             totalContainers,
-            monthlyData,
+            monthlyData: toArray(monthlySummary, 'month', sortMonths),
+            weeklyData: toArray(weeklySummary, 'week', sortWeeks),
+            yearlyData: toArray(yearlySummary, 'year', sortYears),
             sourceData: sourceSummary,
-            monthlyBySource: monthlyBySourceArr
+            bySource
         };
     } catch (e) {
-        return { totalContainers: 0, monthlyData: [], sourceData: {}, monthlyBySource: {} };
+        return { totalContainers: 0, monthlyData: [], weeklyData: [], yearlyData: [], sourceData: {}, bySource: { monthly: {}, weekly: {}, yearly: {} } };
     }
 }
 

@@ -79,6 +79,19 @@ The application will be available at [http://localhost:3000](http://localhost:30
 
 ## 📣 Recent Changes
 
+### Dashboard Chart Enhancements
+- **Multi-Period Analysis**: Added "Week", "Months", and "Years" period selectors to both Container Overview and Shipment Overview charts.
+  - Weekly view: Aggregates data by week number (W1-W52) for detailed short-term analysis.
+  - Monthly view: Aggregates data by month (MMM yy) for standard trend analysis.
+  - Yearly view: Aggregates data by year (yyyy) for long-term trend analysis.
+- **Advanced Source Filtering**:
+  - Added multi-select dropdown for filtering data by specific sources (e.g., "China", "Europe").
+  - Supports dynamic aggregation of selected sources.
+  - Includes "All Sources" quick reset.
+- **Data Granularity**:
+  - Enhanced backend aggregation logic to support 5-year historical data.
+  - Optimized data fetching to return pre-aggregated weekly, monthly, and yearly datasets in a single request.
+
 ### Windows Environment & Vercel Deployment Fixes (Dec 2025)
 - **Windows Environment Fix**: Migrated development environment to `C:\wareopes_fix` (NTFS volume) to resolve persistent EPERM/file locking issues on exFAT/network drives.
 - **Vercel Compatibility**:
