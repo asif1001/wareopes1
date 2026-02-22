@@ -246,27 +246,29 @@ async function ensureAdmin(): Promise<{ id: string } | null> {
   return me;
 }
 
-export async function addRoleAction(prevState: any, formData: FormData): Promise<{ message: string }>{
+export async function addRoleAction(prevState: any, formData: FormData): Promise<{ message: string; nonce: number }>{
   try {
+    const currentNonce = typeof prevState?.nonce === "number" ? prevState.nonce : 0;
     const admin = await ensureAdmin();
-    if (!admin) return { message: 'Forbidden: Admin only' };
+    if (!admin) return { message: 'Forbidden: Admin only', nonce: currentNonce };
 
     const name = String(formData.get('name') || '').trim();
     const permissions = formData.getAll('permissions').map(String).filter(Boolean);
-    if (!name) return { message: 'Role name is required' };
+    if (!name) return { message: 'Role name is required', nonce: currentNonce };
 
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
 
     // Unique check on name
     const existing = await adb.collection('Roles').where('name', '==', name).limit(1).get();
-    if (!existing.empty) return { message: 'Role name already exists' };
+    if (!existing.empty) return { message: 'Role name already exists', nonce: currentNonce };
 
     await adb.collection('Roles').add({ name, permissions });
     try { revalidatePath('/dashboard/settings'); } catch {}
-    return { message: 'Role added successfully.' };
+    return { message: 'Role added successfully.', nonce: currentNonce + 1 };
   } catch (e: any) {
-    return { message: e?.message || 'Failed to add role.' };
+    const currentNonce = typeof prevState?.nonce === "number" ? prevState.nonce : 0;
+    return { message: e?.message || 'Failed to add role.', nonce: currentNonce };
   }
 }
 

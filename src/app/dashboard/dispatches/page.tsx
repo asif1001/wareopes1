@@ -1,34 +1,45 @@
-
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
 
-import { getShipments, getSources, getContainerSizes, getBranches } from "@/lib/firebase/firestore";
-import { ShipmentsClientPage } from "@/components/shipments-client-page";
+import { DispatchesClientPage } from "@/components/dispatches-client-page";
 import { Suspense } from "react";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getDispatches, getUsers, getContainerSizes } from "@/lib/firebase/firestore";
+import type { SerializableDispatch, User, ContainerSize } from "@/lib/types";
 
-async function Shipments() {
-  const shipments = await getShipments();
-  const sources = await getSources();
-  const containerSizes = await getContainerSizes();
-  const branches = await getBranches();
-  
+async function Dispatches() {
+  let dispatches: SerializableDispatch[] = [];
+  let users: User[] = [];
+  let containerSizes: ContainerSize[] = [];
+  try {
+    const results = await Promise.all([
+      getDispatches(),
+      getUsers(),
+      getContainerSizes(),
+    ]);
+    dispatches = results[0];
+    users = results[1];
+    containerSizes = results[2];
+  } catch {
+    dispatches = [];
+    users = [];
+    containerSizes = [];
+  }
   return (
-    <ShipmentsClientPage
-        shipments={shipments}
-        sources={sources}
-        containerSizes={containerSizes}
-        branches={branches}
+    <DispatchesClientPage
+      dispatches={dispatches}
+      users={users}
+      containerSizes={containerSizes}
     />
   );
 }
 
-function ShipmentsSkeleton() {
+function DispatchesSkeleton() {
   return (
     <div className="flex flex-col h-full">
-      <DashboardHeader title="Shipments" />
+      <DashboardHeader title="Dispatches" />
       <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
         <div className="flex items-center">
           <div className="flex gap-1">
@@ -38,7 +49,6 @@ function ShipmentsSkeleton() {
           </div>
           <div className="ml-auto flex items-center gap-2">
             <Skeleton className="h-10 w-[300px]" />
-            <Skeleton className="h-10 w-24" />
             <Skeleton className="h-10 w-24" />
             <Skeleton className="h-10 w-32" />
           </div>
@@ -50,10 +60,10 @@ function ShipmentsSkeleton() {
 }
 
 
-export default function ShipmentsPage() {
+export default function DispatchesPage() {
   return (
-    <Suspense fallback={<ShipmentsSkeleton />}>
-      <Shipments />
+    <Suspense fallback={<DispatchesSkeleton />}>
+      <Dispatches />
     </Suspense>
   )
 }

@@ -1,26 +1,10 @@
-
 import { Suspense } from "react";
 export const dynamic = 'force-dynamic';
-import { statCards } from "@/lib/data";
-import { StatCard } from "@/components/stat-card";
 import { DashboardHeader } from "@/components/dashboard-header";
-import { getUpcomingShipments, getClearedShipmentsMonthlySummary, getClearedContainerSummary, getPendingArrivedTotalLines } from "@/lib/firebase/firestore";
+import { getUpcomingShipments, getClearedShipmentsMonthlySummary, getClearedContainerSummary } from "@/lib/firebase/firestore";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardClient } from "@/components/dashboard-client";
-
-async function StatCards() {
-  const pendingArrivedTotalLines = await getPendingArrivedTotalLines();
-  const cards = statCards.map((c) => (
-    c.title === 'Pending Total Lines' ? { ...c, value: String(pendingArrivedTotalLines) } : c
-  ));
-  return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      {cards.map((card) => (
-        <StatCard key={card.title} card={card} />
-      ))}
-    </div>
-  )
-}
+import type { ClearedShipmentSummary } from "@/lib/types";
 
 async function AsyncDashboard() {
   const results = await Promise.allSettled([
@@ -30,7 +14,7 @@ async function AsyncDashboard() {
   ]);
   const upcomingShipments = results[0].status === 'fulfilled' ? results[0].value : [];
   
-  const shipmentLinesData = results[1].status === 'fulfilled' ? results[1].value : { 
+  const shipmentLinesData: ClearedShipmentSummary = results[1].status === 'fulfilled' ? results[1].value : { 
       monthlyData: [], 
       weeklyData: [],
       yearlyData: [],
@@ -49,7 +33,6 @@ async function AsyncDashboard() {
 
   return (
     <>
-      <StatCards />
       <DashboardClient
         shipmentLinesData={shipmentLinesData}
         containerData={containerData}

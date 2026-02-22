@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, useActionState } from "react";
+import { useMemo, useState, useActionState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -177,17 +177,7 @@ export function RoleFormsSettings({ initialTemplates, roles }: { initialTemplate
     const res = await createFormTemplateFromFormAction({}, fd);
     if (res.message.includes("created")) {
       toast({ title: "Form template created", description: `${displayName} (${finalSlug})`, variant: "default" });
-    } else {
-      toast({ title: "Failed", description: res.message, variant: "destructive" });
-    }
-    return res.message;
-  }, null);
-
-  useEffect(() => {
-    if (message) {
-      // Optionally refresh list from server via API; here we optimistically append
       setTemplates(prev => {
-        const finalSlug = slug || sanitizeSlug(displayName);
         const newTpl: FormTemplate = {
           id: `${finalSlug}-${Date.now()}`,
           slug: finalSlug,
@@ -200,9 +190,16 @@ export function RoleFormsSettings({ initialTemplates, roles }: { initialTemplate
         };
         return [newTpl, ...prev];
       });
-      setSlug(""); setDisplayName(""); setAllowedRoles([]); setAutoRedirectForRoles([]); setFields([]);
+      setSlug("");
+      setDisplayName("");
+      setAllowedRoles([]);
+      setAutoRedirectForRoles([]);
+      setFields([]);
+    } else {
+      toast({ title: "Failed", description: res.message, variant: "destructive" });
     }
-  }, [message]);
+    return res.message;
+  }, null);
 
   return (
     <div className="grid lg:grid-cols-2 gap-6">

@@ -23,10 +23,7 @@ import { ExistingUsersCard } from "@/components/settings-users-table";
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-async function UsersTable() {
-  const users = await getUsers();
-  const departments = await getDepartments();
-  const roles = await getRoles();
+function UsersTable({ users, departments, roles }: { users: User[], departments: Department[], roles: Role[] }) {
   const serializableUsers = JSON.parse(JSON.stringify(users));
   const serializableDepartments = JSON.parse(JSON.stringify(departments));
   const serializableRoles = JSON.parse(JSON.stringify(roles));
@@ -40,8 +37,7 @@ async function UsersTable() {
   );
 }
 
-async function SourcesTable() {
-    const sources = await getSources();
+function SourcesTable({ sources }: { sources: Source[] }) {
     const serializableSources = sources.map(makeSerializable);
     return (
         <Card>
@@ -80,8 +76,7 @@ async function SourcesTable() {
     );
 }
 
-async function ContainerSizesTable() {
-    const containerSizes = await getContainerSizes();
+function ContainerSizesTable({ containerSizes }: { containerSizes: ContainerSize[] }) {
     const serializableSizes = containerSizes.map(makeSerializable);
     return (
         <Card>
@@ -120,9 +115,7 @@ async function ContainerSizesTable() {
     );
 }
 
-async function DepartmentsTable() {
-    const departments = await getDepartments();
-    const branches = await getBranches();
+function DepartmentsTable({ departments, branches }: { departments: Department[], branches: Branch[] }) {
     const serializableDepartments = departments.map(makeSerializable);
     const serializableBranches = branches.map(makeSerializable);
     return (
@@ -162,8 +155,7 @@ async function DepartmentsTable() {
     );
 }
 
-async function BranchesTable() {
-    const branches = await getBranches();
+function BranchesTable({ branches }: { branches: Branch[] }) {
     const serializableBranches = branches.map(makeSerializable);
     return (
         <Card>
@@ -202,8 +194,7 @@ async function BranchesTable() {
     );
 }
 
-async function RolesTable() {
-    const roles = await getRoles();
+function RolesTable({ roles }: { roles: Role[] }) {
     const serializableRoles = roles.map(makeSerializable);
     return (
         <Card>
@@ -288,13 +279,27 @@ export default async function SettingsPage() {
     redirect('/dashboard');
   }
 
-  const departments = await getDepartments();
-  const branches = await getBranches();
-  const roles = await getRoles();
+  const [
+    departments,
+    branches,
+    roles,
+    users,
+    sources,
+    containerSizes,
+    formsResult
+  ] = await Promise.all([
+    getDepartments(),
+    getBranches(),
+    getRoles(),
+    getUsers(),
+    getSources(),
+    getContainerSizes(),
+    getFormTemplatesAction()
+  ]);
+
   const serializableDepartments = departments.map(makeSerializable);
   const serializableBranches = branches.map(makeSerializable);
   const serializableRoles = roles.map(makeSerializable);
-  const formsResult = await getFormTemplatesAction();
   const initialTemplates = formsResult.success && formsResult.data ? formsResult.data.map(makeSerializable) : [];
 
   return (
@@ -317,31 +322,31 @@ export default async function SettingsPage() {
                 <div className="flex items-center justify-end">
                   <AddUserDialog departments={serializableDepartments} roles={serializableRoles} />
                 </div>
-                <UsersTable />
+                <UsersTable users={users} departments={departments} roles={roles} />
               </div>
             </TabsContent>
             <TabsContent value="sources">
               <div className="grid lg:grid-cols-2 gap-6">
                   <SourceForm />
-                  <SourcesTable />
+                  <SourcesTable sources={sources} />
               </div>
             </TabsContent>
             <TabsContent value="containers">
               <div className="grid lg:grid-cols-2 gap-6">
                   <ContainerSizeForm />
-                  <ContainerSizesTable />
+                  <ContainerSizesTable containerSizes={containerSizes} />
               </div>
             </TabsContent>
             <TabsContent value="departments">
               <div className="grid lg:grid-cols-2 gap-6">
                   <DepartmentForm branches={serializableBranches} />
-                  <DepartmentsTable />
+                  <DepartmentsTable departments={departments} branches={branches} />
               </div>
             </TabsContent>
             <TabsContent value="branches">
               <div className="grid lg:grid-cols-2 gap-6">
                   <BranchForm />
-                  <BranchesTable />
+                  <BranchesTable branches={branches} />
               </div>
             </TabsContent>
             <TabsContent value="role-forms">
@@ -350,7 +355,7 @@ export default async function SettingsPage() {
             <TabsContent value="roles">
               <div className="grid lg:grid-cols-2 gap-6">
                 <RoleForm />
-                <RolesTable />
+                <RolesTable roles={roles} />
               </div>
             </TabsContent>
           </Tabs>

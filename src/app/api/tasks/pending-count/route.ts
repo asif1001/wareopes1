@@ -17,8 +17,8 @@ export async function GET(_req: NextRequest) {
     const adb = await getAdminDb();
 
     const [reporterSnap, assigneeSnap] = await Promise.all([
-      adb.collection('tasks').where('reporterId', '==', String(userId)).get(),
-      adb.collection('tasks').where('assigneeId', '==', String(userId)).get(),
+      adb.collection('tasks').where('reporterId', '==', String(userId)).select('status').get(),
+      adb.collection('tasks').where('assigneeId', '==', String(userId)).select('status').get(),
     ]);
 
     const seen = new Set<string>();

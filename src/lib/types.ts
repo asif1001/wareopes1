@@ -74,6 +74,40 @@ export type SerializableShipment = Omit<Shipment, 'bahrainEta' | 'originalDocume
     updatedAt: string;
 };
 
+export type DispatchStatus = 'Pending' | 'Loaded' | 'Dispatched';
+
+export type Dispatch = {
+    id: string;
+    dateTime: Timestamp;
+    invoiceNo: string;
+    customerName: string;
+    customerCode: string;
+    loadingDate: Timestamp;
+    containerSize: "20ft" | "40ft" | "Misc" | "DHL";
+    noOfContainer: number;
+    noOfCases: number;
+    photos: string[]; // Array of photo URLs
+    containerInspectionRemark?: string;
+    trailerNo: string;
+    driverCprNo: string;
+    driverPhoneNo: string;
+    containerNo: string;
+    loaderName: string;
+    checkerName: string;
+    modeOfTransport: "Sea" | "Road" | "Air";
+    status: DispatchStatus;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+};
+
+export type SerializableDispatch = Omit<Dispatch, 'dateTime' | 'loadingDate' | 'createdAt' | 'updatedAt'> & {
+    dateTime: string;
+    loadingDate: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+
 
 export type TaskStatus = 'Not Started' | 'To Do' | 'In Progress' | 'Completed' | 'Done' | 'Blocked' | 'On Hold';
 export type TaskPriority = 'Critical' | 'High' | 'Medium' | 'Low';
@@ -178,7 +212,7 @@ export type Role = {
 
 // Granular permissions
 export type PermissionAction = 'view' | 'add' | 'edit' | 'delete';
-export type AppPageKey = 'shipments' | 'tasks' | 'settings' | 'production' | 'productivity' | 'maintenance' | 'licenses' | 'oil_status'; // extendable
+export type AppPageKey = 'shipments' | 'dispatches' | 'tasks' | 'settings' | 'production' | 'productivity' | 'maintenance' | 'licenses' | 'oil_status'; // extendable
 export type UserPermissions = Partial<Record<AppPageKey, PermissionAction[]>>;
 
 export type User = {
@@ -209,6 +243,8 @@ export type ContainerSize = {
     id: string;
     size: string;
     cmb: string;
+    createdAt?: string; // ISO string for serialization
+    updatedAt?: string; // ISO string for serialization
 };
 
 export type Department = {
@@ -234,9 +270,9 @@ export type ClearedContainerSummary = {
         weekly: { [source: string]: { week: string; containers: number }[] };
         yearly: { [source: string]: { year: string; containers: number }[] };
     };
-    // For backward compatibility (optional)
+    // Deprecated but kept for compatibility during migration if needed
     monthlyBySource?: { [source: string]: { month: string; containers: number }[] };
-};
+}
 
 export type ClearedShipmentSummary = {
   monthlyData: { month: string; domLines: number; bulkLines: number }[];
@@ -244,10 +280,12 @@ export type ClearedShipmentSummary = {
   yearlyData: { year: string; domLines: number; bulkLines: number }[];
   sourceData: { [key: string]: number };
   bySource: {
-    monthly: { [key: string]: { month: string; domLines: number; bulkLines: number }[] };
-    weekly: { [key: string]: { week: string; domLines: number; bulkLines: number }[] };
-    yearly: { [key: string]: { year: string; domLines: number; bulkLines: number }[] };
+      monthly: { [key: string]: { month: string; domLines: number; bulkLines: number }[] };
+      weekly: { [key: string]: { week: string; domLines: number; bulkLines: number }[] };
+      yearly: { [key: string]: { year: string; domLines: number; bulkLines: number }[] };
   };
+  // Deprecated
+  monthlyBySource?: { [key: string]: { month: string; domLines: number; bulkLines: number }[] };
 };
 
 export type FormFieldType = 'text' | 'number' | 'textarea' | 'dropdown' | 'checkbox' | 'date';

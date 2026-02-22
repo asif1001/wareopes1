@@ -23,16 +23,23 @@ export async function GET(request: Request) {
     const threshold = Math.max(1, Math.min(Number(thresholdParam || '60'), 365))
 
     const adb = await getAdminDb()
-    const snap = await adb.collection('licenses').get()
-    let count = 0
-    for (const d of snap.docs as any[]) {
-      const data = d.data() || {}
-      const expStr = String(data?.expiryDate || '')
-      if (!expStr) continue
-      const days = daysUntil(expStr)
-      if (days == null) continue
-      if (days >= 0 && days <= threshold) count++
-    }
+    
+    // Use ISO strings for date comparison
+    // We assume expiryDate is stored as ISO string or YYYY-MM-DD
+    const now = new Date();
+    const target = new Date();
+    target.setDate(now.getDate() + threshold);
+    const nowISO = now.toISOString();
+    const targetISO = target.toISOString();
+
+    const snap = await adb.collection('licenses')
+      .where('expiryDate', '>=', nowISO)
+      .where('expiryDate', '<=', targetISO)
+      .get();
+      
+    // Count is simply the number of docs returned, as we filtered in DB
+    const count = snap.size;
+
     return NextResponse.json({ success: true, count, threshold })
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e?.message || 'Server error' }, { status: 500 })

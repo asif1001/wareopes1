@@ -3,6 +3,7 @@ rules_version = '2';
 // Firebase Storage rules for custom authentication system
 // Since the app uses custom session-based auth (not Firebase Auth),
 // we need to allow access based on file validation rather than auth tokens
+// Rules updated at 2026-02-21 20:30
 service firebase.storage {
   match /b/{bucket}/o {
     // Rules for profile images - allow access with file validation
@@ -50,6 +51,11 @@ service firebase.storage {
           request.resource.contentType.matches('application/pdf') ||
           request.resource.contentType.matches('application/octet-stream')
         );
+    }
+
+    // Simplified rule for dispatch photos to fix permission issues
+    match /Cont_Dispatch_Photo/{allPaths=**} {
+      allow read, write: if true;
     }
     
     // Default rule - deny all other access

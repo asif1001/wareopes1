@@ -1,8 +1,19 @@
 import { AppPageKey, PermissionAction } from "./types";
 
 // Centralized lists of pages and actions used across forms and server actions
-export const APP_PAGES: AppPageKey[] = ["shipments", "tasks", "settings", "production", "productivity", "maintenance", "licenses", "oil_status"];
+export const APP_PAGES: AppPageKey[] = [
+  "shipments",
+  "dispatches",
+  "tasks",
+  "settings",
+  "production",
+  "productivity",
+  "maintenance",
+  "licenses",
+  "oil_status",
+];
 export const PERMISSION_ACTIONS: PermissionAction[] = ["view", "add", "edit", "delete"];
+
 
 // Existing utilities
 export function getDashboardRouteForRole(role: string, user?: { redirectPage?: string }): string {

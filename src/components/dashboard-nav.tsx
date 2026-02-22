@@ -1,7 +1,7 @@
 "use client"
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes, LayoutDashboard, Flag, FileText, GanttChartSquare, MessageSquareWarning, Settings, Package, BarChart3, Droplet } from "lucide-react";
+import { Boxes, LayoutDashboard, Flag, FileText, GanttChartSquare, MessageSquareWarning, Settings, Package, BarChart3, Droplet, Truck } from "lucide-react";
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/dashboard/shipments", label: "Shipments", icon: Flag, pageKey: "shipments" as AppPageKey },
+    { href: "/dashboard/dispatches", label: "Dispatches", icon: Truck },
     { href: "/dashboard/production", label: "Production", icon: Package, pageKey: "production" as AppPageKey },
     { href: "/dashboard/maintenance", label: "Maintenance", icon: Package, pageKey: "maintenance" as AppPageKey },
     { href: "/dashboard/oil-status", label: "Oil Status", icon: Droplet, pageKey: "oil_status" as AppPageKey },
@@ -26,7 +27,7 @@ const navItems = [
 
 export function DashboardNav() {
     const pathname = usePathname();
-    const { permissions, isLoading } = useAuth();
+    const { permissions, isLoading, isAdmin } = useAuth();
     const [pendingCount, setPendingCount] = useState<number | null>(null);
     const [animate, setAnimate] = useState(false);
     const prevCountRef = useRef<number | null>(null);
@@ -135,6 +136,7 @@ export function DashboardNav() {
 
     // Helper function to check if user has view permission for a page
     const hasViewPermission = (pageKey: AppPageKey): boolean => {
+        if (isAdmin) return true;
         if (!permissions) return false;
         const pagePermissions = permissions[pageKey];
         return Array.isArray(pagePermissions) && pagePermissions.includes('view');

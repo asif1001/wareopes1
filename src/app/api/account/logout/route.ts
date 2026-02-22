@@ -6,6 +6,9 @@ export async function POST(req: Request) {
     cookieStore.delete("session");
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } catch (e: any) {
-    return new Response(JSON.stringify({ success: false, error: e?.message || 'Logout failed' }), { status: 500 });
+    return new Response(
+      JSON.stringify({ success: false, error: e?.message || "Logout failed" }),
+      { status: 500 }
+    );
   }
 }

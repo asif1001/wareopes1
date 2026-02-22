@@ -1,5 +1,6 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore, connectFirestoreEmulator, initializeFirestore } from 'firebase/firestore';
+import { getApps, getApp, initializeApp } from 'firebase/app';
+import type { Firestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 // Validate required environment variables
@@ -30,16 +31,19 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || '',
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Firestore with connection settings for better reliability
-const db = initializeFirestore(app, {
-  experimentalForceLongPolling: false, // Use WebChannel transport by default
-  // Increase cache size and ignore undefineds for stability
-  cacheSizeBytes: 40000000, // 40MB cache
-  ignoreUndefinedProperties: true,
-});
+const db: Firestore = (() => {
+  try {
+    return initializeFirestore(app, {
+      experimentalForceLongPolling: false,
+      cacheSizeBytes: 40000000,
+      ignoreUndefinedProperties: true,
+    });
+  } catch {
+    return getFirestore(app);
+  }
+})();
 
 // Initialize Storage
 const storage = getStorage(app);

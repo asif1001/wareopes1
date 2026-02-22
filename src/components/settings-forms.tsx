@@ -20,6 +20,50 @@ function SubmitButton({ text = "Save" }: { text?: string }) {
     );
 }
 
+function RolePermissions() {
+  const [permInput, setPermInput] = useState("");
+  const [permissions, setPermissions] = useState<string[]>([]);
+
+  const addPerm = () => {
+    const p = permInput.trim();
+    if (!p) return;
+    if (permissions.includes(p)) return;
+    setPermissions(prev => [...prev, p]);
+    setPermInput("");
+  };
+
+  const removePerm = (p: string) => {
+    setPermissions(prev => prev.filter(x => x !== p));
+  };
+
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor="permissionInput">Permissions</Label>
+      <div className="flex gap-2">
+        <Input
+          id="permissionInput"
+          value={permInput}
+          onChange={(e) => setPermInput(e.target.value)}
+          placeholder="e.g. manage_users"
+        />
+        <Button type="button" onClick={addPerm}>Add</Button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {permissions.map(p => (
+          <div key={p} className="flex items-center gap-2 border rounded px-2 py-1 text-sm">
+            <span>{p}</span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => removePerm(p)}>Remove</Button>
+            <input type="hidden" name="permissions" value={p} />
+          </div>
+        ))}
+        {permissions.length === 0 && (
+          <p className="text-xs text-muted-foreground">Add permissions or leave empty.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function UserForm({ departments, roles }: { departments: Department[]; roles: Role[] }) {
     const [state, formAction] = useActionState(addUserAction, { message: "" });
     const formRef = useRef<HTMLFormElement>(null);
@@ -103,6 +147,7 @@ export function UserForm({ departments, roles }: { departments: Department[]; ro
                                 <SelectItem value="/dashboard/manager">Manager Dashboard</SelectItem>
                                 <SelectItem value="/dashboard/employee">Employee Dashboard</SelectItem>
                                 <SelectItem value="/dashboard/shipments">Shipments</SelectItem>
+                                <SelectItem value="/dashboard/dispatches">Dispatches</SelectItem>
                                 <SelectItem value="/dashboard/tasks">Tasks</SelectItem>
                                 <SelectItem value="/dashboard/feedback">Feedback</SelectItem>
                                 <SelectItem value="/dashboard/reports">Reports</SelectItem>
@@ -314,30 +359,15 @@ export function BranchForm() {
 }
 
 export function RoleForm() {
-  const [state, formAction] = useActionState(addRoleAction, { message: "" });
+  const [state, formAction] = useActionState(addRoleAction, { message: "", nonce: 0 });
   const formRef = useRef<HTMLFormElement>(null);
   const { toast } = useToast();
-  const [permInput, setPermInput] = useState("");
-  const [permissions, setPermissions] = useState<string[]>([]);
-
-  const addPerm = () => {
-    const p = permInput.trim();
-    if (!p) return;
-    if (permissions.includes(p)) return;
-    setPermissions(prev => [...prev, p]);
-    setPermInput("");
-  };
-  const removePerm = (p: string) => {
-    setPermissions(prev => prev.filter(x => x !== p));
-  };
 
   useEffect(() => {
     if (state?.message) {
       if (state.message.includes("success")) {
         toast({ title: "Success", description: state.message });
         formRef.current?.reset();
-        setPermissions([]);
-        setPermInput("");
       } else {
         toast({ title: "Error", description: state.message, variant: "destructive" });
       }
@@ -357,30 +387,7 @@ export function RoleForm() {
             <Input id="name" name="name" required />
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="permissionInput">Permissions</Label>
-            <div className="flex gap-2">
-              <Input
-                id="permissionInput"
-                value={permInput}
-                onChange={(e) => setPermInput(e.target.value)}
-                placeholder="e.g. manage_users"
-              />
-              <Button type="button" onClick={addPerm}>Add</Button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {permissions.map(p => (
-                <div key={p} className="flex items-center gap-2 border rounded px-2 py-1 text-sm">
-                  <span>{p}</span>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => removePerm(p)}>Remove</Button>
-                  <input type="hidden" name="permissions" value={p} />
-                </div>
-              ))}
-              {permissions.length === 0 && (
-                <p className="text-xs text-muted-foreground">Add permissions or leave empty.</p>
-              )}
-            </div>
-          </div>
+          <RolePermissions key={state.nonce} />
         </CardContent>
         <CardFooter>
           <SubmitButton />

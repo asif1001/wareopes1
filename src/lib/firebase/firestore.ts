@@ -1,22 +1,46 @@
-import { db } from './firebase';
-import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc, query, where, serverTimestamp, orderBy, limit, writeBatch } from 'firebase/firestore';
-import type { Shipment, User, Source, ContainerSize, Department, Branch, ContainerBooking, Container, ClearedContainerSummary, Role } from '@/lib/types';
-import { Timestamp } from 'firebase/firestore';
-import type { SerializableShipment } from '@/lib/types';
-import { format, subMonths, startOfMonth, parse, compareAsc, subDays, subYears } from 'date-fns';
+import { app, db } from './firebase';
+import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc, query, where, serverTimestamp, orderBy, limit, writeBatch, getDoc } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import type { Shipment, User, Source, ContainerSize, Department, Branch, ContainerBooking, ClearedContainerSummary, ClearedShipmentSummary, Role, SerializableShipment, SerializableDispatch } from '@/lib/types';
+import { format, parse, compareAsc, subDays, subYears, getWeek, getYear } from 'date-fns';
+
+// Helper to convert Firestore/Admin Timestamps to ISO strings for serialization
+const toISOString = (timestamp: any): string | undefined => {
+    if (timestamp && typeof timestamp.toDate === 'function') {
+        try { return timestamp.toDate().toISOString(); } catch { return undefined; }
+    }
+    if (timestamp instanceof Date) {
+        return timestamp.toISOString();
+    }
+    if (typeof timestamp === 'string') {
+        return timestamp;
+    }
+    return undefined;
+};
+
+async function ensureClientAuth() {
+    if (typeof window === 'undefined') return;
+    const auth = getAuth(app);
+    if (!auth.currentUser) {
+        try {
+            await signInAnonymously(auth);
+        } catch {}
+    }
+    const authStateReady = (auth as any).authStateReady;
+    if (typeof authStateReady === 'function') {
+        await authStateReady.call(auth);
+        return;
+    }
+    await new Promise<void>((resolve) => {
+        const unsub = onAuthStateChanged(auth, () => {
+            unsub();
+            resolve();
+        });
+    });
+}
 
 function docToShipment(doc: any): SerializableShipment {
         const data = typeof doc.data === 'function' ? doc.data() : doc; // support admin and client snapshots
-        // Function to convert Firestore/Admin Timestamps to ISO strings for serialization
-        const toISOString = (timestamp: any): string | undefined => {
-            if (timestamp && typeof timestamp.toDate === 'function') {
-                try { return timestamp.toDate().toISOString(); } catch { return undefined; }
-            }
-            if (timestamp instanceof Date) {
-                return timestamp.toISOString();
-            }
-            return undefined;
-        };
   
     const bookings = data.bookings?.map((b: any) => ({
         ...b,
@@ -276,9 +300,16 @@ export async function getUsers(): Promise<User[]> {
             }
             permissions = Object.keys(normalized).length ? normalized : undefined;
           }
-          return { id: d.id, ...raw, ...(permissions ? { permissions } : {}) } as User;
+          return { 
+              id: d.id, 
+              ...raw, 
+              createdAt: toISOString(raw.createdAt), 
+              updatedAt: toISOString(raw.updatedAt), 
+              ...(permissions ? { permissions } : {}) 
+          } as User;
         });
     }
+    await ensureClientAuth();
     const [usersSnap, rolesSnap] = await Promise.all([
       getDocs(collection(db, 'Users')),
       getDocs(collection(db, 'Roles'))
@@ -303,7 +334,13 @@ export async function getUsers(): Promise<User[]> {
         }
         permissions = Object.keys(normalized).length ? normalized : undefined;
       }
-      return { id: doc.id, ...raw, ...(permissions ? { permissions } : {}) } as User;
+      return { 
+          id: doc.id, 
+          ...raw, 
+          createdAt: toISOString(raw.createdAt), 
+          updatedAt: toISOString(raw.updatedAt), 
+          ...(permissions ? { permissions } : {}) 
+      } as User;
     });
 }
 
@@ -376,6 +413,7 @@ export async function getSources(): Promise<Source[]> {
         const snap = await adb.collection('Sources').get();
         return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Source));
     }
+    await ensureClientAuth();
     const sourcesCol = collection(db, 'Sources');
     const sourceSnapshot = await getDocs(sourcesCol);
     return sourceSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Source));
@@ -399,11 +437,28 @@ export async function getContainerSizes(): Promise<ContainerSize[]> {
         const { getAdminDb } = await import('./admin');
         const adb = await getAdminDb();
         const snap = await adb.collection('ContainerSizes').get();
-        return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as ContainerSize));
+        return snap.docs.map((d: any) => {
+            const data = d.data ? d.data() : d;
+            return { 
+                id: d.id, 
+                ...data, 
+                createdAt: toISOString(data.createdAt), 
+                updatedAt: toISOString(data.updatedAt) 
+            } as ContainerSize;
+        });
     }
+    await ensureClientAuth();
     const sizesCol = collection(db, 'ContainerSizes');
     const sizeSnapshot = await getDocs(sizesCol);
-    return sizeSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ContainerSize));
+    return sizeSnapshot.docs.map(doc => {
+        const data = doc.data() as Omit<ContainerSize, 'id'>;
+        return { 
+            id: doc.id, 
+            ...data, 
+            createdAt: toISOString(data.createdAt), 
+            updatedAt: toISOString(data.updatedAt) 
+        };
+    });
 }
 
 export async function addContainerSize(containerSize: Omit<ContainerSize, 'id'>) {
@@ -427,6 +482,7 @@ export async function getDepartments(): Promise<Department[]> {
         const snap = await adb.collection('Departments').get();
         return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Department));
     }
+    await ensureClientAuth();
     const departmentsCol = collection(db, 'Departments');
     const departmentSnapshot = await getDocs(departmentsCol);
     return departmentSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
@@ -456,6 +512,7 @@ export async function getBranches(): Promise<Branch[]> {
         const snap2 = await adb.collection('Branches').get();
         return snap2.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Branch));
     }
+    await ensureClientAuth();
     try {
         const branchesCol = collection(db, 'branches');
         const branchSnapshot = await getDocs(branchesCol);
@@ -486,6 +543,7 @@ export async function getRoles(): Promise<Role[]> {
         const snap = await adb.collection('Roles').get();
         return snap.docs.map((d: any) => ({ id: d.id, ...(d.data ? d.data() : d) } as Role));
     }
+    await ensureClientAuth();
     const rolesCol = collection(db, 'Roles');
     const rolesSnapshot = await getDocs(rolesCol);
     return rolesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Role));
@@ -503,6 +561,119 @@ export async function deleteRole(id: string) {
 // Vehicle Functions
 // These helpers persist vehicles to Firestore in a "vehicles" collection.
 // Shape aligns with the Maintenance page's Vehicle type.
+
+function docToDispatch(doc: any): SerializableDispatch {
+    const data = typeof doc.data === 'function' ? doc.data() : doc;
+
+    return {
+        id: doc.id || data.id,
+        dateTime: toISOString(data.dateTime)!,
+        invoiceNo: data.invoiceNo,
+        customerName: data.customerName,
+        customerCode: data.customerCode,
+        loadingDate: toISOString(data.loadingDate)!,
+        containerSize: data.containerSize,
+        noOfContainer: data.noOfContainer,
+        noOfCases: data.noOfCases,
+        photos: data.photos || [],
+        containerInspectionRemark: data.containerInspectionRemark,
+        trailerNo: data.trailerNo,
+        driverCprNo: data.driverCprNo,
+        driverPhoneNo: data.driverPhoneNo,
+        containerNo: data.containerNo,
+        loaderName: data.loaderName,
+        checkerName: data.checkerName,
+        modeOfTransport: data.modeOfTransport,
+        status: data.status || 'Pending',
+        createdAt: toISOString(data.createdAt)!,
+        updatedAt: toISOString(data.updatedAt)!,
+    };
+}
+
+function normalizeDispatchDates(input: Partial<SerializableDispatch>) {
+    const dateTime = input.dateTime ? new Date(input.dateTime) : undefined;
+    const loadingDate = input.loadingDate ? new Date(input.loadingDate) : undefined;
+    return { ...input, ...(dateTime ? { dateTime } : {}), ...(loadingDate ? { loadingDate } : {}) };
+}
+
+export async function getDispatches(): Promise<SerializableDispatch[]> {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const dispatchesRef: any = adb.collection('dispatches');
+        const snap = await dispatchesRef.orderBy('dateTime', 'desc').get();
+        return snap.docs.map((d: any) => docToDispatch(d));
+    }
+
+    await ensureClientAuth();
+    const dispatchesCol = collection(db, 'dispatches');
+    const q = query(dispatchesCol, orderBy("dateTime", "desc"));
+    const dispatchSnapshot = await getDocs(q);
+    return dispatchSnapshot.docs.map(docToDispatch);
+}
+
+export async function getDispatch(id: string): Promise<SerializableDispatch | null> {
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const snap = await adb.collection('dispatches').doc(id).get();
+        if (!snap.exists) return null;
+        return docToDispatch(snap);
+    }
+    await ensureClientAuth();
+    const snap = await getDoc(doc(db, 'dispatches', id));
+    if (!snap.exists()) return null;
+    return docToDispatch(snap);
+}
+
+export async function createDispatch(dispatch: Omit<SerializableDispatch, 'id' | 'createdAt' | 'updatedAt'>): Promise<SerializableDispatch> {
+    const normalized = normalizeDispatchDates(dispatch);
+    const payload: any = {
+        ...normalized,
+        status: normalized.status || 'Pending',
+    };
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        const ref = await adb.collection('dispatches').add({ ...payload, createdAt: new Date(), updatedAt: new Date() });
+        const snap = await adb.collection('dispatches').doc(ref.id).get();
+        return docToDispatch(snap);
+    }
+    await ensureClientAuth();
+    const ref = await addDoc(collection(db, 'dispatches'), { ...payload, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    const snap = await getDoc(doc(db, 'dispatches', ref.id));
+    return docToDispatch(snap);
+}
+
+export async function updateDispatch(id: string, dispatch: Partial<Omit<SerializableDispatch, 'id' | 'createdAt' | 'updatedAt'>>): Promise<SerializableDispatch> {
+    const normalized = normalizeDispatchDates(dispatch);
+    if (typeof window === 'undefined') {
+        const { getAdminDb } = await import('./admin');
+        const adb = await getAdminDb();
+        await adb.collection('dispatches').doc(id).update({ ...normalized, updatedAt: new Date() });
+        const snap = await adb.collection('dispatches').doc(id).get();
+        return docToDispatch(snap);
+    }
+    await ensureClientAuth();
+    await updateDoc(doc(db, 'dispatches', id), { ...normalized, updatedAt: serverTimestamp() });
+    const snap = await getDoc(doc(db, 'dispatches', id));
+    return docToDispatch(snap);
+}
+
+export async function addDispatch(dispatch: Omit<SerializableDispatch, 'id' | 'createdAt' | 'updatedAt' | 'photos' | 'status'>) {
+    return createDispatch(dispatch as Omit<SerializableDispatch, 'id' | 'createdAt' | 'updatedAt'>);
+}
+
+export const DispatchService = {
+    createDispatch,
+    updateDispatch,
+    getDispatch,
+    listDispatches: getDispatches,
+};
+
+
+
+
 export async function getVehicles(): Promise<any[]> {
     const snap = await getDocs(collection(db, 'vehicles'));
     return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
@@ -588,17 +759,14 @@ export async function getUpcomingShipments(): Promise<SerializableShipment[]> {
     }
 }
 
-export async function getClearedShipmentsMonthlySummary(): Promise<{
-  monthlyData: { month: string; domLines: number; bulkLines: number }[];
-  weeklyData: { week: string; domLines: number; bulkLines: number }[];
-  yearlyData: { year: string; domLines: number; bulkLines: number }[];
-  sourceData: { [key: string]: number };
-  bySource: {
-    monthly: { [key: string]: { month: string; domLines: number; bulkLines: number }[] };
-    weekly: { [key: string]: { week: string; domLines: number; bulkLines: number }[] };
-    yearly: { [key: string]: { year: string; domLines: number; bulkLines: number }[] };
-  };
-}> {
+// Helper to format week label (e.g. "W1 2024")
+const formatWeek = (date: Date) => {
+    const week = getWeek(date);
+    const year = getYear(date);
+    return `W${week} ${year}`;
+};
+
+export async function getClearedShipmentsMonthlySummary(): Promise<ClearedShipmentSummary> {
     try {
         const fiveYearsAgo = subYears(new Date(), 5);
         const today = new Date();
@@ -629,102 +797,105 @@ export async function getClearedShipmentsMonthlySummary(): Promise<{
         const weeklySummary: Record<string, { domLines: number; bulkLines: number }> = {};
         const yearlySummary: Record<string, { domLines: number; bulkLines: number }> = {};
         const sourceSummary: Record<string, number> = {};
-        const bySourceMonthly: Record<string, Record<string, { domLines: number; bulkLines: number }>> = {};
-        const bySourceWeekly: Record<string, Record<string, { domLines: number; bulkLines: number }>> = {};
-        const bySourceYearly: Record<string, Record<string, { domLines: number; bulkLines: number }>> = {};
+        const bySource = {
+            monthly: {} as Record<string, Record<string, { domLines: number; bulkLines: number }>>,
+            weekly: {} as Record<string, Record<string, { domLines: number; bulkLines: number }>>,
+            yearly: {} as Record<string, Record<string, { domLines: number; bulkLines: number }>>
+        };
 
         docs.forEach((doc: any) => {
             const data = typeof doc.data === 'function' ? doc.data() : doc;
             const clearedDate = data.actualClearedDate?.toDate();
 
             if (clearedDate) {
-                const monthKey = format(clearedDate, "MMM yy");
-                const weekKey = format(clearedDate, "w yyyy");
-                const yearKey = format(clearedDate, "yyyy");
-
                 const dom = Number(data.domLines || 0);
                 const bulk = Number(data.bulkLines || 0);
                 const total = dom + bulk;
                 const source = data.source || 'Unknown';
+                
+                sourceSummary[source] = (sourceSummary[source] ?? 0) + total;
 
+                // Month
+                const monthKey = format(clearedDate, "MMM yy");
                 if (!monthlySummary[monthKey]) monthlySummary[monthKey] = { domLines: 0, bulkLines: 0 };
                 monthlySummary[monthKey].domLines += dom;
                 monthlySummary[monthKey].bulkLines += bulk;
+                
+                if (!bySource.monthly[source]) bySource.monthly[source] = {};
+                if (!bySource.monthly[source][monthKey]) bySource.monthly[source][monthKey] = { domLines: 0, bulkLines: 0 };
+                bySource.monthly[source][monthKey].domLines += dom;
+                bySource.monthly[source][monthKey].bulkLines += bulk;
 
+                // Week
+                const weekKey = formatWeek(clearedDate);
                 if (!weeklySummary[weekKey]) weeklySummary[weekKey] = { domLines: 0, bulkLines: 0 };
                 weeklySummary[weekKey].domLines += dom;
                 weeklySummary[weekKey].bulkLines += bulk;
 
+                if (!bySource.weekly[source]) bySource.weekly[source] = {};
+                if (!bySource.weekly[source][weekKey]) bySource.weekly[source][weekKey] = { domLines: 0, bulkLines: 0 };
+                bySource.weekly[source][weekKey].domLines += dom;
+                bySource.weekly[source][weekKey].bulkLines += bulk;
+
+                // Year
+                const yearKey = String(getYear(clearedDate));
                 if (!yearlySummary[yearKey]) yearlySummary[yearKey] = { domLines: 0, bulkLines: 0 };
                 yearlySummary[yearKey].domLines += dom;
                 yearlySummary[yearKey].bulkLines += bulk;
 
-                sourceSummary[source] = (sourceSummary[source] ?? 0) + total;
-
-                if (!bySourceMonthly[source]) bySourceMonthly[source] = {};
-                if (!bySourceMonthly[source][monthKey]) bySourceMonthly[source][monthKey] = { domLines: 0, bulkLines: 0 };
-                bySourceMonthly[source][monthKey].domLines += dom;
-                bySourceMonthly[source][monthKey].bulkLines += bulk;
-
-                if (!bySourceWeekly[source]) bySourceWeekly[source] = {};
-                if (!bySourceWeekly[source][weekKey]) bySourceWeekly[source][weekKey] = { domLines: 0, bulkLines: 0 };
-                bySourceWeekly[source][weekKey].domLines += dom;
-                bySourceWeekly[source][weekKey].bulkLines += bulk;
-
-                if (!bySourceYearly[source]) bySourceYearly[source] = {};
-                if (!bySourceYearly[source][yearKey]) bySourceYearly[source][yearKey] = { domLines: 0, bulkLines: 0 };
-                bySourceYearly[source][yearKey].domLines += dom;
-                bySourceYearly[source][yearKey].bulkLines += bulk;
+                if (!bySource.yearly[source]) bySource.yearly[source] = {};
+                if (!bySource.yearly[source][yearKey]) bySource.yearly[source][yearKey] = { domLines: 0, bulkLines: 0 };
+                bySource.yearly[source][yearKey].domLines += dom;
+                bySource.yearly[source][yearKey].bulkLines += bulk;
             }
         });
 
         const sortMonths = (keys: string[]) => keys.sort((a, b) => compareAsc(parse(a, 'MMM yy', new Date()), parse(b, 'MMM yy', new Date())));
         const sortWeeks = (keys: string[]) => keys.sort((a, b) => {
-             const [wa, ya] = a.split(' ').map(Number);
-             const [wb, yb] = b.split(' ').map(Number);
-             if (ya !== yb) return ya - yb;
-             return wa - wb;
+             const [wa, ya] = a.replace('W', '').split(' ');
+             const [wb, yb] = b.replace('W', '').split(' ');
+             if (ya !== yb) return Number(ya) - Number(yb);
+             return Number(wa) - Number(wb);
         });
         const sortYears = (keys: string[]) => keys.sort();
 
-        const toArray = (summary: any, keyName: string, sortFn: (k: string[]) => string[]) => {
-            return sortFn(Object.keys(summary)).map(k => ({ [keyName]: k, ...summary[k] }));
-        };
+        const monthlyData = sortMonths(Object.keys(monthlySummary)).map(m => ({ month: m, ...monthlySummary[m] }));
+        const weeklyData = sortWeeks(Object.keys(weeklySummary)).map(w => ({ week: w, ...weeklySummary[w] }));
+        const yearlyData = sortYears(Object.keys(yearlySummary)).map(y => ({ year: y, ...yearlySummary[y] }));
 
-        const bySource = {
-            monthly: {} as any,
-            weekly: {} as any,
-            yearly: {} as any
-        };
+        const bySourceMonthly: any = {};
+        Object.entries(bySource.monthly).forEach(([src, map]) => {
+            bySourceMonthly[src] = sortMonths(Object.keys(map)).map(m => ({ month: m, ...map[m] }));
+        });
 
-        Object.keys(bySourceMonthly).forEach(src => bySource.monthly[src] = toArray(bySourceMonthly[src], 'month', sortMonths));
-        Object.keys(bySourceWeekly).forEach(src => bySource.weekly[src] = toArray(bySourceWeekly[src], 'week', sortWeeks));
-        Object.keys(bySourceYearly).forEach(src => bySource.yearly[src] = toArray(bySourceYearly[src], 'year', sortYears));
+        const bySourceWeekly: any = {};
+        Object.entries(bySource.weekly).forEach(([src, map]) => {
+            bySourceWeekly[src] = sortWeeks(Object.keys(map)).map(w => ({ week: w, ...map[w] }));
+        });
+
+        const bySourceYearly: any = {};
+        Object.entries(bySource.yearly).forEach(([src, map]) => {
+            bySourceYearly[src] = sortYears(Object.keys(map)).map(y => ({ year: y, ...map[y] }));
+        });
 
         return {
-            monthlyData: toArray(monthlySummary, 'month', sortMonths),
-            weeklyData: toArray(weeklySummary, 'week', sortWeeks),
-            yearlyData: toArray(yearlySummary, 'year', sortYears),
+            monthlyData,
+            weeklyData,
+            yearlyData,
             sourceData: sourceSummary,
-            bySource,
+            bySource: {
+                monthly: bySourceMonthly,
+                weekly: bySourceWeekly,
+                yearly: bySourceYearly
+            },
+            monthlyBySource: bySourceMonthly
         };
     } catch (e) {
         return { monthlyData: [], weeklyData: [], yearlyData: [], sourceData: {}, bySource: { monthly: {}, weekly: {}, yearly: {} } };
     }
 }
 
-export async function getClearedContainerSummary(): Promise<{
-    totalContainers: number;
-    monthlyData: { month: string; containers: number }[];
-    weeklyData: { week: string; containers: number }[];
-    yearlyData: { year: string; containers: number }[];
-    sourceData: { [key: string]: number };
-    bySource: {
-        monthly: { [key: string]: { month: string; containers: number }[] };
-        weekly: { [key: string]: { week: string; containers: number }[] };
-        yearly: { [key: string]: { year: string; containers: number }[] };
-    };
-}> {
+export async function getClearedContainerSummary(): Promise<ClearedContainerSummary> {
     try {
         const fiveYearsAgo = subYears(new Date(), 5);
         const today = new Date();
@@ -755,9 +926,11 @@ export async function getClearedContainerSummary(): Promise<{
         const weeklySummary: Record<string, number> = {};
         const yearlySummary: Record<string, number> = {};
         const sourceSummary: Record<string, number> = {};
-        const bySourceMonthly: Record<string, Record<string, number>> = {};
-        const bySourceWeekly: Record<string, Record<string, number>> = {};
-        const bySourceYearly: Record<string, Record<string, number>> = {};
+        const bySource = {
+            monthly: {} as Record<string, Record<string, number>>,
+            weekly: {} as Record<string, Record<string, number>>,
+            yearly: {} as Record<string, Record<string, number>>
+        };
         let totalContainers = 0;
 
         docs.forEach((doc: any) => {
@@ -765,61 +938,75 @@ export async function getClearedContainerSummary(): Promise<{
             const clearedDate = data.actualClearedDate?.toDate();
 
             if (clearedDate && data.bookings && data.bookings.length > 0) {
-                const monthKey = format(clearedDate, "MMM yy");
-                const weekKey = format(clearedDate, "w yyyy");
-                const yearKey = format(clearedDate, "yyyy");
                 const numContainersInShipment = data.bookings.length;
                 const source = data.source || 'Unknown';
-
-                monthlySummary[monthKey] = (monthlySummary[monthKey] || 0) + numContainersInShipment;
-                weeklySummary[weekKey] = (weeklySummary[weekKey] || 0) + numContainersInShipment;
-                yearlySummary[yearKey] = (yearlySummary[yearKey] || 0) + numContainersInShipment;
                 
-                sourceSummary[source] = (sourceSummary[source] || 0) + numContainersInShipment;
-
-                if (!bySourceMonthly[source]) bySourceMonthly[source] = {};
-                bySourceMonthly[source][monthKey] = (bySourceMonthly[source][monthKey] || 0) + numContainersInShipment;
-
-                if (!bySourceWeekly[source]) bySourceWeekly[source] = {};
-                bySourceWeekly[source][weekKey] = (bySourceWeekly[source][weekKey] || 0) + numContainersInShipment;
-
-                if (!bySourceYearly[source]) bySourceYearly[source] = {};
-                bySourceYearly[source][yearKey] = (bySourceYearly[source][yearKey] || 0) + numContainersInShipment;
-
+                sourceSummary[source] = (sourceSummary[source] ?? 0) + numContainersInShipment;
                 totalContainers += numContainersInShipment;
+
+                // Month
+                const monthKey = format(clearedDate, "MMM yy");
+                monthlySummary[monthKey] = (monthlySummary[monthKey] ?? 0) + numContainersInShipment;
+                
+                if (!bySource.monthly[source]) bySource.monthly[source] = {};
+                bySource.monthly[source][monthKey] = (bySource.monthly[source][monthKey] ?? 0) + numContainersInShipment;
+
+                // Week
+                const weekKey = formatWeek(clearedDate);
+                weeklySummary[weekKey] = (weeklySummary[weekKey] ?? 0) + numContainersInShipment;
+
+                if (!bySource.weekly[source]) bySource.weekly[source] = {};
+                bySource.weekly[source][weekKey] = (bySource.weekly[source][weekKey] ?? 0) + numContainersInShipment;
+
+                // Year
+                const yearKey = String(getYear(clearedDate));
+                yearlySummary[yearKey] = (yearlySummary[yearKey] ?? 0) + numContainersInShipment;
+
+                if (!bySource.yearly[source]) bySource.yearly[source] = {};
+                bySource.yearly[source][yearKey] = (bySource.yearly[source][yearKey] ?? 0) + numContainersInShipment;
             }
         });
 
         const sortMonths = (keys: string[]) => keys.sort((a, b) => compareAsc(parse(a, 'MMM yy', new Date()), parse(b, 'MMM yy', new Date())));
         const sortWeeks = (keys: string[]) => keys.sort((a, b) => {
-             const [wa, ya] = a.split(' ').map(Number);
-             const [wb, yb] = b.split(' ').map(Number);
-             if (ya !== yb) return ya - yb;
-             return wa - wb;
+             const [wa, ya] = a.replace('W', '').split(' ');
+             const [wb, yb] = b.replace('W', '').split(' ');
+             if (ya !== yb) return Number(ya) - Number(yb);
+             return Number(wa) - Number(wb);
         });
         const sortYears = (keys: string[]) => keys.sort();
 
-        const toArray = (summary: any, keyName: string, sortFn: (k: string[]) => string[]) => {
-            return sortFn(Object.keys(summary)).map(k => ({ [keyName]: k, containers: summary[k] }));
-        };
+        const monthlyData = sortMonths(Object.keys(monthlySummary)).map(m => ({ month: m, containers: monthlySummary[m] }));
+        const weeklyData = sortWeeks(Object.keys(weeklySummary)).map(w => ({ week: w, containers: weeklySummary[w] }));
+        const yearlyData = sortYears(Object.keys(yearlySummary)).map(y => ({ year: y, containers: yearlySummary[y] }));
 
-        const bySource = {
-            monthly: {} as any,
-            weekly: {} as any,
-            yearly: {} as any
-        };
+        const bySourceMonthly: any = {};
+        Object.entries(bySource.monthly).forEach(([src, map]) => {
+            bySourceMonthly[src] = sortMonths(Object.keys(map)).map(m => ({ month: m, containers: map[m] }));
+        });
 
-        Object.keys(bySourceMonthly).forEach(src => bySource.monthly[src] = toArray(bySourceMonthly[src], 'month', sortMonths));
-        Object.keys(bySourceWeekly).forEach(src => bySource.weekly[src] = toArray(bySourceWeekly[src], 'week', sortWeeks));
-        Object.keys(bySourceYearly).forEach(src => bySource.yearly[src] = toArray(bySourceYearly[src], 'year', sortYears));
+        const bySourceWeekly: any = {};
+        Object.entries(bySource.weekly).forEach(([src, map]) => {
+            bySourceWeekly[src] = sortWeeks(Object.keys(map)).map(w => ({ week: w, containers: map[w] }));
+        });
+
+        const bySourceYearly: any = {};
+        Object.entries(bySource.yearly).forEach(([src, map]) => {
+            bySourceYearly[src] = sortYears(Object.keys(map)).map(y => ({ year: y, containers: map[y] }));
+        });
 
         return {
             totalContainers,
-            monthlyData: toArray(monthlySummary, 'month', sortMonths),
-            weeklyData: toArray(weeklySummary, 'week', sortWeeks),
-            yearlyData: toArray(yearlySummary, 'year', sortYears),
+            monthlyData,
+            weeklyData,
+            yearlyData,
             sourceData: sourceSummary,
-            bySource
+            bySource: {
+                monthly: bySourceMonthly,
+                weekly: bySourceWeekly,
+                yearly: bySourceYearly
+            },
+            monthlyBySource: bySourceMonthly
         };
     } catch (e) {
         return { totalContainers: 0, monthlyData: [], weeklyData: [], yearlyData: [], sourceData: {}, bySource: { monthly: {}, weekly: {}, yearly: {} } };

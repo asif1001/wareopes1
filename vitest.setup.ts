@@ -20,3 +20,16 @@ if (typeof window.matchMedia !== 'function') {
 vi.mock('next/navigation', () => ({
   usePathname: () => '/dashboard',
 }))
+
+if (typeof (globalThis as any).ResizeObserver !== 'function') {
+  class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  ;(globalThis as any).ResizeObserver = ResizeObserver
+}
+
+if (!HTMLElement.prototype.scrollIntoView) {
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+}

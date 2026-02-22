@@ -98,12 +98,6 @@ export function TaskSearchFilter({
     ? availableTags 
     : Array.from(new Set(tasks.flatMap(task => task.tags || [])))
 
-  // Apply filters whenever filters change
-  useEffect(() => {
-    const filteredTasks = applyFilters(tasks, filters)
-    onFilteredTasksChange(filteredTasks)
-  }, [tasks, filters, onFilteredTasksChange])
-
   const applyFilters = (tasksToFilter: Task[], filterState: FilterState): Task[] => {
     return tasksToFilter.filter(task => {
       // Search query filter
@@ -179,6 +173,12 @@ export function TaskSearchFilter({
       return true
     })
   }
+
+  // Apply filters whenever filters change
+  useEffect(() => {
+    const filteredTasks = applyFilters(tasks, filters)
+    onFilteredTasksChange(filteredTasks)
+  }, [tasks, filters, onFilteredTasksChange])
 
   const updateFilter = <K extends keyof FilterState>(
     key: K, 

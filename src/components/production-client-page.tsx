@@ -376,7 +376,7 @@ async function onConfirmProcess() {
     console.error('Server-side upload failed, falling back to client upload:', err);
     try {
       // Fallback without progress; keep UI responsive by jumping to 100%.
-      upload = await uploadProductionFile(file, shipmentId, user?.id);
+      upload = { downloadURL: await uploadProductionFile(file, shipmentId) };
       setUploadProgress(100);
     } catch (err2) {
       console.warn('Client-side upload also failed; continuing without file link.', err2);

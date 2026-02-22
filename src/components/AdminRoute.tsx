@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Shield, ArrowLeft } from 'lucide-react';
@@ -14,23 +14,12 @@ interface AdminRouteProps {
 export function AdminRoute({ children }: AdminRouteProps) {
   const { user, isLoading, isAdmin } = useAuth();
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
-
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (mounted && !isLoading && !user) {
+    if (!isLoading && !user) {
       // Redirect to login if not authenticated
       router.push('/');
     }
-  }, [user, isLoading, router, mounted]);
-
-  // Prevent hydration mismatch by not rendering until mounted
-  if (!mounted) {
-    return null;
-  }
+  }, [user, isLoading, router]);
 
   // Show loading state
   if (isLoading) {
@@ -57,7 +46,7 @@ export function AdminRoute({ children }: AdminRouteProps) {
             </div>
             <CardTitle className="text-xl font-semibold">Access Denied</CardTitle>
             <CardDescription>
-              You don't have permission to access this page. This area is restricted to administrators only.
+              You don&apos;t have permission to access this page. This area is restricted to administrators only.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

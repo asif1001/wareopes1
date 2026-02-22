@@ -3,10 +3,19 @@ node_modules/
 
 # build outputs
 .next/
-.next_*/
+.next_v*/
+.next_temp/
+.next_temp_build/
+.next_temp_final/
+.next_build/
 out/
 dist/
 build/
+next-build/
+next-build-dev/
+next-build-dev-*/
+node_modules_old/
+*.tsbuildinfo
 
 # environment
 .env

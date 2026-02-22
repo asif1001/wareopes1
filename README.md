@@ -1,6 +1,6 @@
 # WareOps - Warehouse Operations Management System
 
-A modern warehouse management application built with Next.js 16.1.1, Firebase, and TypeScript. WareOps provides comprehensive tools for managing shipments, inventory, analytics, and warehouse operations.
+A modern warehouse management application built with Next.js 16.1.6, Firebase, and TypeScript. WareOps provides comprehensive tools for managing shipments, inventory, analytics, and warehouse operations.
 
 ## 🚀 Features
 
@@ -16,10 +16,10 @@ A modern warehouse management application built with Next.js 16.1.1, Firebase, a
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: Next.js 16.1.1, React, TypeScript
+- **Frontend**: Next.js 16.1.6, React, TypeScript
 - **Styling**: Tailwind CSS, shadcn/ui
-- **Backend**: Firebase (Firestore, Authentication)
-- **Development**: Turbopack for fast development builds
+- **Backend**: Firebase (Firestore, Authentication, Storage)
+- **Server**: Firebase Admin SDK for server-only operations
 
 ## 📋 Prerequisites
 
@@ -51,15 +51,34 @@ npm install
 4. Create a `.env` file in the root directory:
 
 ```env
-FIREBASE_API_KEY=your_api_key_here
-FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
-FIREBASE_PROJECT_ID=your_project_id_here
-FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
-FIREBASE_MESSAGING_SENDER_ID=your_sender_id_here
-FIREBASE_APP_ID=your_app_id_here
+NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key_here
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id_here
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id_here
+NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id_here
+NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://your_project_id.firebaseio.com
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=your_measurement_id_here
+FIREBASE_ADMIN_CREDENTIALS_BASE64=base64_json_or_leave_empty
+FIREBASE_ADMIN_CREDENTIALS=json_string_or_leave_empty
+GOOGLE_APPLICATION_CREDENTIALS=path_to_service_account_json
 ```
 
-### 4. Set up Firestore Collections
+### 4. Optional: OneDelivery (Oil Status) Firebase Project
+
+If you use the secondary OneDelivery project for oil tank levels, add:
+
+```env
+NEXT_PUBLIC_ONEDELIVERY_API_KEY=your_api_key_here
+NEXT_PUBLIC_ONEDELIVERY_AUTH_DOMAIN=your_project_id.firebaseapp.com
+NEXT_PUBLIC_ONEDELIVERY_PROJECT_ID=oneplace-b5fc3
+NEXT_PUBLIC_ONEDELIVERY_STORAGE_BUCKET=your_project_id.appspot.com
+NEXT_PUBLIC_ONEDELIVERY_MESSAGING_SENDER_ID=your_sender_id_here
+NEXT_PUBLIC_ONEDELIVERY_APP_ID=your_app_id_here
+NEXT_PUBLIC_ONEDELIVERY_MEASUREMENT_ID=your_measurement_id_here
+```
+
+### 5. Set up Firestore Collections
 
 Create the following collections in your Firestore database:
 - `shipments` - For shipment data
@@ -67,17 +86,29 @@ Create the following collections in your Firestore database:
 - `analytics` - For analytics data
 - `Users` - For user management (canonical; app also falls back to `users`)
 
-### 5. Start the Development Server
+### 6. Start the Development Server
 
 ```bash
 npm run dev
 ```
 
-The application will be available at [http://localhost:3000](http://localhost:3000)
+The application will be available at [http://localhost:3000](http://localhost:3000). In development, the build output uses `.next_v3` to avoid Windows file-locking issues. Production builds use the default `.next` directory.
 
 ## 🛠 Maintenance & Operations Reminders
 
+## 🧩 Troubleshooting (Windows)
+
+- If `npm run build` fails with `EISDIR: illegal operation on a directory, readlink ... route.ts`, the project is likely on a non-NTFS drive. Move the repo to an NTFS volume (e.g., `C:\wareopes`) and retry the build.
+
 ## 📣 Recent Changes
+
+### Stability & Lint Fixes (Feb 2026)
+- **Role Permissions Form Reset**: Added a scoped permissions editor that resets cleanly after role creation, avoiding effect-driven state resets.
+- **Settings Edit Dialog Flow**: Updated edit dialog state handling to close on successful submit without triggering effect-based setState warnings.
+- **Export Dialog CSV Flow**: Switched to action-driven CSV handling with explicit error state and dialog resets.
+- **Productivity Page Error Rendering**: Moved data fetch errors to conditional render output instead of try/catch JSX.
+- **Admin Route Guard Cleanup**: Simplified admin access checks and normalized UI copy for lint compliance.
+- **Static Rendering Cleanups**: Removed impure calls in server pages and normalized apostrophes across UI strings.
 
 ### Dashboard Chart Enhancements
 - **Multi-Period Analysis**: Added "Week", "Months", and "Years" period selectors to both Container Overview and Shipment Overview charts.
@@ -92,12 +123,9 @@ The application will be available at [http://localhost:3000](http://localhost:30
   - Enhanced backend aggregation logic to support 5-year historical data.
   - Optimized data fetching to return pre-aggregated weekly, monthly, and yearly datasets in a single request.
 
-### Windows Environment & Vercel Deployment Fixes (Dec 2025)
-- **Windows Environment Fix**: Migrated development environment to `C:\wareopes_fix` (NTFS volume) to resolve persistent EPERM/file locking issues on exFAT/network drives.
-- **Vercel Compatibility**:
-  - **Restored Default Build Directory**: Removed `distDir` configuration from `next.config.ts`. Vercel requires the default `.next` output directory.
-  - **Turbopack Migration**: Removed custom `webpack` configuration that was conflicting with Next.js 16's default Turbopack compiler.
-  - **Middleware Update**: Renamed `middleware.ts` to `src/proxy.ts` to resolve deprecation warnings and "empty module" errors during build.
+### Windows Environment & Build Output (Feb 2026)
+- **Development Build Output**: Uses `.next_v3` during `npm run dev` to avoid EPERM/file-locking errors on Windows.
+- **Production Build Output**: Keeps the default `.next` directory for Vercel compatibility.
 
 ### Next.js 16 Upgrade & Security Fixes
 - **Framework Upgrade**: Upgraded core framework to Next.js 16.1.1.

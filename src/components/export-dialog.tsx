@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useActionState } from "react";
+import { useState, useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, Loader2, File, AlertCircle } from "lucide-react";
@@ -45,11 +45,11 @@ function SubmitButton() {
 export function ExportDialog() {
     const [open, setOpen] = useState(false);
     const [date, setDate] = useState<DateRange | undefined>();
-    const [state, formAction] = useActionState(exportShipmentsAction, {});
-
-    useEffect(() => {
-        if (state.csv) {
-            const blob = new Blob([state.csv], { type: 'text/csv;charset=utf-8;' });
+    const [errorMessage, setErrorMessage] = useState<string | undefined>();
+    const [, formAction] = useActionState(async (prevState: any, formData: FormData) => {
+        const result = await exportShipmentsAction(prevState, formData);
+        if (result?.csv) {
+            const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.setAttribute('href', url);
@@ -59,25 +59,25 @@ export function ExportDialog() {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            
-            // Reset state and close dialog
-            state.csv = undefined;
             setOpen(false);
             setDate(undefined);
+            setErrorMessage(undefined);
+        } else if (result?.error) {
+            setErrorMessage(result.error);
         }
-    }, [state, date]);
+        return result;
+    }, {});
 
-    useEffect(() => {
-        if (open) {
-            // Reset state when dialog opens
-            state.error = undefined;
-            state.csv = undefined;
+    const handleOpenChange = (nextOpen: boolean) => {
+        setOpen(nextOpen);
+        if (nextOpen) {
             setDate(undefined);
+            setErrorMessage(undefined);
         }
-    }, [open, state]);
+    };
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogTrigger asChild>
                 <Button size="sm" variant="outline" className="h-10 gap-1">
                     <File className="h-3.5 w-3.5" />
@@ -90,16 +90,16 @@ export function ExportDialog() {
                 <DialogHeader>
                     <DialogTitle>Export Shipments</DialogTitle>
                     <DialogDescription>
-                        Select a date range to export shipment data as a CSV file. The range is based on the 'Bahrain ETA'.
+                        Select a date range to export shipment data as a CSV file. The range is based on the &quot;Bahrain ETA&quot;.
                     </DialogDescription>
                 </DialogHeader>
                 <form action={formAction}>
                     <div className="grid gap-4 py-4">
-                        {state.error && (
+                        {errorMessage && (
                             <Alert variant="destructive">
                                 <AlertCircle className="h-4 w-4" />
                                 <AlertTitle>Error</AlertTitle>
-                                <AlertDescription>{state.error}</AlertDescription>
+                                <AlertDescription>{errorMessage}</AlertDescription>
                             </Alert>
                         )}
                         <input type="hidden" name="from" value={date?.from?.toISOString()} />

@@ -243,7 +243,7 @@ export default function SupportPage() {
                         {isLoading ? 'Submitting...' : 'Submit Ticket'}
                       </Button>
                       <p className="text-sm text-gray-500">
-                        We'll respond within 24 hours
+                        We&apos;ll respond within 24 hours
                       </p>
                     </div>
                   </form>

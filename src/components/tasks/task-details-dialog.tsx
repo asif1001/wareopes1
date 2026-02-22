@@ -530,7 +530,7 @@ export function TaskDetailsDialog({
                             <p className="text-sm">{item.description}</p>
                             {item.oldValue && item.newValue && (
                               <div className="text-xs text-muted-foreground mt-1">
-                                Changed from "{item.oldValue}" to "{item.newValue}"
+                                Changed from &quot;{item.oldValue}&quot; to &quot;{item.newValue}&quot;
                               </div>
                             )}
                           </div>

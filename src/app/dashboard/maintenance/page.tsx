@@ -72,7 +72,7 @@ export default function MaintenancePage() {
               </div>
               <CardTitle className="text-xl font-semibold">Access Denied</CardTitle>
               <CardDescription>
-                You don't have permission to access Maintenance. Contact an administrator.
+                You don&apos;t have permission to access Maintenance. Contact an administrator.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

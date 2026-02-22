@@ -55,7 +55,7 @@ export default function DriverLicensePage() {
         <div className="flex items-center justify-center min-h-screen p-4">
           <div className="w-full max-w-md border rounded-lg p-6">
             <div className="text-center text-lg font-semibold">Access Denied</div>
-            <div className="text-center text-sm text-muted-foreground mt-2">You don't have permission to access Driver License.</div>
+            <div className="text-center text-sm text-muted-foreground mt-2">You don&apos;t have permission to access Driver License.</div>
           </div>
         </div>
       )

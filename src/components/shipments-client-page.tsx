@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -17,9 +18,10 @@ import {
 } from "@/components/ui/card";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -122,34 +124,17 @@ export function ShipmentsClientPage({
     sources,
     containerSizes,
     branches,
+    label = "Shipments",
 }: {
     shipments: SerializableShipment[];
     sources: Source[];
     containerSizes: ContainerSize[];
     branches: Branch[];
+    label?: string;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<string[]>([]);
-  const [today, setToday] = useState<Date | null>(null);
-
-  useEffect(() => {
-    setToday(startOfDay(new Date()));
-    const saved = localStorage.getItem("shipmentSourceFilter");
-    if (saved) {
-        try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) {
-                setSourceFilter(parsed);
-            }
-        } catch (e) {
-            console.error("Failed to parse source filter", e);
-        }
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("shipmentSourceFilter", JSON.stringify(sourceFilter));
-  }, [sourceFilter]);
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [today] = useState(() => startOfDay(new Date()));
 
 
   const filteredShipments = useMemo(() => {
@@ -160,7 +145,7 @@ export function ShipmentsClientPage({
             shipment.billOfLading.toLowerCase().includes(query);
 
         const matchesFilter = 
-            sourceFilter.length === 0 || sourceFilter.includes(shipment.source);
+            sourceFilter === "all" || shipment.source === sourceFilter;
 
         return matchesSearch && matchesFilter;
     });
@@ -171,13 +156,9 @@ export function ShipmentsClientPage({
   const arrivedShipments = filteredShipments.filter(s => s.status === 'Arrived');
   const completedShipments = filteredShipments.filter(s => s.status === 'Completed');
 
-  if (!today) {
-    return null; // or a loading skeleton
-  }
-
   return (
     <div className="flex flex-col h-full">
-      <DashboardHeader title="Shipments" />
+      <DashboardHeader title={label} />
       <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
         <Tabs defaultValue="all">
           <div className="flex items-center">
@@ -206,41 +187,19 @@ export function ShipmentsClientPage({
                     <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
                       Filter
                     </span>
-                    {sourceFilter.length > 0 && (
-                      <Badge variant="secondary" className="ml-1 rounded-sm px-1 font-normal lg:hidden">
-                          {sourceFilter.length}
-                      </Badge>
-                    )}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel>Filter by Source</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuCheckboxItem
-                      checked={sourceFilter.length === 0}
-                      onCheckedChange={(checked) => {
-                          if (checked) setSourceFilter([]);
-                      }}
-                  >
-                      All Sources
-                  </DropdownMenuCheckboxItem>
-                  {sources.map(source => (
-                      <DropdownMenuCheckboxItem
-                          key={source.id}
-                          checked={sourceFilter.includes(source.shortName)}
-                          onCheckedChange={(checked) => {
-                              setSourceFilter(prev => {
-                                  if (checked) {
-                                      return [...prev, source.shortName];
-                                  } else {
-                                      return prev.filter(s => s !== source.shortName);
-                                  }
-                              });
-                          }}
-                      >
-                          {source.shortName}
-                      </DropdownMenuCheckboxItem>
-                  ))}
+                  <DropdownMenuRadioGroup value={sourceFilter} onValueChange={setSourceFilter}>
+                    <DropdownMenuRadioItem value="all">All Sources</DropdownMenuRadioItem>
+                    {sources.map(source => (
+                        <DropdownMenuRadioItem key={source.id} value={source.shortName}>
+                            {source.shortName}
+                        </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
               <ShipmentForm sources={sources} containerSizes={containerSizes} branches={branches} />
@@ -249,7 +208,7 @@ export function ShipmentsClientPage({
           <TabsContent value="all">
             <Card>
               <CardHeader>
-                <CardTitle>All Shipments</CardTitle>
+                <CardTitle>All {label}</CardTitle>
                 <CardDescription>
                   Real-time tracking of all shipments.
                 </CardDescription>
@@ -262,7 +221,7 @@ export function ShipmentsClientPage({
           <TabsContent value="not-cleared">
             <Card>
               <CardHeader>
-                <CardTitle>Not Cleared Shipments</CardTitle>
+                <CardTitle>Not Cleared {label}</CardTitle>
                 <CardDescription>
                   Shipments that are pending clearance.
                 </CardDescription>
@@ -275,7 +234,7 @@ export function ShipmentsClientPage({
           <TabsContent value="wip">
             <Card>
               <CardHeader>
-                <CardTitle>WIP Shipments</CardTitle>
+                <CardTitle>WIP {label}</CardTitle>
                 <CardDescription>
                   Shipments currently in Work In Progress.
                 </CardDescription>
@@ -288,7 +247,7 @@ export function ShipmentsClientPage({
           <TabsContent value="arrived">
             <Card>
               <CardHeader>
-                <CardTitle>Arrived Shipments</CardTitle>
+                <CardTitle>Arrived {label}</CardTitle>
                 <CardDescription>
                   Shipments with status Arrived.
                 </CardDescription>
@@ -301,7 +260,7 @@ export function ShipmentsClientPage({
           <TabsContent value="completed">
             <Card>
               <CardHeader>
-                <CardTitle>Completed Shipments</CardTitle>
+                <CardTitle>Completed {label}</CardTitle>
                 <CardDescription>
                   Shipments with status Completed.
                 </CardDescription>

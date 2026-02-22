@@ -52,7 +52,7 @@ export function UserEditForm({ departments, roles, user, roleDefaults, onSuccess
             <Card className="max-w-3xl mx-auto">
                 <CardHeader>
                     <CardTitle>Edit User</CardTitle>
-                    <CardDescription>Update the user's details and permissions.</CardDescription>
+                    <CardDescription>Update the user&apos;s details and permissions.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <input type="hidden" name="id" value={user.id} />
@@ -96,6 +96,7 @@ export function UserEditForm({ departments, roles, user, roleDefaults, onSuccess
                                     <SelectItem value="/dashboard/manager">Manager Dashboard</SelectItem>
                                     <SelectItem value="/dashboard/employee">Employee Dashboard</SelectItem>
                                     <SelectItem value="/dashboard/shipments">Shipments</SelectItem>
+                                    <SelectItem value="/dashboard/dispatches">Dispatches</SelectItem>
                                     <SelectItem value="/dashboard/tasks">Tasks</SelectItem>
                                     <SelectItem value="/dashboard/feedback">Feedback</SelectItem>
                                     <SelectItem value="/dashboard/reports">Reports</SelectItem>
@@ -141,20 +142,20 @@ export function UserEditForm({ departments, roles, user, roleDefaults, onSuccess
 }
 
 function useEditFormState(action: any, initialState: any) {
-  const [state, formAction] = useActionState(action, initialState);
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
-
-  useEffect(() => {
-    if (state?.message) {
-      if (state.message.includes("success")) {
-        toast({ title: "Success", description: state.message });
+  const [, formAction] = useActionState(async (prevState: any, formData: FormData) => {
+    const result = await action(prevState, formData);
+    if (result?.message) {
+      if (result.message.includes("success")) {
+        toast({ title: "Success", description: result.message });
         setOpen(false);
       } else {
-        toast({ title: "Error", description: state.message, variant: "destructive" });
+        toast({ title: "Error", description: result.message, variant: "destructive" });
       }
     }
-  }, [state, toast]);
+    return result;
+  }, initialState);
 
   return { formAction, open, setOpen };
 }

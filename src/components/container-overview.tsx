@@ -1,10 +1,11 @@
+
 "use client";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartConfig } from "@/components/ui/chart";
 import type { ClearedContainerSummary } from "@/lib/types";
-import { Badge } from "./ui/badge";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -27,76 +28,69 @@ export function ContainerOverview({ data }: { data: ClearedContainerSummary }) {
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
 
   const chartData = useMemo(() => {
-    if (!data) return [];
-    
-    // Select base dataset
-    let baseData: any[] = [];
-    let sourceMap: any = {};
+    const useAllSources = selectedSources.length === 0;
 
-    if (period === 'week') {
-        baseData = data.weeklyData || [];
-        sourceMap = data.bySource?.weekly || {};
-    } else if (period === 'year') {
-        baseData = data.yearlyData || [];
-        sourceMap = data.bySource?.yearly || {};
-    } else {
-        baseData = data.monthlyData || [];
-        sourceMap = data.bySource?.monthly || {};
-    }
+    let rawData: { label: string; containers: number }[] = [];
 
-    // Filter logic
-    if (selectedSources.length === 0) {
-        return baseData;
-    }
-
-    const keyName = period === 'week' ? 'week' : period === 'year' ? 'year' : 'month';
-
-    // Aggregate selected sources
-    const aggregated: Record<string, number> = {};
-    
-    // Initialize with 0
-    baseData.forEach((item) => {
-        aggregated[item[keyName]] = 0;
-    });
-
-    selectedSources.forEach(src => {
-        const srcData = sourceMap[src] || [];
-        srcData.forEach((item: any) => {
-            const key = item[keyName];
-            if (aggregated[key] !== undefined) {
-                aggregated[key] += item.containers;
-            } else {
-                 // If baseData is missing this key (shouldn't happen if base covers all), add it?
-                 // For now, assume baseData covers the timeline.
-            }
+    if (period === "month") {
+      if (useAllSources) {
+        rawData = data.monthlyData.map((d) => ({ label: d.month, containers: d.containers }));
+      } else {
+        const acc: Record<string, number> = {};
+        for (const src of selectedSources) {
+          const series = data.bySource?.monthly?.[src] || [];
+          for (const item of series) {
+            acc[item.month] = (acc[item.month] ?? 0) + item.containers;
+          }
+        }
+        rawData = Object.entries(acc).map(([label, containers]) => ({ label, containers }));
+        rawData.sort((a, b) => new Date(a.label).getTime() - new Date(b.label).getTime());
+      }
+    } else if (period === "week") {
+      if (useAllSources) {
+        rawData = data.weeklyData.map((d) => ({ label: d.week, containers: d.containers }));
+      } else {
+        const acc: Record<string, number> = {};
+        for (const src of selectedSources) {
+          const series = data.bySource?.weekly?.[src] || [];
+          for (const item of series) {
+            acc[item.week] = (acc[item.week] ?? 0) + item.containers;
+          }
+        }
+        rawData = Object.entries(acc).map(([label, containers]) => ({ label, containers }));
+        // Sort weeks: W1 2024
+        rawData.sort((a, b) => {
+          const [wa, ya] = a.label.replace("W", "").split(" ");
+          const [wb, yb] = b.label.replace("W", "").split(" ");
+          if (ya !== yb) return Number(ya) - Number(yb);
+          return Number(wa) - Number(wb);
         });
-    });
+      }
+    } else {
+      // year
+      if (useAllSources) {
+        rawData = data.yearlyData.map((d) => ({ label: d.year, containers: d.containers }));
+      } else {
+        const acc: Record<string, number> = {};
+        for (const src of selectedSources) {
+          const series = data.bySource?.yearly?.[src] || [];
+          for (const item of series) {
+            acc[item.year] = (acc[item.year] ?? 0) + item.containers;
+          }
+        }
+        rawData = Object.entries(acc).map(([label, containers]) => ({ label, containers }));
+        rawData.sort((a, b) => Number(a.label) - Number(b.label));
+      }
+    }
 
-    return baseData.map((item) => {
-        const key = item[keyName];
-        return {
-            [keyName]: key,
-            containers: aggregated[key] ?? 0
-        };
-    });
+    return rawData;
   }, [data, period, selectedSources]);
 
   const allSources = useMemo(() => Object.keys(data.sourceData), [data.sourceData]);
-  
   const totalForSelection = useMemo(() => {
     if (selectedSources.length === 0) return data.totalContainers;
     return selectedSources.reduce((sum, s) => sum + (data.sourceData[s] ?? 0), 0);
   }, [selectedSources, data.sourceData, data.totalContainers]);
-
-  const formatXAxis = (tick: string) => {
-      if (period === 'week') {
-          const parts = tick.split(' ');
-          if (parts.length >= 1) {
-             return `W${parts[0]}`; 
-          }
-      }
-      return tick;
-  };
 
   return (
     <Card>
@@ -104,9 +98,7 @@ export function ContainerOverview({ data }: { data: ClearedContainerSummary }) {
         <div className="flex items-center justify-between gap-4">
           <div>
             <CardTitle>Container Overview</CardTitle>
-            <CardDescription>
-                {period === 'week' ? 'Weekly' : period === 'year' ? 'Yearly' : 'Monthly'} cleared container volume
-            </CardDescription>
+            <CardDescription>Monthly cleared container volume</CardDescription>
           </div>
           <div className="flex items-center gap-1 rounded-md border bg-muted p-0.5 text-xs">
             <button
@@ -178,11 +170,10 @@ export function ContainerOverview({ data }: { data: ClearedContainerSummary }) {
           <BarChart data={chartData} margin={{ left: -20, right: 16, top: 8, bottom: 8 }}>
             <CartesianGrid vertical={false} />
             <XAxis
-              dataKey={period === 'week' ? 'week' : period === 'year' ? 'year' : 'month'}
+              dataKey="label"
               tickLine={false}
               axisLine={false}
               tickMargin={8}
-              tickFormatter={formatXAxis}
             />
             <YAxis tickLine={false} axisLine={false} tickMargin={8} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
