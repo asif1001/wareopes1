@@ -17,7 +17,6 @@ const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingVars.length > 0 && process.env.NODE_ENV !== 'development') {
   console.error('Missing required Firebase environment variables:', missingVars);
-  // In production, we should fail gracefully rather than crash
 }
 
 const firebaseConfig = {

@@ -5,7 +5,7 @@ import { useForm, Controller, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useDropzone } from "react-dropzone";
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
@@ -117,6 +117,29 @@ export function DispatchForm({ dispatch, isEditMode = false, users, containerSiz
 
     const { toast } = useToast();
 
+    const toValidDate = (value: unknown, fallback = new Date()) => {
+        if (value instanceof Date) {
+            return isValid(value) ? value : fallback;
+        }
+        if (typeof value === "string" || typeof value === "number") {
+            const parsed = new Date(value);
+            return isValid(parsed) ? parsed : fallback;
+        }
+        return fallback;
+    };
+
+    const getErrorMessage = (error: unknown) => {
+        if (error instanceof Error) return error.message;
+        if (typeof error === "string") return error;
+        return "Something went wrong.";
+    };
+
+    const getErrorCode = (error: unknown) => {
+        if (typeof error !== "object" || error === null) return undefined;
+        const maybeCode = (error as { code?: unknown }).code;
+        return typeof maybeCode === "string" ? maybeCode : undefined;
+    };
+
     const buildContainerId = () => {
         if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
             return crypto.randomUUID();
@@ -134,7 +157,7 @@ export function DispatchForm({ dispatch, isEditMode = false, users, containerSiz
                 containerNumber: container.containerNumber || "",
                 containerSize: container.containerSize || defaultContainerSize,
                 bookingNumber: container.bookingNumber || "",
-                bookingDate: new Date(container.bookingDate),
+                bookingDate: toValidDate(container.bookingDate),
                 numberOfCases: container.numberOfCases || 0,
                 status: container.status || dispatch.status || "Pending",
                 inspectionRemark: container.inspectionRemark || "",
@@ -155,7 +178,7 @@ export function DispatchForm({ dispatch, isEditMode = false, users, containerSiz
             ? dispatch.containerNo.split(",")[0]?.trim() || ""
             : "";
         const containerSize = dispatch.containerSize || defaultContainerSize;
-        const bookingDate = dispatch.dateTime ? new Date(dispatch.dateTime) : new Date();
+        const bookingDate = toValidDate(dispatch.dateTime);
         const numberOfCases = dispatch.noOfCases ?? 0;
         return [{
             containerId,
@@ -363,8 +386,8 @@ export function DispatchForm({ dispatch, isEditMode = false, users, containerSiz
             }
         };
 
-        const handleError = (error: any) => {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
+        const handleError = (error: unknown) => {
+            toast({ title: "Error", description: getErrorMessage(error), variant: "destructive" });
         };
 
         try {
@@ -374,7 +397,7 @@ export function DispatchForm({ dispatch, isEditMode = false, users, containerSiz
                 containerNumber: container.containerNumber.trim(),
                 containerSize: container.containerSize,
                 bookingNumber: container.bookingNumber.trim(),
-                bookingDate: container.bookingDate.toISOString(),
+                bookingDate: toValidDate(container.bookingDate).toISOString(),
                 numberOfCases: Number(data.numberOfCases || 0),
                 status: container.status || "Pending",
                 inspectionRemark: container.inspectionRemark || "",
@@ -441,14 +464,14 @@ export function DispatchForm({ dispatch, isEditMode = false, users, containerSiz
                             container.containerId,
                             (progress) => setUploadProgressByContainer(prev => ({ ...prev, [container.containerId]: progress }))
                         );
-                    } catch (error: any) {
+                    } catch (error: unknown) {
                         if (!uploadErrorMessage) {
-                            const message = typeof error?.message === "string" ? error.message : null;
-                            uploadErrorMessage = error?.code === "storage/unauthorized"
+                            const message = getErrorMessage(error);
+                            uploadErrorMessage = getErrorCode(error) === "storage/unauthorized"
                                 ? "Photos were not uploaded due to permission. Dispatch was saved without photos."
-                                : message
-                                    ? `Photo upload failed: ${message}`
-                                    : "Photo upload failed. Dispatch was saved without photos.";
+                                : message === "Something went wrong."
+                                    ? "Photo upload failed. Dispatch was saved without photos."
+                                    : `Photo upload failed: ${message}`;
                         }
                     }
                 }
@@ -477,7 +500,7 @@ export function DispatchForm({ dispatch, isEditMode = false, users, containerSiz
 
             const saved = await DispatchService.updateDispatch(created.id, updatePayload);
             handleSuccess(saved);
-        } catch (error: any) {
+        } catch (error: unknown) {
             handleError(error);
         } finally {
             setIsSubmitting(false);
@@ -522,7 +545,7 @@ export function DispatchForm({ dispatch, isEditMode = false, users, containerSiz
             setContainerFiles({});
             setUploadProgressByContainer({});
         }
-    }, [open, dispatch, isEditMode, form, initialContainers, containerSizes]);
+    }, [open, dispatch, isEditMode, form, initialContainers, initialNumberOfCases, containerSizes]);
 
     const activeContainerId = containerForm.watch("containerId");
     const modalContainerId = activeContainerId || containerDraftId || "";
@@ -613,14 +636,15 @@ export function DispatchForm({ dispatch, isEditMode = false, users, containerSiz
                                                 </TableHeader>
                                                 <TableBody>
                                                     {watchedContainers.map((container, index) => {
-                                                        const bookingDate = container.bookingDate instanceof Date ? container.bookingDate : new Date(container.bookingDate);
+                                                        const bookingDate = toValidDate(container.bookingDate);
+                                                        const bookingLabel = isValid(bookingDate) ? format(bookingDate, "PPP") : "—";
                                                         return (
                                                             <TableRow key={container.containerId || fields[index]?.id}>
                                                                 <TableCell className="font-medium">
                                                                     {container.containerNumber || `Container ${index + 1}`}
                                                                 </TableCell>
                                                                 <TableCell>
-                                                                    {container.bookingDate ? format(bookingDate, "PPP") : "—"}
+                                                                    {container.bookingDate ? bookingLabel : "—"}
                                                                 </TableCell>
                                                                 <TableCell className="text-right">
                                                                     <div className="flex items-center justify-end gap-2">
