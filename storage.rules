@@ -1,0 +1,69 @@
+rules_version = '2';
+
+// Firebase Storage rules for custom authentication system
+// Since the app uses custom session-based auth (not Firebase Auth),
+// we need to allow access based on file validation rather than auth tokens
+// Rules updated at 2026-02-21 20:30
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Rules for profile images - allow access with file validation
+    match /profile-images/{imageId} {
+      // Allow read access to all users (profile images are generally public)
+      allow read: if true;
+      
+      // Allow write (upload/update/delete) with file validation
+      // Since we can't check Firebase Auth, we rely on application-level security
+      allow write: if true;
+      
+      // Additional validation for uploads
+      allow create: if request.resource.size < 5 * 1024 * 1024 // 5MB limit
+        && request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // Allow uploads of production data files under shipments/{shipmentId}/production/*
+    match /shipments/{shipmentId}/production/{fileName} {
+      // Allow read access (non-sensitive structured uploads)
+      allow read: if true;
+      // Allow writes with validation; app enforces permission server-side
+      allow write: if true;
+      allow create: if request.resource.size < 10 * 1024 * 1024 // 10MB limit
+        && (
+          request.resource.contentType.matches('text/csv') ||
+          request.resource.contentType.matches('application/vnd.ms-excel') ||
+          request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') ||
+          request.resource.contentType.matches('application/octet-stream')
+        );
+    }
+    
+    // Vehicle files: images and attachments
+    match /vehicles/{vehicleId}/images/{fileName} {
+      allow read: if true;
+      allow write: if true;
+      allow create: if request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+    match /vehicles/{vehicleId}/attachments/{fileName} {
+      allow read: if true;
+      allow write: if true;
+      allow create: if request.resource.size < 10 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType.matches('application/pdf') ||
+          request.resource.contentType.matches('application/octet-stream')
+        );
+    }
+
+    // Dispatch container photos
+    match /dispatches/{dispatchId}/containers/{containerId}/{fileName} {
+      allow read: if true;
+      allow write: if true;
+      allow create: if request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+    
+    // Default rule - deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

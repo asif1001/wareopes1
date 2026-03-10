@@ -1,0 +1,1 @@
+# Deprecated deployment script. Firebase App Hosting handles deployments.

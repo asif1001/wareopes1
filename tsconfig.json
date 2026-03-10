@@ -1,0 +1,85 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    ".next_temp_build/types/**/*.ts",
+    ".next_temp_build/dev/types/**/*.ts",
+    "next-build/types/**/*.ts",
+    "next-build/dev/types/**/*.ts",
+    "next-build-dev/types/**/*.ts",
+    "next-build-dev/dev/types/**/*.ts",
+    "next-build-dev-2/types/**/*.ts",
+    "next-build-dev-2/dev/types/**/*.ts",
+    "next-build-dev-3/types/**/*.ts",
+    "next-build-dev-3/dev/types/**/*.ts",
+    "next-build-dev-4/types/**/*.ts",
+    "next-build-dev-4/dev/types/**/*.ts",
+    ".next_v2/types/**/*.ts",
+    ".next_v2/dev/types/**/*.ts",
+    ".next_v3/types/**/*.ts",
+    ".next_v3/dev/types/**/*.ts",
+    ".next_v4/types/**/*.ts",
+    ".next_v4/dev/types/**/*.ts",
+    ".next_v5/types/**/*.ts",
+    ".next_v5/dev/types/**/*.ts",
+    ".next_v6/types/**/*.ts",
+    ".next_v6/dev/types/**/*.ts",
+    ".next_dev/types/**/*.ts",
+    ".next_dev/dev/types/**/*.ts",
+    ".next_v7/types/**/*.ts",
+    ".next_v7/dev/types/**/*.ts",
+    ".next_v8/types/**/*.ts",
+    ".next_v8/dev/types/**/*.ts",
+    ".next-dev/types/**/*.ts",
+    ".next-dev/dev/types/**/*.ts",
+    "next-build-dev-1772999314820/types/**/*.ts",
+    "next-build-dev-1772999314820/dev/types/**/*.ts",
+    "next-build-dev-1773001826341/types/**/*.ts",
+    "next-build-dev-1773001826341/dev/types/**/*.ts",
+    "next-build-dev-1773159734781/types/**/*.ts",
+    "next-build-dev-1773159734781/dev/types/**/*.ts",
+    "workspace/next-dev/types/**/*.ts",
+    "workspace/next-dev/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "node_modules_old",
+    ".next",
+    "src/app/api/fb-debug/**",
+    "src/app/api/files/[taskId]/[fileId]/**",
+    "src/app/api/tasks/[id]/comments/**"
+  ]
+}
