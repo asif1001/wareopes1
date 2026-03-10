@@ -92,7 +92,8 @@ export async function POST(request: NextRequest) {
                 uploadedAt: new Date().toISOString(),
             },
         });
-    } catch (e: any) {
-        return NextResponse.json({ success: false, error: e?.message || "Upload failed" }, { status: 500 });
+    } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Upload failed";
+        return NextResponse.json({ success: false, error: message }, { status: 500 });
     }
 }

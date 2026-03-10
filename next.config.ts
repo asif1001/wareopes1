@@ -51,7 +51,7 @@ const nextConfig: NextConfig = {
         '**/src/app/api/tasks/[id]/comments/**',
       ];
       // Preserve existing ignored patterns if present
-      const currentIgnored = (config.watchOptions as any)?.ignored;
+      const currentIgnored = config.watchOptions?.ignored;
       const combined =
         Array.isArray(currentIgnored)
           ? [...currentIgnored, ...ignored]

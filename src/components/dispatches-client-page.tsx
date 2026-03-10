@@ -159,12 +159,14 @@ export function DispatchesClientPage({
         return dispatches.filter(dispatch => {
             const query = searchQuery.toLowerCase();
             const containerNumbers = dispatch.containers?.map(container => container.containerNumber).join(" ") || dispatch.containerNo || "";
-            const matchesSearch = 
-                dispatch.invoiceNo.toLowerCase().includes(query) ||
-                dispatch.customerName.toLowerCase().includes(query) ||
-                containerNumbers.toLowerCase().includes(query);
+            const invoiceNo = String(dispatch.invoiceNo ?? "");
+            const customerName = String(dispatch.customerName ?? "");
+            const matchesSearch =
+                invoiceNo.toLowerCase().includes(query) ||
+                customerName.toLowerCase().includes(query) ||
+                String(containerNumbers).toLowerCase().includes(query);
 
-            const matchesFilter = 
+            const matchesFilter =
                 statusFilter === "all" || dispatch.status === statusFilter;
 
             return matchesSearch && matchesFilter;
