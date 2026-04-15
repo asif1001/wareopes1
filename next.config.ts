@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  distDir: '.next-build',
+  ...(process.env.DEV_DIST_DIR ? { distDir: process.env.DEV_DIST_DIR } : {}),
   typescript: {
     // Only ignore build errors in development
     ignoreBuildErrors: process.env.NODE_ENV === 'development',
