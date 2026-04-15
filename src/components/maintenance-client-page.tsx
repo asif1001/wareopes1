@@ -26,6 +26,13 @@ import { useDropzone } from "react-dropzone";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 
+// Upload image to Firebase Storage
+async function uploadImageWithFallback(file: File, storagePath: string): Promise<string> {
+  const imgRef = ref(storage, storagePath);
+  await uploadBytes(imgRef, file);
+  return await getDownloadURL(imgRef);
+}
+
 // Helper: derive Storage object path from a Firebase download URL
 function storagePathFromDownloadUrl(url: string): string | null {
   try {
@@ -570,7 +577,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                                   const data2 = JSON.parse(xhrImg.responseText || '{}');
                                   const saved2 = (data2?.item || created) as Vehicle;
                                   setVehicles((prev) => prev.map((x) => (x.id === saved2.id ? saved2 : x)));
-                                  setForm((f) => ({ ...f, imageUrl: saved2.imageUrl || f.imageUrl || null }));
+                                  setForm((f) => ({ ...f, imageUrl: saved2.imageUrl || null }));
                                 }
                               } catch {}
                               setImageFile(null);
@@ -703,6 +710,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
       () => (vehicle ? { ...vehicle } : { ownership: "Owned", status: "Active" })
     );
     const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
     const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
     const [attachmentPreviewUrls, setAttachmentPreviewUrls] = useState<string[]>([]);
     const [uploadingFiles, setUploadingFiles] = useState<File[]>([]);
@@ -729,7 +737,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
             const draft = JSON.parse(raw);
             setForm((f) => ({ ...f, ...(draft.form || {}) }));
             if (Array.isArray(draft.attachmentPreviewUrls)) setAttachmentPreviewUrls(draft.attachmentPreviewUrls);
-            if (typeof draft.imageUrl === 'string') setForm((f) => ({ ...f, imageUrl: draft.imageUrl }));
+            if (typeof draft.imageUrl === 'string' && draft.imageUrl.startsWith('https://')) setForm((f) => ({ ...f, imageUrl: draft.imageUrl }));
           }
         } catch {}
       }
@@ -738,6 +746,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
     useEffect(() => {
       if (!vehicle) {
         try {
+          const safeImageUrl = (form.imageUrl && form.imageUrl.startsWith('https://')) ? form.imageUrl : null;
           const payload = {
             form: {
               plateNo: form.plateNo || '',
@@ -749,10 +758,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
               ownership: form.ownership || 'Owned',
               driverName: form.driverName || '',
               driverEmployeeId: form.driverEmployeeId || '',
-              imageUrl: form.imageUrl || null,
+              imageUrl: safeImageUrl,
             },
             attachmentPreviewUrls,
-            imageUrl: form.imageUrl || null,
+            imageUrl: safeImageUrl,
           };
           sessionStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
         } catch {}
@@ -921,9 +930,21 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                       if (form.registrationExpiry) fd.append('registrationExpiry', form.registrationExpiry);
                       if (form.fuelType) fd.append('fuelType', String(form.fuelType as any));
                       if (form.status) fd.append('status', String(form.status as any));
+                      // Upload image via client SDK first to avoid Admin SDK billing issues
                       if (imageFile) {
-                        fd.append('image', imageFile, imageFile.name);
-                      } else if (form.imageUrl) {
+                        try {
+                          setUploadingImage(true);
+                          const safeName = imageFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                          const storagePath = `vehicles/${vehicle.id}/images/${Date.now()}-${safeName}`;
+                          const clientUrl = await uploadImageWithFallback(imageFile, storagePath);
+                          fd.append('existingImageUrl', clientUrl);
+                        } catch (imgErr: any) {
+                          console.error('Client image upload failed (all storage):', imgErr?.code, imgErr?.message);
+                          fd.append('image', imageFile, imageFile.name);
+                        } finally {
+                          setUploadingImage(false);
+                        }
+                      } else if (form.imageUrl && form.imageUrl.startsWith('https://')) {
                         fd.append('existingImageUrl', form.imageUrl);
                       }
                       
@@ -934,7 +955,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                         const errMsg = (data && (data.error || data.message)) ? (data.error || data.message) : `Update failed: ${res.status}`;
                         throw new Error(errMsg);
                       }
-                      const saved = (data?.item || { ...vehicle, ...form }) as Vehicle;
+                      const saved = (data?.item || { ...vehicle, ...form, imageUrl: vehicle.imageUrl }) as Vehicle;
                       setVehicles((prev) => prev.map((x) => (x.id === vehicle.id ? saved : x)));
                       setForm(f => ({ ...f, attachments: Array.isArray((saved as any).attachments) ? (saved as any).attachments : (f.attachments || []) }));
                       setAttachmentPreviewUrls([]);
@@ -1017,7 +1038,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                                 if (res2.ok) {
                                   const saved2 = (data2?.item || created) as Vehicle;
                                   setVehicles((prev) => prev.map((x) => (x.id === saved2.id ? saved2 : x)));
-                                  setForm((f) => ({ ...f, imageUrl: saved2.imageUrl || f.imageUrl || null }));
+                                  setForm((f) => ({ ...f, imageUrl: saved2.imageUrl || null }));
                                 }
                               } finally {
                                 setUploadingImage(false);
@@ -1126,19 +1147,20 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                         const file = e.target.files?.[0] || null;
                         setImageFile(file);
                         if (file) {
-                          const url = URL.createObjectURL(file);
-                          setForm((f) => ({ ...f, imageUrl: url }));
+                          const reader = new FileReader();
+                          reader.onload = () => setImagePreviewUrl(reader.result as string);
+                          reader.readAsDataURL(file);
                         } else {
-                          setForm((f) => ({ ...f, imageUrl: null }));
+                          setImagePreviewUrl(null);
                         }
                       }}
                     />
                     <div className="text-xs text-muted-foreground mt-1">{imageFile?.name || 'No file chosen'}</div>
                   </div>
-                  {form.imageUrl && (
+                  {(imagePreviewUrl || form.imageUrl) && (
                     <div className="md:col-span-2">
                       <img
-                        src={form.imageUrl}
+                        src={imagePreviewUrl || form.imageUrl || ''}
                         alt="Vehicle image preview"
                         className="h-20 w-20 rounded object-cover"
                       />
@@ -1780,7 +1802,18 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                 fd.append('battery', JSON.stringify(bat));
                 fd.append('certification', JSON.stringify(cert));
                 fd.append('repairs', JSON.stringify([]));
-                if (mheImageFileRef.current) fd.append('image', mheImageFileRef.current);
+                if (mheImageFileRef.current) {
+                  try {
+                    const file = mheImageFileRef.current;
+                    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                    const storagePath = `mhes/new-${Date.now()}/images/${Date.now()}-${safeName}`;
+                    const clientUrl = await uploadImageWithFallback(file, storagePath);
+                    fd.append('existingImageUrl', clientUrl);
+                  } catch (imgErr: any) {
+                    console.warn('Client MHE image upload failed (all storage):', imgErr?.code, imgErr?.message);
+                    fd.append('image', mheImageFileRef.current);
+                  }
+                }
                 const res = await fetch('/api/mhes', { method: 'POST', body: fd });
                 if (!res.ok) {
                   const j = await res.json().catch(() => ({}));
@@ -1796,7 +1829,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                   certification: saved?.certification ?? (cert as Certification),
                   battery: saved?.battery ?? (bat as Battery),
                   repairs: Array.isArray(saved?.repairs) ? saved.repairs : [],
-                  imageUrl: saved?.imageUrl ?? (form.imageUrl || null),
+                  imageUrl: saved?.imageUrl ?? null,
                   status: (saved?.status as any) || (form.status as any) || "Active",
                 };
                 setMhes(prev => [m, ...prev]);
@@ -2012,8 +2045,18 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                     fd.append('certification', JSON.stringify(cert));
                     fd.append('repairs', JSON.stringify([]));
                     if (mheImageFileRef.current) {
-                      fd.append('image', mheImageFileRef.current);
-                    } else if (form.imageUrl) {
+                      try {
+                        const file = mheImageFileRef.current;
+                        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                        const entityId = mhe?.id || `mhe-tmp-${Date.now()}`;
+                        const storagePath = `mhes/${entityId}/images/${Date.now()}-${safeName}`;
+                        const clientUrl = await uploadImageWithFallback(file, storagePath);
+                        fd.append('existingImageUrl', clientUrl);
+                      } catch (imgErr: any) {
+                        console.warn('Client MHE image upload failed (all storage):', imgErr?.code, imgErr?.message);
+                        fd.append('image', mheImageFileRef.current);
+                      }
+                    } else if (form.imageUrl && String(form.imageUrl).startsWith('https://')) {
                       fd.append('existingImageUrl', String(form.imageUrl));
                     }
                     const isEdit = Boolean(mhe?.id);
@@ -2037,7 +2080,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                       certification: saved?.certification ?? (cert as Certification),
                       battery: saved?.battery ?? (bat as Battery),
                       repairs: Array.isArray(saved?.repairs) ? saved.repairs : [],
-                      imageUrl: saved?.imageUrl ?? (form.imageUrl || null),
+                      imageUrl: saved?.imageUrl ?? (mhe?.imageUrl ?? null),
                       status: (saved?.status as any) || (form.status as any) || "Active",
                     };
                     setMhes(prev => {
@@ -2724,10 +2767,9 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                       >
                         <TableCell>
                           {v.imageUrl ? (
-                            <img src={v.imageUrl} alt={v.plateNo || v.vehicleType || "Vehicle"} className="h-8 w-8 rounded object-cover" />
-                          ) : (
-                            <div className="h-8 w-8 rounded bg-muted flex items-center justify-center text-xs">No</div>
-                          )}
+                            <img src={v.imageUrl} alt={v.plateNo || v.vehicleType || "Vehicle"} className="h-8 w-8 rounded object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }} />
+                          ) : null}
+                          <div className={`h-8 w-8 rounded bg-muted flex items-center justify-center text-xs${v.imageUrl ? ' hidden' : ''}`}>No</div>
                         </TableCell>
                         <TableCell className="font-medium">{v.plateNo || '-'}</TableCell>
                         <TableCell>{[v.make, v.model, v.year ? String(v.year) : undefined].filter(Boolean).join(' ') || '-'}</TableCell>
@@ -3139,10 +3181,9 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                       >
                         <TableCell>
                           {m.imageUrl ? (
-                            <img src={m.imageUrl} alt={m.equipmentInfo} className="h-8 w-8 rounded object-cover" />
-                          ) : (
-                            <div className="h-8 w-8 rounded bg-muted flex items-center justify-center text-xs">No</div>
-                          )}
+                            <img src={m.imageUrl} alt={m.equipmentInfo} className="h-8 w-8 rounded object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }} />
+                          ) : null}
+                          <div className={`h-8 w-8 rounded bg-muted flex items-center justify-center text-xs${m.imageUrl ? ' hidden' : ''}`}>No</div>
                         </TableCell>
                         <TableCell className="font-medium">{m.equipmentInfo}</TableCell>
                         <TableCell className={((m.status || "Active") !== "Active") ? "text-orange-700 font-medium" : undefined}>{m.status || "Active"}</TableCell>

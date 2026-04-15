@@ -26,6 +26,7 @@ import { saveShipmentAction, deleteShipmentAction } from "@/app/dashboard/shipme
 import { cn } from "@/lib/utils";
 import { useFormStatus } from "react-dom";
 import { useAuth } from '@/contexts/AuthContext';
+import { usePagePermissions } from '@/hooks/use-page-permissions';
 
 
 function DatePickerField({ name, control, label, required }: { name: any, control: any, label: string, required?: boolean }) {
@@ -167,6 +168,7 @@ export function ShipmentForm({
     const [actionState, formAction] = useActionState(saveShipmentAction, { success: false, error: null });
     const { toast } = useToast();
     const { user, refreshUser } = useAuth();
+    const { canAdd, canEdit, canDelete } = usePagePermissions('shipments');
 
     useEffect(() => {
         if (user && !(user as any).permissions) {
@@ -175,7 +177,6 @@ export function ShipmentForm({
         }
     }, [user, refreshUser]);
 
-    const canDelete = !!(user && (user as any).permissions && Array.isArray((user as any).permissions.shipments) && (user as any).permissions.shipments.includes('delete'));
 
     const form = useForm<ShipmentFormData>({
         defaultValues: parseShipmentData(shipment) || {
@@ -257,18 +258,24 @@ export function ShipmentForm({
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                {isEditMode ? (
-                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
-                ) : (
-                    <Button variant="default" size="lg" className="gap-2 rounded-lg shadow-sm hover:shadow-md">
-                        <PlusCircle className="h-5 w-5" />
-                        <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
-                            Create Shipment
-                        </span>
-                    </Button>
-                )}
-            </DialogTrigger>
+            {isEditMode ? (
+                canEdit && (
+                    <DialogTrigger asChild>
+                        <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                    </DialogTrigger>
+                )
+            ) : (
+                canAdd && (
+                    <DialogTrigger asChild>
+                        <Button variant="default" size="lg" className="gap-2 rounded-lg shadow-sm hover:shadow-md">
+                            <PlusCircle className="h-5 w-5" />
+                            <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
+                                Create Shipment
+                            </span>
+                        </Button>
+                    </DialogTrigger>
+                )
+            )}
             <DialogContent className="max-w-6xl h-[90vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle>{isEditMode ? "Edit Shipment" : "Create New Shipment"}</DialogTitle>

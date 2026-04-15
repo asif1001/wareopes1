@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/contexts/AuthContext"
+import { usePagePermissions } from "@/hooks/use-page-permissions"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,7 +31,8 @@ function expiryStatus(expiry?: string | null) {
 
 export function DriverLicenseClientPage({ initialUsers, initialLicenses }: { initialUsers?: User[]; initialLicenses?: DriverLicense[] }) {
   const { toast } = useToast()
-  const { user, isAdmin, permissions } = useAuth() as any
+  const { user } = useAuth()
+  const { canAdd, canEdit, canDelete } = usePagePermissions('licenses')
   const [users, setUsers] = useState<User[]>(() => initialUsers || [])
   const [licenses, setLicenses] = useState<DriverLicense[]>(() => initialLicenses || [])
   const [searchQuery, setSearchQuery] = useState("")
@@ -47,10 +49,6 @@ export function DriverLicenseClientPage({ initialUsers, initialLicenses }: { ini
   const [newExpiryDate, setNewExpiryDate] = useState<string>("")
   const [newFiles, setNewFiles] = useState<File[]>([])
   const [newRemarks, setNewRemarks] = useState<string>("")
-  const p: any = permissions || {}
-  const canAdd = !!(isAdmin || (Array.isArray(p?.licenses) && p.licenses.includes('add')) || (Array.isArray(p?.maintenance) && p.maintenance.includes('add')))
-  const canEdit = !!(isAdmin || (Array.isArray(p?.licenses) && p.licenses.includes('edit')) || (Array.isArray(p?.maintenance) && p.maintenance.includes('edit')))
-  const canDelete = !!(isAdmin || (Array.isArray(p?.licenses) && p.licenses.includes('delete')) || (Array.isArray(p?.maintenance) && p.maintenance.includes('delete')))
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const editingLicense = useMemo(() => licenses.find(l => l.id === editingId) || null, [licenses, editingId])

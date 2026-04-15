@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Edit } from "lucide-react";
 import { Department, Branch, Role, User, userRoles, PermissionAction, AppPageKey, Source, ContainerSize } from "@/lib/types";
-import { APP_PAGES, PERMISSION_ACTIONS } from "@/lib/role-utils";
+import { APP_PAGES, PERMISSION_ACTIONS, PAGE_LABELS } from "@/lib/role-utils";
 import { useFormStatus } from "react-dom";
 import { useActionState, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -92,14 +92,17 @@ export function UserEditForm({ departments, roles, user, roleDefaults, onSuccess
                                 <SelectContent>
                                     {/* Removed empty-value item per Radix Select API */}
                                     <SelectItem value="/dashboard">Dashboard</SelectItem>
-                                    <SelectItem value="/dashboard/admin">Admin Dashboard</SelectItem>
-                                    <SelectItem value="/dashboard/manager">Manager Dashboard</SelectItem>
-                                    <SelectItem value="/dashboard/employee">Employee Dashboard</SelectItem>
                                     <SelectItem value="/dashboard/shipments">Shipments</SelectItem>
                                     <SelectItem value="/dashboard/dispatches">Dispatches</SelectItem>
+                                    <SelectItem value="/dashboard/production">Production</SelectItem>
+                                    <SelectItem value="/dashboard/maintenance">Maintenance</SelectItem>
+                                    <SelectItem value="/dashboard/oil-status">Oil Status</SelectItem>
+                                    <SelectItem value="/dashboard/driver-license">Driver License</SelectItem>
                                     <SelectItem value="/dashboard/tasks">Tasks</SelectItem>
-                                    <SelectItem value="/dashboard/feedback">Feedback</SelectItem>
+                                    <SelectItem value="/dashboard/productivity">Productivity</SelectItem>
+                                    <SelectItem value="/dashboard/staff">Staff</SelectItem>
                                     <SelectItem value="/dashboard/reports">Reports</SelectItem>
+                                    <SelectItem value="/dashboard/feedback">Feedback</SelectItem>
                                     <SelectItem value="/dashboard/settings">Settings</SelectItem>
                                 </SelectContent>
                             </Select>
@@ -116,22 +119,22 @@ export function UserEditForm({ departments, roles, user, roleDefaults, onSuccess
                     <div className="space-y-3">
                         <Label>Permissions</Label>
                         <input type="hidden" name="perm:mode" value="explicit" />
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                             {APP_PAGES.map(page => (
-                                <div key={page} className="border rounded-md p-3">
-                                    <div className="font-medium mb-2 capitalize">{page}</div>
-                                    <div className="flex flex-wrap gap-3">
+                                <div key={page} className="border rounded-md p-3 space-y-2">
+                                    <div className="font-semibold text-sm">{PAGE_LABELS[page as AppPageKey] ?? page}</div>
+                                    <div className="grid grid-cols-2 gap-y-1 gap-x-3">
                                         {PERMISSION_ACTIONS.map(action => (
-                                            <label key={action} className="flex items-center gap-2">
-                                               <input type="checkbox" name={`perm:${page}:${action}`} defaultChecked={getInitialChecked(page as AppPageKey, action as PermissionAction)} />
-                                                <span className="capitalize">{action}</span>
+                                            <label key={action} className="flex items-center gap-2 cursor-pointer">
+                                               <input type="checkbox" name={`perm:${page}:${action}`} defaultChecked={getInitialChecked(page as AppPageKey, action as PermissionAction)} className="rounded" />
+                                                <span className="capitalize text-sm">{action}</span>
                                             </label>
                                         ))}
                                     </div>
                                 </div>
                             ))}
                         </div>
-                        <p className="text-xs text-muted-foreground">Unchecked boxes rely on role defaults.</p>
+                        <p className="text-xs text-muted-foreground">Unchecked boxes rely on role defaults. Admins always have full access.</p>
                     </div>
                 </CardContent>
                 <CardFooter>

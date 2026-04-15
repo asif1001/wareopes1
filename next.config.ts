@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  distDir: process.env.NODE_ENV === 'development' ? 'workspace/next-dev' : '.next',
+  distDir: '.next-build',
   typescript: {
     // Only ignore build errors in development
     ignoreBuildErrors: process.env.NODE_ENV === 'development',
@@ -21,6 +21,14 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "picsum.photos",
+      },
+      {
+        protocol: "https",
+        hostname: "firebasestorage.googleapis.com",
+      },
+      {
+        protocol: "https",
+        hostname: "storage.googleapis.com",
       },
     ],
   },

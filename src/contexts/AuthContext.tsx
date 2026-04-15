@@ -193,6 +193,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
         localStorage.setItem('wareopes_session', JSON.stringify(updatedSession));
       }
+
+      // Re-bake the session cookie with latest permissions so middleware stays in sync
+      await fetch('/api/session/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: data.id }),
+      }).catch(() => {});
     } catch (error) {
       console.error('Error refreshing user via /api/me:', error);
     }

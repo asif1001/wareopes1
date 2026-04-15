@@ -7,7 +7,7 @@ type TaskKanbanColumnProps = {
     status: TaskStatus;
     tasks: SerializableTask[];
     users: SerializableUserProfile[];
-    onEdit: (task: SerializableTask) => void;
+    onEdit?: (task: SerializableTask) => void;
 };
 
 export function TaskKanbanColumn({ status, tasks, users, onEdit }: TaskKanbanColumnProps) {

@@ -117,6 +117,24 @@ export async function POST(request: NextRequest) {
         
         console.log('Login successful');
 
+        // Resolve permissions: explicit user permissions, else derive from role
+        let permissions = userData.permissions as Record<string, string[]> | undefined;
+        if (!permissions && userData.role) {
+            const rolesSnap = await adminDb.collection('Roles').where('name', '==', String(userData.role)).limit(1).get();
+            if (!rolesSnap.empty) {
+                const rolePerms = rolesSnap.docs[0].data()?.permissions;
+                if (Array.isArray(rolePerms)) {
+                    const normalized: Record<string, string[]> = {};
+                    for (const item of rolePerms) {
+                        if (typeof item !== 'string') continue;
+                        const [page, action] = item.split(':');
+                        if (page && action) (normalized[page] ||= []).push(action);
+                    }
+                    if (Object.keys(normalized).length) permissions = normalized;
+                }
+            }
+        }
+
         // Create session cookie
         const sessionData = {
             id: userDoc.id,
@@ -126,7 +144,8 @@ export async function POST(request: NextRequest) {
             role: userData.role,
             department: userData.department,
             branch: userData.branch,
-            redirectPage: userData.redirectPage, // propagate user redirect preference
+            redirectPage: userData.redirectPage,
+            permissions: permissions ?? null,
         };
 
         const response = NextResponse.json(sessionData);

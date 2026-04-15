@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/AuthContext";
+import { usePagePermissions } from "@/hooks/use-page-permissions";
 import type { PermissionAction } from "@/lib/types";
 
 type MaintenanceAction = Exclude<PermissionAction, "view"> | "view";
@@ -14,11 +14,15 @@ type MaintenanceActionButtonProps = React.ComponentProps<typeof Button> & {
 
 export default function MaintenanceActionButton(props: MaintenanceActionButtonProps) {
   const { action, hideIfNoAccess = false, label, disabled, children, ...rest } = props;
-  const { user, isAdmin } = useAuth();
+  const { canView, canAdd, canEdit, canDelete } = usePagePermissions('maintenance');
 
-  const allowed = Boolean(
-    isAdmin || (user?.permissions?.maintenance ?? []).includes(action as PermissionAction)
-  );
+  const actionMap: Record<MaintenanceAction, boolean> = {
+    view: canView,
+    add: canAdd,
+    edit: canEdit,
+    delete: canDelete,
+  };
+  const allowed = actionMap[action] ?? false;
 
   if (!allowed && hideIfNoAccess) {
     return null;

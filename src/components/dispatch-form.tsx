@@ -7,6 +7,7 @@ import { z } from "zod";
 import { useDropzone } from "react-dropzone";
 import { format, isValid } from 'date-fns';
 import { useToast } from "@/hooks/use-toast";
+import { usePagePermissions } from "@/hooks/use-page-permissions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -78,18 +79,20 @@ function ContainerPhotoDropzone({ containerId, onFilesAdded }: { containerId: st
     );
 }
 
-export function DispatchForm({ dispatch, isEditMode = false, users, containerSizes, onCreated, onUpdated }: {
+export function DispatchForm({ dispatch, isEditMode = false, users, containerSizes, onCreated, onUpdated, hidden }: {
     dispatch?: SerializableDispatch;
     isEditMode?: boolean;
     users: User[];
     containerSizes: ContainerSize[];
     onCreated?: (dispatch: SerializableDispatch) => void;
     onUpdated?: (dispatch: SerializableDispatch) => void;
+    hidden?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [containerFiles, setContainerFiles] = useState<Record<string, File[]>>({});
+    const { canAdd, canEdit } = usePagePermissions('dispatches');
     const [uploadProgressByContainer, setUploadProgressByContainer] = useState<Record<string, number>>({});
     const [existingPhotosByContainer, setExistingPhotosByContainer] = useState<Record<string, SerializableDispatchContainerPhoto[]>>({});
     const [containerDialogOpen, setContainerDialogOpen] = useState(false);
@@ -563,15 +566,21 @@ export function DispatchForm({ dispatch, isEditMode = false, users, containerSiz
     return (
         <>
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogTrigger asChild>
-                    {isEditMode ? (
-                        <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
-                    ) : (
-                        <Button>
-                            <PlusCircle className="mr-2 h-4 w-4" /> Add Dispatch
-                        </Button>
-                    )}
-                </DialogTrigger>
+                {isEditMode ? (
+                    canEdit && !hidden && (
+                        <DialogTrigger asChild>
+                            <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                        </DialogTrigger>
+                    )
+                ) : (
+                    canAdd && !hidden && (
+                        <DialogTrigger asChild>
+                            <Button>
+                                <PlusCircle className="mr-2 h-4 w-4" /> Add Dispatch
+                            </Button>
+                        </DialogTrigger>
+                    )
+                )}
                 <DialogContent
                     className="max-w-5xl w-[96vw] max-h-[calc(100dvh-1.5rem)] flex flex-col overflow-hidden p-3"
                     onInteractOutside={(event) => event.preventDefault()}

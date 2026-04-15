@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 interface TaskTableProps {
   tasks: SerializableTask[];
   users: SerializableUserProfile[];
-  onEdit: (task: SerializableTask) => void;
+  onEdit?: (task: SerializableTask) => void;
   onDelete?: (task: SerializableTask) => Promise<void> | void;
 }
 
@@ -88,7 +88,7 @@ export function TaskTable({ tasks, users, onEdit, onDelete }: TaskTableProps) {
                 )}
               </TableCell>
               <TableCell className="text-right space-x-2">
-                <Button size="sm" variant="secondary" onClick={() => onEdit(task)}>Edit</Button>
+                {onEdit && <Button size="sm" variant="secondary" onClick={() => onEdit(task)}>Edit</Button>}
                 {onDelete && (
                   <Button size="sm" variant="destructive" onClick={() => onDelete(task)}>Delete</Button>
                 )}

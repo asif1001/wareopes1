@@ -4,14 +4,33 @@ import { AppPageKey, PermissionAction } from "./types";
 export const APP_PAGES: AppPageKey[] = [
   "shipments",
   "dispatches",
-  "tasks",
-  "settings",
   "production",
-  "productivity",
   "maintenance",
-  "licenses",
   "oil_status",
+  "licenses",
+  "tasks",
+  "productivity",
+  "staff",
+  "reports",
+  "feedback",
+  "settings",
 ];
+
+export const PAGE_LABELS: Record<AppPageKey, string> = {
+  shipments: "Shipments",
+  dispatches: "Dispatches",
+  production: "Production",
+  maintenance: "Maintenance",
+  oil_status: "Oil Status",
+  licenses: "Driver License",
+  tasks: "Tasks",
+  productivity: "Productivity",
+  staff: "Staff",
+  reports: "Reports",
+  feedback: "Feedback",
+  settings: "Settings",
+};
+
 export const PERMISSION_ACTIONS: PermissionAction[] = ["view", "add", "edit", "delete"];
 
 

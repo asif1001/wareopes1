@@ -260,7 +260,7 @@ export type Role = {
 
 // Granular permissions
 export type PermissionAction = 'view' | 'add' | 'edit' | 'delete';
-export type AppPageKey = 'shipments' | 'dispatches' | 'tasks' | 'settings' | 'production' | 'productivity' | 'maintenance' | 'licenses' | 'oil_status'; // extendable
+export type AppPageKey = 'shipments' | 'dispatches' | 'tasks' | 'settings' | 'production' | 'productivity' | 'maintenance' | 'licenses' | 'oil_status' | 'staff' | 'reports' | 'feedback'; // extendable
 export type UserPermissions = Partial<Record<AppPageKey, PermissionAction[]>>;
 
 export type User = {

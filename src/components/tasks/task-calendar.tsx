@@ -10,7 +10,7 @@ import { EventClickArg } from "@fullcalendar/core";
 type TaskCalendarProps = {
     tasks: SerializableTask[];
     users: SerializableUserProfile[];
-    onEdit: (task: SerializableTask) => void;
+    onEdit?: (task: SerializableTask) => void;
 };
 
 export function TaskCalendar({ tasks, onEdit }: TaskCalendarProps) {
@@ -28,7 +28,7 @@ export function TaskCalendar({ tasks, onEdit }: TaskCalendarProps) {
     }));
 
     const handleEventClick = (clickInfo: EventClickArg) => {
-        onEdit(clickInfo.event.extendedProps.task);
+        if (onEdit) onEdit(clickInfo.event.extendedProps.task);
     };
 
     return (

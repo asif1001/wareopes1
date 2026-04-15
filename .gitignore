@@ -9,6 +9,7 @@ node_modules/
 .next_temp_build/
 .next_temp_final/
 .next_build/
+.next-build/
 out/
 dist/
 build/

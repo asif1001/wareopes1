@@ -12,7 +12,7 @@ import { CalendarIcon } from "lucide-react";
 type TaskCardProps = {
     task: SerializableTask;
     users: SerializableUserProfile[];
-    onEdit: (task: SerializableTask) => void;
+    onEdit?: (task: SerializableTask) => void;
 };
 
 const getPriorityVariant = (priority: string) => {
@@ -39,7 +39,7 @@ export function TaskCard({ task, users, onEdit }: TaskCardProps) {
     const assignee = getUserById(users, task.assigneeId);
 
     return (
-        <Card onClick={() => onEdit(task)} className="mb-4 cursor-pointer hover:bg-muted/50">
+        <Card onClick={onEdit ? () => onEdit(task) : undefined} className={`mb-4 ${onEdit ? 'cursor-pointer hover:bg-muted/50' : ''}`}>
             <CardHeader className="p-4">
                 <CardTitle className="text-base">{task.title}</CardTitle>
             </CardHeader>

@@ -6,7 +6,7 @@ import { TaskKanbanColumn } from "./task-kanban-column";
 type TaskKanbanProps = {
     tasks: SerializableTask[];
     users: SerializableUserProfile[];
-    onEdit: (task: SerializableTask) => void;
+    onEdit?: (task: SerializableTask) => void;
 };
 
 const kanbanColumns: TaskStatus[] = ["Backlog", "To Do", "In Progress", "Review", "Done"];

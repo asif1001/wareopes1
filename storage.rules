@@ -53,6 +53,22 @@ service firebase.storage {
         );
     }
 
+    // Staff and contractor profile photos
+    match /staff/{staffId}/images/{fileName} {
+      allow read: if true;
+      allow write: if true;
+      allow create: if request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // MHE (Material Handling Equipment) files
+    match /mhes/{mheId}/images/{fileName} {
+      allow read: if true;
+      allow write: if true;
+      allow create: if request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
     // Dispatch container photos
     match /dispatches/{dispatchId}/containers/{containerId}/{fileName} {
       allow read: if true;

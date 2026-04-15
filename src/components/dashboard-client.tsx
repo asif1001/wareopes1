@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import NextDynamic from "next/dynamic";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/stat-card";
 import { getPendingArrivedTotalLines } from "@/lib/firebase/firestore";
 import { statCards } from "@/lib/data";
+import { useToast } from "@/hooks/use-toast";
 import type { ClearedContainerSummary, ClearedShipmentSummary, SerializableShipment } from "@/lib/types";
 
 // Props provided by the server page
@@ -37,6 +39,23 @@ const RecentShipments = NextDynamic<RecentShipmentsProps>(() => import("@/compon
 
 export function DashboardClient({ shipmentLinesData, containerData, upcomingShipments }: DashboardClientProps) {
   const [pendingArrivedTotalLines, setPendingArrivedTotalLines] = useState<number | null>(null);
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const unauthorizedPage = searchParams.get('unauthorized');
+    if (unauthorizedPage) {
+      toast({
+        title: 'Access Denied',
+        description: `You do not have permission to view the "${unauthorizedPage}" page.`,
+        variant: 'destructive',
+      });
+      // Clean up URL without reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete('unauthorized');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [searchParams, toast]);
 
   useEffect(() => {
     let active = true;

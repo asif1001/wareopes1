@@ -15,6 +15,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { uploadProductionFile } from '@/lib/firebase/storage';
 import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePagePermissions } from '@/hooks/use-page-permissions';
 import * as XLSX from 'xlsx';
 
 import type { SerializableShipment } from '@/lib/types';
@@ -42,6 +43,7 @@ function getPriorityScore(s: SerializableShipment) {
 export function ProductionClientPage({ initialShipments }: ProductionClientPageProps) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { canAdd, canDelete } = usePagePermissions('production');
 
   // Selection & filtering state
   const [search, setSearch] = React.useState('');
@@ -522,8 +524,8 @@ async function onConfirmProcess() {
         </CardContent>
       </Card>
 
-      {/* Upload & Parse */}
-      <Card>
+      {/* Upload & Process: only shown when user has add permission */}
+      {canAdd && <Card>
         <CardHeader>
           <CardTitle className="text-lg">Upload Case Data</CardTitle>
         </CardHeader>
@@ -615,14 +617,14 @@ async function onConfirmProcess() {
           </div>
 
           {/* Delete last upload */}
-          {lastUpload && (
+          {canDelete && lastUpload && (
             <div className="mt-3 flex items-center justify-between">
               <div className="text-xs text-muted-foreground">Last upload: {lastUpload.caseNumbers.length} cases across {lastUpload.shipmentIds.length} shipment(s)</div>
               <Button variant="destructive" onClick={onDeleteLastUpload} disabled={submitting} aria-label="Delete last uploaded records">Delete Last Upload</Button>
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* Confirmation Dialog */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -672,7 +674,7 @@ async function onConfirmProcess() {
       </Dialog>
 
       {/* Delete existing uploaded cases for selected shipment */}
-      {selectedShipment && isLocked && (
+      {canDelete && selectedShipment && isLocked && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Delete Uploaded Cases</CardTitle>

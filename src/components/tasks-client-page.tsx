@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePagePermissions } from "@/hooks/use-page-permissions";
 import { ListFilter, PlusCircle, LayoutGrid, List, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -22,6 +23,7 @@ type TasksClientPageProps = {
 type View = "table" | "kanban" | "calendar";
 
 export function TasksClientPage({ initialTasks, users, currentUserId }: TasksClientPageProps) {
+    const { canAdd, canEdit, canDelete } = usePagePermissions('tasks');
     const [tasks, setTasks] = useState<SerializableTask[]>(initialTasks);
     const [filteredTasks, setFilteredTasks] = useState<SerializableTask[]>(initialTasks);
     const [view, setView] = useState<View>("table");
@@ -50,6 +52,8 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
         }
     };
 
+    const editTask = (task: SerializableTask) => openModal(task);
+
     const myTasks = filteredTasks.filter(task => task.assigneeId === currentUserId || task.reporterId === currentUserId);
     const activeTasks = filteredTasks.filter(task => !['Done', 'Blocked', 'On Hold'].includes(task.status));
 
@@ -57,12 +61,14 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
         <div className="flex flex-col h-full">
             <DashboardHeader title="Tasks">
                 <div className="ml-auto flex items-center gap-2">
-                    <Button size="sm" className="h-8 gap-1" onClick={() => openModal()} data-testid="add-task">
-                        <PlusCircle className="h-3.5 w-3.5" />
-                        <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
-                            Add Task
-                        </span>
-                    </Button>
+                    {canAdd && (
+                        <Button size="sm" className="h-8 gap-1" onClick={() => openModal()} data-testid="add-task">
+                            <PlusCircle className="h-3.5 w-3.5" />
+                            <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
+                                Add Task
+                            </span>
+                        </Button>
+                    )}
                 </div>
             </DashboardHeader>
             <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
@@ -94,20 +100,20 @@ export function TasksClientPage({ initialTasks, users, currentUserId }: TasksCli
                     </div>
 
                     <TabsContent value="active" className="mt-4">
-                        {view === 'table' && <TaskTable tasks={activeTasks} users={users} onEdit={openModal} onDelete={async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); }} />}
-                        {view === 'kanban' && <TaskKanban tasks={activeTasks} users={users} onEdit={openModal} />}
-                        {view === 'calendar' && <TaskCalendar tasks={activeTasks} users={users} onEdit={openModal} />}
+                        {view === 'table' && <TaskTable tasks={activeTasks} users={users} onEdit={canEdit ? editTask : undefined} onDelete={canDelete ? async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); } : undefined} />}
+                        {view === 'kanban' && <TaskKanban tasks={activeTasks} users={users} onEdit={canEdit ? editTask : undefined} />}
+                        {view === 'calendar' && <TaskCalendar tasks={activeTasks} users={users} onEdit={canEdit ? editTask : undefined} />}
                     </TabsContent>
 
                     <TabsContent value="all" className="mt-4">
-                        {view === 'table' && <TaskTable tasks={filteredTasks} users={users} onEdit={openModal} onDelete={async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); }} />}
-                        {view === 'kanban' && <TaskKanban tasks={filteredTasks} users={users} onEdit={openModal} />}
-                        {view === 'calendar' && <TaskCalendar tasks={filteredTasks} users={users} onEdit={openModal} />}
+                        {view === 'table' && <TaskTable tasks={filteredTasks} users={users} onEdit={canEdit ? editTask : undefined} onDelete={canDelete ? async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); } : undefined} />}
+                        {view === 'kanban' && <TaskKanban tasks={filteredTasks} users={users} onEdit={canEdit ? editTask : undefined} />}
+                        {view === 'calendar' && <TaskCalendar tasks={filteredTasks} users={users} onEdit={canEdit ? editTask : undefined} />}
                     </TabsContent>
                     <TabsContent value="my-tasks" className="mt-4">
-                        {view === 'table' && <TaskTable tasks={myTasks} users={users} onEdit={openModal} onDelete={async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); }} />}
-                        {view === 'kanban' && <TaskKanban tasks={myTasks} users={users} onEdit={openModal} />}
-                        {view === 'calendar' && <TaskCalendar tasks={myTasks} users={users} onEdit={openModal} />}
+                        {view === 'table' && <TaskTable tasks={myTasks} users={users} onEdit={canEdit ? editTask : undefined} onDelete={canDelete ? async (task) => { await fetch(`/api/tasks`, { method: 'DELETE', body: JSON.stringify({ id: task.id }) }); refreshTasks(); } : undefined} />}
+                        {view === 'kanban' && <TaskKanban tasks={myTasks} users={users} onEdit={canEdit ? editTask : undefined} />}
+                        {view === 'calendar' && <TaskCalendar tasks={myTasks} users={users} onEdit={canEdit ? editTask : undefined} />}
                     </TabsContent>
                 </Tabs>
             </main>

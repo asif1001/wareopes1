@@ -72,7 +72,9 @@
     "next-build-dev-1773159734781/types/**/*.ts",
     "next-build-dev-1773159734781/dev/types/**/*.ts",
     "workspace/next-dev/types/**/*.ts",
-    "workspace/next-dev/dev/types/**/*.ts"
+    "workspace/next-dev/dev/types/**/*.ts",
+    ".next-build/types/**/*.ts",
+    ".next-build/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
