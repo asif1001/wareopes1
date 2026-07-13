@@ -83,28 +83,18 @@ function docToShipment(doc: any): SerializableShipment {
 
 export async function getShipments(): Promise<SerializableShipment[]> {
     // Server-side: use Admin SDK to bypass Firestore rules
+    // Load all shipments (ordered by ETA). A rolling date cutoff hid older records
+    // even when they were still active in the warehouse workflow.
     if (typeof window === 'undefined') {
         const { getAdminDb } = await import('./admin');
         const adb = await getAdminDb();
         const shipmentsRef: any = adb.collection('shipments');
-        const fortyFiveDaysAgo = new Date();
-        fortyFiveDaysAgo.setDate(fortyFiveDaysAgo.getDate() - 45);
-        const snap = await shipmentsRef
-            .where('bahrainEta', '>=', fortyFiveDaysAgo)
-            .orderBy('bahrainEta', 'desc')
-            .get();
+        const snap = await shipmentsRef.orderBy('bahrainEta', 'desc').get();
         return snap.docs.map((d: any) => docToShipment(d));
     }
 
     const shipmentsCol = collection(db, 'shipments');
-    const fortyFiveDaysAgo = new Date();
-    fortyFiveDaysAgo.setDate(fortyFiveDaysAgo.getDate() - 45);
-    
-    const q = query(
-        shipmentsCol, 
-        where("bahrainEta", ">=", fortyFiveDaysAgo),
-        orderBy("bahrainEta", "desc")
-    );
+    const q = query(shipmentsCol, orderBy("bahrainEta", "desc"));
     const shipmentSnapshot = await getDocs(q);
     return shipmentSnapshot.docs.map(docToShipment);
 }
@@ -564,14 +554,17 @@ export async function deleteRole(id: string) {
 
 function docToDispatch(doc: any): SerializableDispatch {
     const data = typeof doc.data === 'function' ? doc.data() : doc;
+    // Older docs often only have dateTime; fall back so the UI never gets Invalid Date.
+    const dateTime = toISOString(data.dateTime) || toISOString(data.loadingDate) || new Date(0).toISOString();
+    const loadingDate = toISOString(data.loadingDate) || dateTime;
 
     return {
         id: doc.id || data.id,
-        dateTime: toISOString(data.dateTime)!,
-        invoiceNo: data.invoiceNo,
-        customerName: data.customerName,
-        customerCode: data.customerCode,
-        loadingDate: toISOString(data.loadingDate)!,
+        dateTime,
+        invoiceNo: data.invoiceNo || '',
+        customerName: data.customerName || '',
+        customerCode: data.customerCode || '',
+        loadingDate,
         containerSize: data.containerSize,
         noOfContainer: data.noOfContainer,
         noOfCases: data.noOfCases,
@@ -580,13 +573,13 @@ function docToDispatch(doc: any): SerializableDispatch {
         trailerNo: data.trailerNo,
         driverCprNo: data.driverCprNo,
         driverPhoneNo: data.driverPhoneNo,
-        containerNo: data.containerNo,
+        containerNo: data.containerNo || '',
         loaderName: data.loaderName,
         checkerName: data.checkerName,
         modeOfTransport: data.modeOfTransport,
         status: data.status || 'Pending',
-        createdAt: toISOString(data.createdAt)!,
-        updatedAt: toISOString(data.updatedAt)!,
+        createdAt: toISOString(data.createdAt) || dateTime,
+        updatedAt: toISOString(data.updatedAt) || dateTime,
     };
 }
 

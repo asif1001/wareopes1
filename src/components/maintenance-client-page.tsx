@@ -416,7 +416,10 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
   const filteredGatePasses = useMemo(() => {
     return gatePasses.filter(g => {
       const q = searchQuery.toLowerCase();
-      const matches = g.customerName.toLowerCase().includes(q) || g.passNumber.toLowerCase().includes(q);
+      const matches = g.customerName.toLowerCase().includes(q)
+        || g.passNumber.toLowerCase().includes(q)
+        || (g.driverName || '').toLowerCase().includes(q)
+        || (g.location || '').toLowerCase().includes(q);
       const gpStatus = expiryStatus(g.expiryDate).label.toLowerCase();
       const normalized = gpStatus === "expiring soon" ? "soon" : gpStatus;
       const matchesStatus = statusFilter === "all" || statusFilter === normalized;
@@ -3425,6 +3428,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                 <TableHeader>
                   <TableRow>
                     <TableHead>Customer</TableHead>
+                    <TableHead>Holder</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Pass No</TableHead>
                     <TableHead>Status</TableHead>
@@ -3442,6 +3446,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
                         onClick={(e) => { if ((e as any).defaultPrevented) return; setSelectedGatePassId(g.id); }}
                       >
                         <TableCell className="font-medium">{g.customerName}</TableCell>
+                        <TableCell>{g.driverName || '—'}</TableCell>
                         <TableCell>{g.location}</TableCell>
                         <TableCell>{g.passNumber}</TableCell>
                         <TableCell className={((g.status || "Active") !== "Active") ? "text-orange-700 font-medium" : undefined}>{g.status || "Active"}</TableCell>

@@ -82,7 +82,11 @@ function DispatchTable({ dispatches, users, containerSizes, onUpdated }: { dispa
                             </div>
                         </TableCell>
                         <TableCell>
-                            {format(new Date(dispatch.loadingDate), 'dd MMM yy')}
+                            {(() => {
+                                const raw = dispatch.loadingDate || dispatch.dateTime;
+                                const d = raw ? new Date(raw) : null;
+                                return d && !Number.isNaN(d.getTime()) ? format(d, 'dd MMM yy') : '—';
+                            })()}
                         </TableCell>
                         <TableCell>
                             {dispatch.noOfContainer} x {dispatch.containerSize}
@@ -170,9 +174,9 @@ export function DispatchesClientPage({
         return dispatches.filter(dispatch => {
             const query = searchQuery.toLowerCase();
             const matchesSearch = 
-                dispatch.invoiceNo.toLowerCase().includes(query) ||
-                dispatch.customerName.toLowerCase().includes(query) ||
-                dispatch.containerNo.toLowerCase().includes(query);
+                (dispatch.invoiceNo || '').toLowerCase().includes(query) ||
+                (dispatch.customerName || '').toLowerCase().includes(query) ||
+                (dispatch.containerNo || '').toLowerCase().includes(query);
 
             const matchesFilter = 
                 statusFilter === "all" || dispatch.status === statusFilter;

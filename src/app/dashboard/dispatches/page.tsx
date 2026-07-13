@@ -22,7 +22,8 @@ async function Dispatches() {
     dispatches = results[0];
     users = results[1];
     containerSizes = results[2];
-  } catch {
+  } catch (error) {
+    console.error('Failed to load dispatches page data:', error);
     dispatches = [];
     users = [];
     containerSizes = [];
