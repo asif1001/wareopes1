@@ -11,6 +11,7 @@ export const APP_PAGES: AppPageKey[] = [
   "maintenance",
   "licenses",
   "oil_status",
+  "warehouse",
 ];
 export const PERMISSION_ACTIONS: PermissionAction[] = ["view", "add", "edit", "delete"];
 

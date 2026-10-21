@@ -13,6 +13,7 @@ A modern warehouse management application built with Next.js 16.1.6, Firebase, a
 - **TypeScript** - Full type safety and better development experience
 - **Maintenance & Operations Reminders** - Unified notifications for vehicles, MHEs, and gate passes
 - **Oil Status Monitoring** - Real-time visualization of oil tank levels and alerts
+- **Warehouse 3D** - Branch-wise zone/row/rack/level/bin occupancy in an interactive WebGL view with dated snapshots
 
 ## 🛠️ Tech Stack
 
@@ -24,6 +25,7 @@ A modern warehouse management application built with Next.js 16.1.6, Firebase, a
 ## 📋 Prerequisites
 
 Before you begin, ensure you have the following installed:
+
 - **Node.js** (version 18 or higher)
 - **npm** (comes with Node.js)
 - **Git**
@@ -81,6 +83,7 @@ NEXT_PUBLIC_ONEDELIVERY_MEASUREMENT_ID=your_measurement_id_here
 ### 5. Set up Firestore Collections
 
 Create the following collections in your Firestore database:
+
 - `shipments` - For shipment data
 - `inventory` - For inventory items
 - `analytics` - For analytics data
@@ -96,6 +99,32 @@ The application will be available at [http://localhost:3000](http://localhost:30
 
 ## 🛠 Maintenance & Operations Reminders
 
+## 🏗️ Warehouse 3D (occupancy by zone)
+
+The **Warehouse 3D** page (`/dashboard/warehouse`) turns an inventory export into an interactive, branch-wise warehouse view.
+
+1. Choose a branch (or type a name when no branch records exist yet).
+2. Upload an `.xlsx`, `.xls` or `.csv` export. Columns are detected automatically: `Locator`, `LPN`, `On-hand`, `Item`, `Item Description`, `Sub`, `Grade`, `UOM`, `Status` and an optional `Brand`.
+3. Confirm the detected zones and save. A dated snapshot is stored for the branch.
+4. Explore the racks: filter by zone, row, level, brand or free-text search; click any carton or empty slot for LPN, item and quantity details.
+5. Export a formatted workbook with summary, brand, level, row, zone, brand × level, locations and inventory sheets.
+
+**Location model:** `Zone.Row.Rack.Level.Bin` (for example `A5.03.15.F.2`). Levels and bins may be letters or numbers, so both `A–G` levels with `1–3` bins and numeric levels with `A–D` bins are supported. Ranges are configured per branch in the **Setup** tab, and occupied percentages always use the full configured capacity (including empty locations).
+
+**Storage**
+
+| Collection                                   | Contents                                          |
+| -------------------------------------------- | ------------------------------------------------- |
+| `warehouseLayouts/{layoutId}`                | One layout per branch: zones, ranges, brand rules |
+| `warehouseSnapshots/{snapshotId}`            | Snapshot metadata and aggregated summary          |
+| `warehouseSnapshots/{snapshotId}/chunks/{n}` | Inventory rows, 400 per chunk                     |
+
+All reads and writes go through `/api/warehouse`, which uses the Firebase Admin SDK, so the feature does not depend on browser Firestore rules or anonymous auth. If the API is unreachable the page falls back to browser `localStorage` and shows a **local mode** banner.
+
+Locators that fall outside the configured ranges are never dropped: they are drawn in red in the **unmapped** area and listed in **Setup → Locators outside the layout**.
+
+The 3D view is rendered with [three.js](https://threejs.org/) (MIT), lazy-loaded only when the page is opened.
+
 ## 🧩 Troubleshooting (Windows)
 
 - If `npm run build` fails with `EISDIR: illegal operation on a directory, readlink ... route.ts`, the project is likely on a non-NTFS drive. Move the repo to an NTFS volume (e.g., `C:\wareopes`) and retry the build.
@@ -103,6 +132,7 @@ The application will be available at [http://localhost:3000](http://localhost:30
 ## 📣 Recent Changes
 
 ### Stability & Lint Fixes (Feb 2026)
+
 - **Role Permissions Form Reset**: Added a scoped permissions editor that resets cleanly after role creation, avoiding effect-driven state resets.
 - **Settings Edit Dialog Flow**: Updated edit dialog state handling to close on successful submit without triggering effect-based setState warnings.
 - **Export Dialog CSV Flow**: Switched to action-driven CSV handling with explicit error state and dialog resets.
@@ -111,6 +141,7 @@ The application will be available at [http://localhost:3000](http://localhost:30
 - **Static Rendering Cleanups**: Removed impure calls in server pages and normalized apostrophes across UI strings.
 
 ### Dashboard Chart Enhancements
+
 - **Multi-Period Analysis**: Added "Week", "Months", and "Years" period selectors to both Container Overview and Shipment Overview charts.
   - Weekly view: Aggregates data by week number (W1-W52) for detailed short-term analysis.
   - Monthly view: Aggregates data by month (MMM yy) for standard trend analysis.
@@ -124,19 +155,22 @@ The application will be available at [http://localhost:3000](http://localhost:30
   - Optimized data fetching to return pre-aggregated weekly, monthly, and yearly datasets in a single request.
 
 ### Windows Environment & Build Output (Feb 2026)
+
 - **Development Build Output**: Uses `.next_v3` during `npm run dev` to avoid EPERM/file-locking errors on Windows.
 - **Production Build Output**: Keeps the default `.next` directory for Vercel compatibility.
 
 ### Next.js 16 Upgrade & Security Fixes
+
 - **Framework Upgrade**: Upgraded core framework to Next.js 16.1.1.
 - **Security Patch**: Resolved critical security vulnerability CVE-2025-66478.
-- **Dependency Resolution**: 
+- **Dependency Resolution**:
   - Updated `@genkit-ai/next` and related Genkit packages to v1.27.0 to resolve peer dependency conflicts with Next.js 16.
   - Removed deprecated `eslint` and `webpack` configurations from `next.config.ts`.
 - **API Route Compatibility**: Updated all dynamic API routes (`[id]`, `[slug]`) to correctly await `params` as required by Next.js 16 async route param behavior.
 - **Build System**: Fully migrated to Turbopack as the default development bundler in Next.js 16.
 
 ### Oil Status Monitoring Enhancements
+
 - **Enhanced 3D Tank Visualization**
   - Switched from WebGL (Three.js) to a lightweight CSS-based 3D capsule design.
   - Improves performance and eliminates "broken image" / context-loss errors on pages with many tanks.
