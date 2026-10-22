@@ -58,6 +58,40 @@ export type BrandRule = {
   brand: string;
 };
 
+export type RackJoin = "aisle" | "b2b";
+
+export type RackRowConfig = {
+  bays: number;
+  levels: number;
+  bins: number;
+  /** Relationship to the next row. */
+  join: RackJoin;
+};
+
+export type RackDimensions = {
+  /** All dimensions are in millimetres, matching the rack builder UI. */
+  bayWidth: number;
+  rackDepth: number;
+  levelHeight: number;
+  aisleWidth: number;
+  backToBackGap: number;
+};
+
+export type RackNumbering = {
+  bay: "num" | "alpha";
+  level: "num" | "alpha";
+  bin: "num" | "alpha";
+  binOrientation: "side" | "depth";
+  direction: "ltr" | "rtl";
+};
+
+export type RackBuilderConfig = {
+  zone: string;
+  rows: RackRowConfig[];
+  dimensions: RackDimensions;
+  numbering: RackNumbering;
+};
+
 export type WarehouseLayout = {
   id: string;
   branchId: string;
@@ -66,6 +100,8 @@ export type WarehouseLayout = {
   name: string;
   subInventories: SubInventoryLayout[];
   brandRules: BrandRule[];
+  /** When present, the 3D rack builder defines the warehouse structure. */
+  rackBuilder?: RackBuilderConfig;
   notes?: string;
   updatedAt?: string;
   updatedBy?: string;

@@ -9,6 +9,12 @@ import {
 import { analyzeWarehouse, compareSummaries } from "@/lib/warehouse/analyze";
 import { recordsFromRows } from "@/lib/warehouse/parse";
 import { computeScenePlan, AISLE_PITCH } from "@/lib/warehouse/geometry";
+import {
+  buildLayoutWithRackBuilder,
+  buildRackLocations,
+  createRackBuilderConfig,
+  rackToken,
+} from "@/lib/warehouse/rack-builder";
 import type { WarehouseLayout, WarehouseRecord } from "@/lib/warehouse/types";
 
 function testLayout(): WarehouseLayout {
@@ -296,6 +302,47 @@ describe("spreadsheet parsing", () => {
     expect(parsed.records).toHaveLength(0);
     expect(parsed.skippedRows).toBe(1);
     expect(parsed.warnings[0]).toMatch(/Locator/);
+  });
+});
+
+describe("rack builder", () => {
+  it("generates Zone.Row.Bay.Level.Bin codes with letters or numbers", () => {
+    const config = createRackBuilderConfig("T");
+    config.rows = [
+      { bays: 3, levels: 2, bins: 2, join: "aisle" },
+      { bays: 2, levels: 1, bins: 1, join: "aisle" },
+    ];
+    config.numbering = {
+      ...config.numbering,
+      bay: "num",
+      level: "alpha",
+      bin: "num",
+      direction: "ltr",
+    };
+    const locations = buildRackLocations(config);
+    expect(locations).toHaveLength(14);
+    expect(locations[0].locator).toBe("T.01.01.A.1");
+    expect(locations[11].locator).toBe("T.01.03.B.2");
+
+    config.numbering.direction = "rtl";
+    expect(buildRackLocations(config)[0].locator).toBe("T.01.03.A.1");
+    expect(rackToken(27, "alpha")).toBe("AA");
+  });
+
+  it("builds a drawable layout from the rack builder", () => {
+    const config = createRackBuilderConfig("T");
+    config.rows = [
+      { bays: 4, levels: 3, bins: 2, join: "aisle" },
+      { bays: 3, levels: 2, bins: 1, join: "b2b" },
+    ];
+    const base = createLayout("branch-7", "Rack builder");
+    const layout = buildLayoutWithRackBuilder(base, config);
+    expect(layout.rackBuilder?.rows).toHaveLength(2);
+    expect(capacityOf(layout)).toBe(30);
+    expect(buildLocationMap(layout).size).toBe(30);
+    const plan = computeScenePlan(layout);
+    expect(plan.locations.size).toBe(30);
+    expect(plan.frames.length).toBeGreaterThan(0);
   });
 });
 

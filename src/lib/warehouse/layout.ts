@@ -7,6 +7,11 @@ import type {
   WarehouseLayout,
   WarehouseRecord,
 } from "./types";
+import {
+  buildRackLocations,
+  countRackLocations,
+  sanitizeZone,
+} from "./rack-builder";
 
 export const SAMPLE_BRAND_RULES: BrandRule[] = [
   { prefix: "CEIL", brand: "CEIL" },
@@ -130,6 +135,7 @@ export function buildLocator(
 }
 
 export function capacityOf(layout: WarehouseLayout): number {
+  if (layout.rackBuilder) return countRackLocations(layout.rackBuilder);
   return layout.subInventories.reduce((total, sub) => {
     if (sub.locations?.length) return total + sub.locations.length;
     const levels = sub.levels.length || 1;
@@ -167,6 +173,25 @@ export function buildLocationMap(
   layout: WarehouseLayout,
 ): Map<string, LocationMeta> {
   const map = new Map<string, LocationMeta>();
+  if (layout.rackBuilder) {
+    const zone = sanitizeZone(layout.rackBuilder.zone);
+    for (const location of buildRackLocations(layout.rackBuilder)) {
+      map.set(location.locator, {
+        locator: location.locator,
+        sub: zone,
+        kind: "rack",
+        aisle: location.rowIndex + 1,
+        bay: location.bayNumber,
+        rowCode: location.rowCode,
+        rackCode: location.bayCode,
+        level: location.levelCode,
+        bin: location.binCode,
+        locType: "Racking",
+        unplanned: false,
+      });
+    }
+    return map;
+  }
   const numeric = (value: string | undefined): number | null => {
     if (value === undefined) return null;
     const parsed = Number.parseInt(value, 10);

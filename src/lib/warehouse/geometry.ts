@@ -4,7 +4,8 @@ import {
   rangeCount,
   rowValuesFor,
 } from "./layout";
-import type { LocationMeta, WarehouseLayout } from "./types";
+import { buildRackLocations, sanitizeZone } from "./rack-builder";
+import type { LocationMeta, RackBuilderConfig, WarehouseLayout } from "./types";
 
 /** Physical dimensions (metres) used by the 3D scene. */
 export const BAY_WIDTH = 3.6;
@@ -102,6 +103,168 @@ function splitRackCount(
   return Math.max(1, Math.floor(turn));
 }
 
+function computeRackBuilderPlan(
+  layout: WarehouseLayout,
+  config: RackBuilderConfig,
+  unplannedLocators: LocationMeta[],
+): ScenePlan {
+  const planned = buildLocationMap(layout);
+  const zone = sanitizeZone(config.zone);
+  const bayW = Math.max(0.3, config.dimensions.bayWidth / 1000);
+  const depth = Math.max(0.3, config.dimensions.rackDepth / 1000);
+  const levelH = Math.max(0.3, config.dimensions.levelHeight / 1000);
+  const aisle = Math.max(0.3, config.dimensions.aisleWidth / 1000);
+  const gap = Math.max(0, config.dimensions.backToBackGap / 1000);
+  const rows = config.rows;
+  const maxBays = Math.max(...rows.map((row) => row.bays), 1);
+  const maxLevels = Math.max(...rows.map((row) => row.levels), 1);
+  const width = maxBays * bayW;
+  const halfW = width / 2;
+  const rowZ: number[] = [];
+  let zCursor = 0;
+  rows.forEach((row) => {
+    rowZ.push(zCursor);
+    zCursor += depth + (row.join === "b2b" ? gap : aisle);
+  });
+  const usedDepth = (rowZ[rows.length - 1] ?? 0) + depth;
+  const halfD = usedDepth / 2;
+  const height = maxLevels * levelH;
+
+  const locations = new Map<string, SceneLocationPlan>();
+  for (const location of buildRackLocations(config)) {
+    const row = rows[location.rowIndex];
+    if (!row) continue;
+    const bins = Math.max(1, row.bins);
+    const xBase = location.bayIndex * bayW - halfW;
+    const zBase = rowZ[location.rowIndex] - halfD;
+    let x = xBase;
+    let z = zBase;
+    let binWidth = bayW;
+    let binDepth = depth;
+    if (config.numbering.binOrientation === "side") {
+      binWidth = bayW / bins;
+      x = xBase + location.binIndex * binWidth;
+    } else {
+      binDepth = depth / bins;
+      z = zBase + location.binIndex * binDepth;
+    }
+    const meta = planned.get(location.locator);
+    if (!meta) continue;
+    const y = location.levelIndex * levelH + levelH / 2;
+    locations.set(location.locator, {
+      locator: location.locator,
+      sub: zone,
+      kind: "rack",
+      position: [x + binWidth / 2, y, z + binDepth / 2],
+      size: [binWidth * 0.88, levelH * 0.72, binDepth * 0.88],
+      meta,
+      unplanned: false,
+    });
+  }
+
+  const frames: SceneFrame[] = [];
+  const labels: SceneLabel[] = [];
+  rows.forEach((row, rowIndex) => {
+    const zBase = rowZ[rowIndex] - halfD;
+    for (let bay = 0; bay <= row.bays; bay += 1) {
+      const x = bay * bayW - halfW;
+      for (const dz of [0, depth]) {
+        frames.push({
+          center: [x, height / 2, zBase + dz],
+          size: [0.14, height, 0.14],
+        });
+      }
+    }
+    for (let level = 0; level < row.levels; level += 1) {
+      for (let bay = 0; bay < row.bays; bay += 1) {
+        const x = bay * bayW + bayW / 2 - halfW;
+        for (const dz of [0, depth]) {
+          frames.push({
+            center: [x, (level + 1) * levelH, zBase + dz],
+            size: [bayW * 0.98, 0.1, 0.1],
+          });
+        }
+      }
+    }
+    labels.push({
+      text: `Row ${rowIndex + 1}`,
+      position: [-halfW - 2.2, 0.35, zBase],
+      kind: "aisle",
+    });
+  });
+
+  labels.push({
+    text: `Zone ${zone}`,
+    position: [-halfW - 2.5, 1.6, -halfD - 2.5],
+    kind: "area",
+  });
+  const firstRow = rows[0];
+  if (firstRow) {
+    for (let level = 0; level < firstRow.levels; level += 1) {
+      labels.push({
+        text: `L${level + 1}`,
+        position: [-halfW - 2.2, level * levelH + 0.8, -halfD - 1.8],
+        kind: "detail",
+      });
+    }
+  }
+
+  const overflowX = halfW + 5;
+  unplannedLocators.forEach((meta, index) => {
+    if (locations.has(meta.locator)) return;
+    const column = index % 8;
+    const rowIndex = Math.floor(index / 8);
+    locations.set(meta.locator, {
+      locator: meta.locator,
+      sub: meta.sub,
+      kind: meta.kind,
+      position: [overflowX + column * 2.7, 0.7, rowIndex * 2.7 - halfD],
+      size: [BULK_SIZE * 0.7, 1.3, BULK_SIZE * 0.7],
+      meta,
+      unplanned: true,
+    });
+  });
+  if (unplannedLocators.length) {
+    labels.push({
+      text: "Unmapped locations",
+      position: [overflowX + 6, 1.3, -halfD - 2],
+      kind: "area",
+    });
+  }
+
+  let min: Vec3 = [Infinity, 0, Infinity];
+  let max: Vec3 = [-Infinity, 0, -Infinity];
+  const expand = (center: Vec3, size: Vec3) => {
+    min = [
+      Math.min(min[0], center[0] - size[0] / 2),
+      Math.min(min[1], center[1] - size[1] / 2),
+      Math.min(min[2], center[2] - size[2] / 2),
+    ];
+    max = [
+      Math.max(max[0], center[0] + size[0] / 2),
+      Math.max(max[1], center[1] + size[1] / 2),
+      Math.max(max[2], center[2] + size[2] / 2),
+    ];
+  };
+  for (const location of locations.values()) {
+    expand(location.position, location.size);
+  }
+  for (const frame of frames) expand(frame.center, frame.size);
+  if (!locations.size) {
+    min = [-10, 0, -10];
+    max = [10, 10, 10];
+  }
+
+  return {
+    locations,
+    frames,
+    labels,
+    bounds: { min, max },
+    center: [0, height / 2, 0],
+    radius: Math.max(12, Math.hypot(width, usedDepth) / 2),
+  };
+}
+
 /**
  * Turn a warehouse layout into drawable geometry. Planned locations are laid
  * out in contiguous blocks per storage area; locators that are not part of the
@@ -112,6 +275,13 @@ export function computeScenePlan(
   layout: WarehouseLayout,
   unplannedLocators: LocationMeta[] = [],
 ): ScenePlan {
+  if (layout.rackBuilder) {
+    return computeRackBuilderPlan(
+      layout,
+      layout.rackBuilder,
+      unplannedLocators,
+    );
+  }
   const planned = buildLocationMap(layout);
   const areas: AreaOffset[] = [];
   let cursorX = 0;

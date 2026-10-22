@@ -43,7 +43,10 @@ import type { Branch } from "@/lib/types";
 import { analyzeWarehouse, compareSummaries } from "@/lib/warehouse/analyze";
 import { exportWarehouseWorkbook } from "@/lib/warehouse/export";
 import { capacityOf, createLayout } from "@/lib/warehouse/layout";
-import { buildLayoutPreset } from "@/lib/warehouse/presets";
+import {
+  buildLayoutWithRackBuilder,
+  createRackBuilderConfig,
+} from "@/lib/warehouse/rack-builder";
 import { computeScenePlan } from "@/lib/warehouse/geometry";
 import { withTimeout } from "@/lib/warehouse/timeout";
 import {
@@ -755,8 +758,10 @@ export function WarehouseClientPage() {
   const startManualLayout = () => {
     if (!branch) return;
     setLayout(
-      buildLayoutPreset("vna", branchId, branchName) ??
+      buildLayoutWithRackBuilder(
         createLayout(branchId, branchName),
+        createRackBuilderConfig("T"),
+      ),
     );
     setLayoutDirty(true);
   };
@@ -964,17 +969,7 @@ export function WarehouseClientPage() {
                   variant="outline"
                   onClick={startManualLayout}
                 >
-                  Use VNA Salmabad racking
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setLayout(createLayout(branchId, branchName));
-                    setLayoutDirty(true);
-                  }}
-                >
-                  Create empty layout
+                  Create rack layout
                 </Button>
               </div>
             </CardContent>

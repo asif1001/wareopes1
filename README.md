@@ -109,19 +109,19 @@ The **Warehouse 3D** page (`/dashboard/warehouse`) turns an inventory export int
 4. Explore the racks: filter by zone, row, level, brand or free-text search; click any carton or empty slot for LPN, item and quantity details.
 5. Export a formatted workbook with summary, brand, level, row, zone, brand × level, locations and inventory sheets.
 
-**Location model:** `Zone.Row.Rack.Level.Bin` (for example `A5.03.15.F.2`). Levels and bins may be letters or numbers, so both `A–G` levels with `1–3` bins and numeric levels with `A–D` bins are supported. Ranges are configured per branch in the **Setup** tab, and occupied percentages always use the full configured capacity (including empty locations).
+**Rack builder:** the **Setup** tab uses the rack-builder model: zone, rows, bays/row, levels, bins/level, per-row back-to-back/aisle joins, rack dimensions (mm) and letter/number formats for bays, levels and bins. The locator is `Zone.Row.Bay.Level.Bin`; the builder generates every empty location from those settings. The seeded layouts use this model too.
 
 **Storage**
 
-| Collection                                   | Contents                                          |
-| -------------------------------------------- | ------------------------------------------------- |
-| `warehouseLayouts/{layoutId}`                | One layout per branch: zones, ranges, brand rules |
-| `warehouseSnapshots/{snapshotId}`            | Snapshot metadata and aggregated summary          |
-| `warehouseSnapshots/{snapshotId}/chunks/{n}` | Inventory rows, 400 per chunk                     |
+| Collection                                   | Contents                                                |
+| -------------------------------------------- | ------------------------------------------------------- |
+| `warehouseLayouts/{layoutId}`                | One layout per branch: rack builder config, brand rules |
+| `warehouseSnapshots/{snapshotId}`            | Snapshot metadata and aggregated summary                |
+| `warehouseSnapshots/{snapshotId}/chunks/{n}` | Inventory rows, 400 per chunk                           |
 
 All reads and writes go through `/api/warehouse`, which uses the Firebase Admin SDK, so the feature does not depend on browser Firestore rules or anonymous auth. If the API is unreachable the page falls back to browser `localStorage` and shows a **local mode** banner.
 
-Locators that fall outside the configured ranges are never dropped: they are drawn in red in the **unmapped** area and listed in **Setup → Locators outside the layout**.
+Locators that fall outside the configured rack layout are never dropped: they are drawn in red in the **unmapped** area and listed in **Setup → Locators outside the layout**.
 
 The 3D view is rendered with [three.js](https://threejs.org/) (MIT), lazy-loaded only when the page is opened.
 
