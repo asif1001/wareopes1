@@ -7,7 +7,7 @@ import { badRequest, conflict, forbidden, notFound } from "./errors";
 import { assertDateOpen } from "./locks";
 import { otAutoCloseAt, otMinutes } from "./rules";
 import { COL, getRules, type Db } from "./store";
-import type { OvertimeRequest, OvertimeStatus } from "./types";
+import type { AttendanceEvent, OvertimeRequest, OvertimeStatus } from "./types";
 
 export const decisionSchema = z
   .object({
@@ -125,6 +125,34 @@ export async function markOvertimeReminders(db: Db, rules: AttendanceRules, now:
     if (Object.keys(updates).length) await doc.ref.update(updates);
   }
   return { reminded, escalated };
+}
+
+export type OvertimeEventSummary = Pick<
+  AttendanceEvent,
+  "lat" | "lng" | "accuracyM" | "distanceM" | "insideGeofence" | "flags" | "effectiveTime" | "photoRef"
+>;
+
+/** Attach the GPS details of the OT In / OT Out events for the approval screen. */
+export async function withEventDetails(db: Db, items: OvertimeRequest[]) {
+  const summary = async (id: string | null): Promise<OvertimeEventSummary | null> => {
+    if (!id) return null;
+    const snap = await db.collection(COL.events).doc(id).get();
+    if (!snap.exists) return null;
+    const e = snap.data() as AttendanceEvent;
+    return {
+      lat: e.lat,
+      lng: e.lng,
+      accuracyM: e.accuracyM,
+      distanceM: e.distanceM,
+      insideGeofence: e.insideGeofence,
+      flags: e.flags,
+      effectiveTime: e.effectiveTime,
+      photoRef: e.photoRef,
+    };
+  };
+  return Promise.all(
+    items.map(async (ot) => ({ ...ot, inEvent: await summary(ot.otInEventId), outEvent: await summary(ot.otOutEventId) })),
+  );
 }
 
 export async function listOvertime(db: Db, filter: { status?: OvertimeStatus; month?: string; staffId?: string }) {

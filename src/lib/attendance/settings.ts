@@ -1,7 +1,7 @@
 import type { Actor } from "./actor";
 import { DEFAULT_RULES, rulesSchema } from "./config";
 import { writeAudit } from "./audit";
-import { badRequest } from "./errors";
+import { badRequest, forbidden } from "./errors";
 import { COL, RULES_DOC, getRules, type Db } from "./store";
 
 export async function getSettings(db: Db) {
@@ -16,6 +16,13 @@ export async function updateSettings(db: Db, actor: Actor, body: unknown, now: D
     throw badRequest(issue ? `${issue.path.join(".") || "settings"}: ${issue.message}` : "Invalid settings");
   }
   const before = await getRules(db);
+  if (
+    parsed.data.reportViewerIds &&
+    !actor.isAdmin &&
+    JSON.stringify([...parsed.data.reportViewerIds].sort()) !== JSON.stringify([...before.reportViewerIds].sort())
+  ) {
+    throw forbidden("Only an admin can change report viewers");
+  }
   const after = rulesSchema.parse({ ...before, ...parsed.data });
   if (after.otEscalateAfterHours <= after.otReminderAfterHours) {
     throw badRequest("Escalation must be later than the reminder");

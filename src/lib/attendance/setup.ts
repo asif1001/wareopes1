@@ -135,7 +135,7 @@ const staffFields = z.object({
   name,
   contractorId: z.string().min(1),
   supervisorId: z.string().min(1),
-  backupApproverId: z.string().min(1).nullable().default(null),
+  supervisor2Id: z.string().min(1).nullable().default(null),
   shiftId: z.string().min(1),
   geofenceIds: z.array(z.string().min(1)).default([]),
 });
@@ -150,12 +150,17 @@ const staffActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("deactivate") }),
 ]);
 
-async function assertRefs(db: Db, refs: Partial<z.infer<typeof staffFields>>) {
+async function assertRefs(db: Db, refs: Partial<z.infer<typeof staffFields>>, current?: Staff) {
+  const supervisor1 = refs.supervisorId ?? current?.supervisorId;
+  const supervisor2 = refs.supervisor2Id !== undefined ? refs.supervisor2Id : current?.supervisor2Id;
+  if (supervisor1 && supervisor2 && supervisor1 === supervisor2) {
+    throw badRequest("Supervisor 1 and Supervisor 2 must be different people");
+  }
   const checks: [string, string, string | null | undefined][] = [
     [COL.contractors, "Contractor", refs.contractorId],
     [COL.shifts, "Shift", refs.shiftId],
-    [USERS_COLLECTION, "Supervisor", refs.supervisorId],
-    [USERS_COLLECTION, "Backup approver", refs.backupApproverId],
+    [USERS_COLLECTION, "Supervisor 1", refs.supervisorId],
+    [USERS_COLLECTION, "Supervisor 2", refs.supervisor2Id],
   ];
   for (const [col, label, id] of checks) {
     if (!id) continue;
@@ -216,7 +221,7 @@ export async function updateStaff(db: Db, actor: Actor, staffId: string, body: u
   switch (input.action) {
     case "update": {
       const changes = Object.fromEntries(Object.entries(input.changes).filter(([, v]) => v !== undefined)) as Partial<Staff>;
-      await assertRefs(db, changes as Partial<z.infer<typeof staffFields>>);
+      await assertRefs(db, changes as Partial<z.infer<typeof staffFields>>, staff);
       updates = { ...changes, ...stamp };
       what = "STAFF_UPDATED";
       if (changes.staffCode) {

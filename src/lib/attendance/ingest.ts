@@ -236,7 +236,7 @@ async function storeEvent(
           staffId: ctx.staff.id,
           contractorId: ctx.staff.contractorId,
           supervisorId: ctx.staff.supervisorId,
-          backupApproverId: ctx.staff.backupApproverId ?? null,
+          supervisor2Id: ctx.staff.supervisor2Id ?? null,
           date: event.attendanceDate,
           month: monthOf(event.attendanceDate),
           dayType,

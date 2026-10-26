@@ -1,4 +1,4 @@
-import { scopeStaff, type Actor } from "./actor";
+import { scopeManagedStaff, scopeStaff, type Actor } from "./actor";
 import { ensureDays } from "./days";
 import { deviceIssues, type DeviceIssue } from "./health";
 import { listOvertime } from "./overtime";
@@ -88,9 +88,9 @@ export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, 
   return result;
 }
 
-/** Number shown on the nav badge: undecided overtime plus today's day problems. */
+/** Number shown on the nav badge: overtime waiting for this user's decision. */
 export async function pendingCount(db: Db, actor: Actor) {
-  const staff = scopeStaff(actor, await listStaff(db));
+  const staff = scopeManagedStaff(actor, await listStaff(db));
   const ids = new Set(staff.map((s) => s.id));
   const ot = await listOvertime(db, {});
   return ot.filter((o) => ids.has(o.staffId) && o.otOut && (o.status === "PENDING" || o.status === "AUTO_CLOSED")).length;

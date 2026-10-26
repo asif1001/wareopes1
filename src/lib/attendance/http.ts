@@ -4,7 +4,7 @@ import type { Actor } from "./actor";
 import { AttendanceError, forbidden, tooMany, unauthorized } from "./errors";
 import { authenticateStaff } from "./mobile-auth";
 import { rateLimit } from "./rate-limit";
-import type { Db } from "./store";
+import { getRules, type Db } from "./store";
 
 export async function attendanceDb(): Promise<Db> {
   const { getAdminDb } = await import("@/lib/firebase/admin");
@@ -34,14 +34,20 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
-/** WareOps user with the given permission on the `attendance` page (Admins always pass). */
+/**
+ * WareOps user with the given permission on the `attendance` page. Admins always
+ * pass; report viewers (Attendance settings) pass for "view" only.
+ */
 export async function requireActor(action: PermissionAction): Promise<Actor> {
   const { getCurrentUserPermissions, hasPermission, isAdmin } = await import("@/lib/server-permissions");
   const { ok: signedIn, userId, role, permissions } = await getCurrentUserPermissions();
   if (!signedIn || !userId) throw unauthorized();
   const admin = isAdmin(role);
-  if (!admin && !hasPermission(permissions, "attendance", action)) throw forbidden();
-  return { userId, role: role ?? "", isAdmin: admin };
+  const rules = await getRules(await attendanceDb());
+  const reportViewer = rules.reportViewerIds.includes(userId);
+  const allowed = admin || hasPermission(permissions, "attendance", action) || (action === "view" && reportViewer);
+  if (!allowed) throw forbidden();
+  return { userId, role: role ?? "", isAdmin: admin, reportViewer };
 }
 
 export function clientIp(request: NextRequest) {

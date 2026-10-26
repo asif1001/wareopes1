@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { scopeStaff } from "@/lib/attendance/actor";
 import { badRequest } from "@/lib/attendance/errors";
 import { attendanceDb, fail, ok, requireActor } from "@/lib/attendance/http";
-import { listOvertime } from "@/lib/attendance/overtime";
+import { listOvertime, withEventDetails } from "@/lib/attendance/overtime";
 import { listStaff } from "@/lib/attendance/store";
 import { isValidMonth } from "@/lib/attendance/time";
 import type { OvertimeStatus } from "@/lib/attendance/types";
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     const items = (await listOvertime(db, { status: status ?? undefined, month: month ?? undefined })).filter((o) =>
       ids.has(o.staffId),
     );
-    return ok({ items });
+    return ok({ items: await withEventDetails(db, items) });
   } catch (error) {
     return fail(error);
   }

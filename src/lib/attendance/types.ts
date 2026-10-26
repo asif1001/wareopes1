@@ -48,9 +48,9 @@ export type Staff = {
   staffCode: string;
   name: string;
   contractorId: string;
-  /** WareOps `Users` doc id */
+  /** Supervisor 1 and Supervisor 2 (WareOps `Users` doc ids): the only non-admins who can view, edit and approve this staff member. */
   supervisorId: string;
-  backupApproverId: string | null;
+  supervisor2Id: string | null;
   shiftId: string;
   geofenceIds: string[];
   deviceId: string | null;
@@ -191,7 +191,7 @@ export type OvertimeRequest = {
   staffId: string;
   contractorId: string;
   supervisorId: string;
-  backupApproverId: string | null;
+  supervisor2Id: string | null;
   date: LocalDate;
   month: string;
   dayType: DayType;

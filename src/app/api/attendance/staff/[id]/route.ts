@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { canManageStaff } from "@/lib/attendance/actor";
+import { canViewStaff } from "@/lib/attendance/actor";
 import { forbidden } from "@/lib/attendance/errors";
 import { attendanceDb, fail, ok, readJson, requireActor } from "@/lib/attendance/http";
 import { updateStaff } from "@/lib/attendance/setup";
@@ -15,7 +15,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
     const { id } = await params;
     const actor = await requireActor("view");
     const staff = await getStaff(await attendanceDb(), id);
-    if (!canManageStaff(actor, staff)) throw forbidden();
+    if (!canViewStaff(actor, staff)) throw forbidden();
     return ok({ item: toStaffPublic(staff) });
   } catch (error) {
     return fail(error);

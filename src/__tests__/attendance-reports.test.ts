@@ -234,6 +234,69 @@ describe("settings", () => {
   });
 });
 
+describe("supervisor 1 / supervisor 2 and report viewers", () => {
+  const sup3: Actor = { userId: "sup3", role: "Supervisor", isAdmin: false };
+  const viewer: Actor = { userId: "viewer1", role: "Supervisor", isAdmin: false, reportViewer: true };
+
+  async function sharedStaff() {
+    await db.collection("Users").doc("sup3").set({ fullName: "sup3" });
+    const shift = fake.all(COL.shifts)[0];
+    const fence = fake.all(COL.geofences)[0];
+    const created = await createStaff(
+      db,
+      admin,
+      { staffCode: "C-3", name: "Both", contractorId, supervisorId: "sup1", supervisor2Id: "sup2", shiftId: shift.id, geofenceIds: [fence.id], pin: "1234" },
+      at("2026-10-01", "00:00"),
+    );
+    await loginStaff(db, { staffCode: "C-3", pin: "1234", deviceId: "device-C-3-xyz" }, at("2026-10-01", "00:00"));
+    return getStaff(db, created.id);
+  }
+
+  it("lets either assigned supervisor approve, and nobody else", async () => {
+    const both = await sharedStaff();
+    await sync(both, [ev("OT_IN", "2026-11-02", "16:45"), ev("OT_OUT", "2026-11-02", "18:45")], at("2026-11-02", "18:45"));
+    const [ot] = fake.all<OvertimeRequest>(COL.overtime);
+    await expect(decideOvertime(db, sup3, ot.id, { action: "APPROVE", note: "ok ok" }, at("2026-11-03", "09:00"))).rejects.toMatchObject({ status: 403 });
+    await expect(decideOvertime(db, viewer, ot.id, { action: "APPROVE", note: "ok ok" }, at("2026-11-03", "09:00"))).rejects.toMatchObject({ status: 403 });
+    await expect(decideOvertime(db, sup2, ot.id, { action: "APPROVE", note: "Checked" }, at("2026-11-03", "09:00"))).resolves.toMatchObject({ status: "APPROVED", approverId: "sup2" });
+  });
+
+  it("gives report viewers read-only access to every staff member", async () => {
+    const report = await getMonthReport(db, viewer, "2026-11", at("2026-11-02", "09:00"));
+    expect(report.staff.map((r) => r.staffCode).sort()).toEqual(["C-1", "C-2"]);
+    expect((await getMonthReport(db, sup3, "2026-11", at("2026-11-02", "09:00"))).staff).toHaveLength(0);
+    expect(await pendingCount(db, viewer)).toBe(0);
+    const { addCorrection } = await import("@/lib/attendance/corrections");
+    await expect(
+      addCorrection(db, viewer, ali, { date: "2026-11-02", field: "status", newValue: "PRESENT", reason: "Looks fine" }, at("2026-11-03", "09:00")),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("keeps selfies away from report viewers", async () => {
+    const files = new Map<string, Buffer>();
+    const store: PhotoStore = {
+      save: async (p, b) => void files.set(p, b),
+      read: async (p) => files.get(p) ?? null,
+      remove: async (p) => void files.delete(p),
+    };
+    await savePhoto(db, store, ali, "photo-viewer-01", JPEG, at("2026-11-02", "17:00"));
+    await expect(readPhoto(db, store, viewer, "photo-viewer-01")).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("only lets an admin change the report viewer list", async () => {
+    await expect(updateSettings(db, sup1, { reportViewerIds: ["viewer1"] }, new Date())).rejects.toMatchObject({ status: 403 });
+    await expect(updateSettings(db, admin, { reportViewerIds: ["viewer1"] }, new Date())).resolves.toMatchObject({ reportViewerIds: ["viewer1"] });
+    await expect(updateSettings(db, sup1, { reportViewerIds: ["viewer1"], roundingStepMin: 30 }, new Date())).resolves.toMatchObject({ roundingStepMin: 30 });
+  });
+
+  it("refuses the same person as Supervisor 1 and Supervisor 2", async () => {
+    const shift = fake.all(COL.shifts)[0];
+    await expect(
+      createStaff(db, admin, { staffCode: "C-9", name: "X", contractorId, supervisorId: "sup1", supervisor2Id: "sup1", shiftId: shift.id, pin: "1234" }, new Date()),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
 describe("scheduled jobs", () => {
   it("marks absences, closes forgotten OT and locks the previous month", async () => {
     await sync(ali, [ev("OT_IN", "2026-11-30", "09:00")], at("2026-11-30", "09:00"));

@@ -75,9 +75,16 @@ A new page key `attendance` appears in **Settings → Roles**. Grant:
 | `edit` | Edit setup and staff, set PIN, reset device, corrections, overtime decisions, settings, lock month |
 | `delete` | Deactivate setup items and staff accounts |
 
-Users with role `Admin` have every action and are the only ones who can unlock
-a month or read the audit log. Non-admins only see staff where they are the
-supervisor or backup approver.
+Who sees which staff:
+
+| User | Can see | Can edit, correct, approve |
+|---|---|---|
+| Admin (role `Admin`) | All staff | All staff; also unlock months, read the audit log, choose report viewers |
+| Supervisor 1 / Supervisor 2 of a staff member | That staff member | That staff member (needs `edit`) |
+| Report viewer (chosen by an admin in Attendance → Settings) | All staff: exceptions, day records, overtime list, month report, Excel export, contractor comparison | Nothing. No selfies. |
+| Anyone else | Nothing | Nothing |
+
+Report viewers do not need the `attendance` permission on their role.
 
 ### 4. Firestore and Storage rules
 
@@ -116,6 +123,7 @@ hard-codes them.
 | Poor GPS accuracy flag | `poorAccuracyM` | 100 m |
 | "No sync" device alert | `noSyncAlertHours` | 24 h |
 | Contractor comparison tolerance | `compareToleranceMin` | 15 min |
+| Read-only report viewers (admin-only) | `reportViewerIds` | none |
 | App update | `latestAppVersion`, `minAppVersion`, `apkUrl`, `apkSha256` | `1.0.0` |
 
 Fixed security settings (`MOBILE_AUTH` in the same file): access token 1 h,

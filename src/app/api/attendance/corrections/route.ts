@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { canManageStaff } from "@/lib/attendance/actor";
+import { canViewStaff } from "@/lib/attendance/actor";
 import { addCorrection, listCorrections } from "@/lib/attendance/corrections";
 import { badRequest, forbidden } from "@/lib/attendance/errors";
 import { attendanceDb, fail, ok, readJson, requireActor } from "@/lib/attendance/http";
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const date = request.nextUrl.searchParams.get("date");
     if (!staffId || !date || !isValidLocalDate(date)) throw badRequest("staffId and date are required");
     const db = await attendanceDb();
-    if (!canManageStaff(actor, await getStaff(db, staffId))) throw forbidden();
+    if (!canViewStaff(actor, await getStaff(db, staffId))) throw forbidden();
     return ok({ items: await listCorrections(db, staffId, date) });
   } catch (error) {
     return fail(error);

@@ -57,6 +57,9 @@ export const rulesSchema = z.object({
   /** Contractor-import comparison: hour differences below this are ignored. */
   compareToleranceMin: z.number().int().min(0).max(240),
 
+  /** WareOps user ids with read-only access to every staff member's records and reports. Admin-only setting. */
+  reportViewerIds: z.array(z.string().min(1)).max(200),
+
   latestAppVersion: z.string(),
   minAppVersion: z.string(),
   apkUrl: z.string(),
@@ -94,6 +97,8 @@ export const DEFAULT_RULES: AttendanceRules = {
   noSyncAlertHours: 24,
 
   compareToleranceMin: 15,
+
+  reportViewerIds: [],
 
   latestAppVersion: "1.0.0",
   minAppVersion: "1.0.0",
