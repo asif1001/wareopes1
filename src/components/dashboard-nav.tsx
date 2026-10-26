@@ -1,7 +1,7 @@
 "use client"
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes, LayoutDashboard, Flag, FileText, GanttChartSquare, MessageSquareWarning, Settings, Package, BarChart3, Droplet, Truck, Warehouse } from "lucide-react";
+import { Boxes, LayoutDashboard, Flag, FileText, GanttChartSquare, MessageSquareWarning, Settings, Package, BarChart3, Droplet, Truck, Warehouse, MapPinned } from "lucide-react";
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,6 +21,7 @@ const navItems = [
     { href: "/dashboard/driver-license", label: "Driver License", icon: FileText, pageKey: "licenses" as AppPageKey },
     { href: "/dashboard/tasks", label: "Tasks", icon: GanttChartSquare, pageKey: "tasks" as AppPageKey },
     { href: "/dashboard/productivity", label: "Productivity", icon: BarChart3, pageKey: "productivity" as AppPageKey },
+    { href: "/dashboard/attendance", label: "Attendance", icon: MapPinned },
     { href: "/dashboard/feedback", label: "Feedback", icon: MessageSquareWarning },
     { href: "/dashboard/reports", label: "Reports", icon: FileText },
     { href: "/dashboard/settings", label: "Settings", icon: Settings, pageKey: "settings" as AppPageKey },
@@ -117,6 +118,20 @@ export function DashboardNav() {
         }
     };
 
+    // Attendance access also covers read-only report viewers, so it is decided by the API rather than role permissions.
+    const [attendanceCount, setAttendanceCount] = useState<number | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/attendance/pending-count', { cache: 'no-store', credentials: 'same-origin' })
+            .then(async (res) => {
+                if (cancelled) return;
+                const data = res.ok ? await res.json() : null;
+                setAttendanceCount(data?.success ? Number(data.count ?? 0) : null);
+            })
+            .catch(() => !cancelled && setAttendanceCount(null));
+        return () => { cancelled = true; };
+    }, []);
+
     // Initial auto refresh on load, then a one-time refresh after 20s, and no further automatic refreshes
     useEffect(() => {
         let cancelled = false;
@@ -145,8 +160,9 @@ export function DashboardNav() {
 
     // Filter navigation items based on permissions
     const filteredNavItems = isLoading 
-        ? navItems.filter(item => !item.pageKey) // Show only non-permission-gated items during loading
+        ? navItems.filter(item => !item.pageKey && item.href !== "/dashboard/attendance") // Show only non-permission-gated items during loading
         : navItems.filter(item => {
+            if (item.href === "/dashboard/attendance") return attendanceCount !== null;
             // Always show Dashboard and items without pageKey
             if (!item.pageKey) return true;
             // For items with pageKey, check view permission
@@ -216,6 +232,21 @@ export function DashboardNav() {
                                                 <TooltipContent>
                                                     {expiringCount === null ? 'Error loading expiring count' : 'Due within 60 days'}
                                                 </TooltipContent>
+                                            </Tooltip>
+                                        )}
+                                        {item.href === "/dashboard/attendance" && (attendanceCount !== null && attendanceCount > 0) && (
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Badge
+                                                        variant="destructive"
+                                                        className="ml-1 px-1.5 py-0.5 text-[11px] rounded-sm"
+                                                        aria-label={`Overtime waiting for approval: ${attendanceCount}`}
+                                                        role="status"
+                                                    >
+                                                        {attendanceCount}
+                                                    </Badge>
+                                                </TooltipTrigger>
+                                                <TooltipContent>Overtime waiting for your approval</TooltipContent>
                                             </Tooltip>
                                         )}
                                         {item.href === "/dashboard/driver-license" && (licensesExpiringCount !== null && licensesExpiringCount > 0) && (
