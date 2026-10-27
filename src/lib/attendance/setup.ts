@@ -4,9 +4,9 @@ import { canManageStaff, type Actor } from "./actor";
 import { writeAudit } from "./audit";
 import { badRequest, conflict, forbidden, notFound } from "./errors";
 import { shiftCrossesMidnight } from "./rules";
-import { COL, getStaff, normalizeStaffCode, toStaffPublic, type Db } from "./store";
+import { COL, getStaff, normalizeCpr, normalizeStaffCode, toStaffPublic, type Db } from "./store";
 import { isValidLocalDate } from "./time";
-import { hashPin, isValidPin } from "./tokens";
+import { hashPin, isValidPassword } from "./tokens";
 import type { Contractor, Geofence, Holiday, Shift, Staff } from "./types";
 
 /** WareOps user accounts (supervisors / approvers). Read-only from this module. */
@@ -124,14 +124,40 @@ export async function removeSetup(db: Db, actor: Actor, entity: SetupEntity, id:
 // Staff accounts
 // ---------------------------------------------------------------------------
 
-const pin = z
+const password = z
   .string()
-  .refine((v) => isValidPin(v, MOBILE_AUTH.pinMinLength, MOBILE_AUTH.pinMaxLength), {
-    message: `PIN must be ${MOBILE_AUTH.pinMinLength}-${MOBILE_AUTH.pinMaxLength} digits`,
+  .refine((v) => isValidPassword(v, MOBILE_AUTH.passwordMinLength, MOBILE_AUTH.passwordMaxLength), {
+    message: `Password must be ${MOBILE_AUTH.passwordMinLength}-${MOBILE_AUTH.passwordMaxLength} characters, without spaces at the start or end`,
   });
 
+const optionalDate = z
+  .string()
+  .refine((v) => isValidLocalDate(v), "Invalid date")
+  .nullable()
+  .optional()
+  .transform((v) => v ?? null);
+
 const staffFields = z.object({
-  staffCode: z.string().trim().min(1).max(32).regex(/^[A-Za-z0-9_-]+$/, "Letters, numbers, - and _ only"),
+  cprNo: z
+    .string()
+    .transform(normalizeCpr)
+    .refine((v) => /^\d{9}$/.test(v), "CPR number must be 9 digits"),
+  cprExpiry: optionalDate,
+  visaExpiry: optionalDate,
+  phone: z
+    .string()
+    .trim()
+    .max(20)
+    .regex(/^[+\d\s-]*$/, "Phone number: digits, spaces, + and - only")
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : null)),
+  staffCode: z
+    .string()
+    .trim()
+    .max(32)
+    .regex(/^[A-Za-z0-9_-]*$/, "Staff code: letters, numbers, - and _ only")
+    .optional(),
   name,
   contractorId: z.string().min(1),
   supervisorId: z.string().min(1),
@@ -140,11 +166,20 @@ const staffFields = z.object({
   geofenceIds: z.array(z.string().min(1)).default([]),
 });
 
-const createStaffSchema = staffFields.extend({ pin });
+const createStaffSchema = staffFields.extend({ password });
+
+/** Older clients send `pin`; treat it as the password. */
+function withPasswordAlias(body: unknown) {
+  if (body && typeof body === "object" && "pin" in body && !("password" in body)) {
+    const { pin: legacy, ...rest } = body as Record<string, unknown>;
+    return { ...rest, password: legacy };
+  }
+  return body;
+}
 
 const staffActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("update"), changes: staffFields.partial() }),
-  z.object({ action: z.literal("setPin"), pin }),
+  z.object({ action: z.literal("setPassword"), password }),
   z.object({ action: z.literal("resetDevice") }),
   z.object({ action: z.literal("activate") }),
   z.object({ action: z.literal("deactivate") }),
@@ -173,21 +208,22 @@ async function assertRefs(db: Db, refs: Partial<z.infer<typeof staffFields>>, cu
 }
 
 export async function createStaff(db: Db, actor: Actor, body: unknown, now: Date) {
-  const parsed = createStaffSchema.safeParse(body);
+  const parsed = createStaffSchema.safeParse(withPasswordAlias(body));
   if (!parsed.success) throw badRequest(parsed.error.issues[0]?.message ?? "Invalid staff data");
-  const { pin: rawPin, ...fields } = parsed.data;
-  const staffCode = normalizeStaffCode(fields.staffCode);
+  const { password: rawPassword, ...fields } = parsed.data;
+  const staffCode = normalizeStaffCode(fields.staffCode || fields.cprNo);
   await assertRefs(db, fields);
 
   const staffRef = db.collection(COL.staff).doc();
   const codeRef = db.collection(COL.staffCodes).doc(staffCode);
+  const cprRef = db.collection(COL.staffCpr).doc(fields.cprNo);
   const staff: Omit<Staff, "id"> = {
     ...fields,
     staffCode,
     deviceId: null,
     deviceBoundAt: null,
     active: true,
-    pinHash: hashPin(rawPin),
+    pinHash: hashPin(rawPassword),
     pinFailures: 0,
     pinLockedUntil: null,
     tokenVersion: 0,
@@ -197,8 +233,11 @@ export async function createStaff(db: Db, actor: Actor, body: unknown, now: Date
     updatedAt: now.toISOString(),
   };
   await db.runTransaction(async (tx) => {
-    if ((await tx.get(codeRef)).exists) throw conflict(`Staff ID ${staffCode} is already in use`);
+    const [code, cpr] = [await tx.get(codeRef), await tx.get(cprRef)];
+    if (cpr.exists) throw conflict(`CPR number ${fields.cprNo} is already registered`);
+    if (code.exists) throw conflict(`Staff code ${staffCode} is already in use`);
     tx.create(codeRef, { staffId: staffRef.id });
+    tx.create(cprRef, { staffId: staffRef.id });
     tx.create(staffRef, staff);
   });
   const created = { ...staff, id: staffRef.id };
@@ -206,7 +245,11 @@ export async function createStaff(db: Db, actor: Actor, body: unknown, now: Date
   return toStaffPublic(created);
 }
 
-export async function updateStaff(db: Db, actor: Actor, staffId: string, body: unknown, now: Date) {
+export async function updateStaff(db: Db, actor: Actor, staffId: string, rawBody: unknown, now: Date) {
+  const body =
+    rawBody && typeof rawBody === "object" && (rawBody as { action?: string }).action === "setPin"
+      ? { ...(withPasswordAlias(rawBody) as object), action: "setPassword" }
+      : rawBody;
   const parsed = staffActionSchema.safeParse(body);
   if (!parsed.success) throw badRequest(parsed.error.issues[0]?.message ?? "Invalid request");
   const staff = await getStaff(db, staffId);
@@ -222,30 +265,42 @@ export async function updateStaff(db: Db, actor: Actor, staffId: string, body: u
 
   switch (input.action) {
     case "update": {
-      const changes = Object.fromEntries(Object.entries(input.changes).filter(([, v]) => v !== undefined)) as Partial<Staff>;
+      const raw = (body as { changes?: Record<string, unknown> }).changes ?? {};
+      // Only fields the caller actually sent (zod fills defaults for missing optional fields).
+      const changes = Object.fromEntries(
+        Object.entries(input.changes).filter(([k, v]) => v !== undefined && k in raw),
+      ) as Partial<Staff>;
       await assertRefs(db, changes as Partial<z.infer<typeof staffFields>>, staff);
       updates = { ...changes, ...stamp };
       what = "STAFF_UPDATED";
-      if (changes.staffCode) {
-        const newCode = normalizeStaffCode(changes.staffCode);
-        updates.staffCode = newCode;
-        if (newCode !== staff.staffCode) {
-          await db.runTransaction(async (tx) => {
-            const newRef = db.collection(COL.staffCodes).doc(newCode);
-            if ((await tx.get(newRef)).exists) throw conflict(`Staff ID ${newCode} is already in use`);
-            tx.create(newRef, { staffId });
-            tx.delete(db.collection(COL.staffCodes).doc(staff.staffCode));
-            tx.update(ref, updates);
-          });
-          break;
-        }
+      const newCode = changes.staffCode ? normalizeStaffCode(changes.staffCode) : null;
+      if ("staffCode" in changes) {
+        if (newCode) updates.staffCode = newCode;
+        else delete updates.staffCode;
       }
-      await ref.update(updates);
+      const codeChanged = !!newCode && newCode !== staff.staffCode;
+      const cprChanged = !!changes.cprNo && changes.cprNo !== staff.cprNo;
+      await db.runTransaction(async (tx) => {
+        const newCodeRef = codeChanged ? db.collection(COL.staffCodes).doc(newCode!) : null;
+        const newCprRef = cprChanged ? db.collection(COL.staffCpr).doc(changes.cprNo!) : null;
+        if (newCodeRef && (await tx.get(newCodeRef)).exists) throw conflict(`Staff code ${newCode} is already in use`);
+        if (newCprRef && (await tx.get(newCprRef)).exists) throw conflict(`CPR number ${changes.cprNo} is already registered`);
+        if (newCodeRef) {
+          tx.create(newCodeRef, { staffId });
+          tx.delete(db.collection(COL.staffCodes).doc(staff.staffCode));
+        }
+        if (newCprRef) {
+          tx.create(newCprRef, { staffId });
+          if (staff.cprNo) tx.delete(db.collection(COL.staffCpr).doc(staff.cprNo));
+        }
+        tx.update(ref, updates);
+      });
       break;
     }
-    case "setPin":
-      updates = { pinHash: hashPin(input.pin), pinFailures: 0, pinLockedUntil: null, ...revoke, ...stamp };
-      what = "STAFF_PIN_SET";
+    case "setPassword":
+      if (!actor.isAdmin) throw forbidden("Only an admin can set or change a staff app password");
+      updates = { pinHash: hashPin(input.password), pinFailures: 0, pinLockedUntil: null, ...revoke, ...stamp };
+      what = "STAFF_PASSWORD_SET";
       await ref.update(updates);
       break;
     case "resetDevice":
@@ -283,9 +338,12 @@ export async function updateStaff(db: Db, actor: Actor, staffId: string, body: u
       };
       what = hasHistory ? "STAFF_DELETED_HISTORY_KEPT" : "STAFF_DELETED";
       const codeRef = db.collection(COL.staffCodes).doc(staff.staffCode);
+      const cprRef = staff.cprNo ? db.collection(COL.staffCpr).doc(staff.cprNo) : null;
       await db.runTransaction(async (tx) => {
         const code = await tx.get(codeRef);
+        const cpr = cprRef ? await tx.get(cprRef) : null;
         if (code.exists && (code.data() as { staffId?: string }).staffId === staffId) tx.delete(codeRef);
+        if (cprRef && cpr?.exists && (cpr.data() as { staffId?: string }).staffId === staffId) tx.delete(cprRef);
         if (hasHistory) tx.update(ref, updates);
         else tx.delete(ref);
       });

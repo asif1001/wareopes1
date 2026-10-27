@@ -6,9 +6,30 @@ import { COL, getRules, listStaff, toStaffPublic, type Db } from "./store";
 import { localDateOf } from "./time";
 import type { AttendanceDay, DayFlag, DeviceHealth, LocalDate, OvertimeRequest, StaffPublic } from "./types";
 
-type StaffRef = Pick<StaffPublic, "id" | "staffCode" | "name" | "contractorId" | "supervisorId">;
+type StaffRef = Pick<
+  StaffPublic,
+  "id" | "staffCode" | "name" | "contractorId" | "supervisorId" | "supervisor2Id" | "shiftId" | "cprNo" | "phone"
+>;
 
 export type DayIssue = { staff: StaffRef; day: AttendanceDay };
+
+/** One line per active staff member for the Today table. */
+export type RosterRow = {
+  staff: StaffRef;
+  day: AttendanceDay | null;
+  deviceIssues: DeviceIssue[];
+  lastSync: string | null;
+  overtimeOpen: boolean;
+};
+
+export type DocumentAlert = {
+  staff: StaffRef;
+  document: "CPR" | "VISA";
+  expiry: LocalDate;
+  daysLeft: number;
+};
+
+const DOCUMENT_ALERT_DAYS = 30;
 
 export type DailyExceptions = {
   date: LocalDate;
@@ -22,6 +43,8 @@ export type DailyExceptions = {
   overtimeAutoClosed: (OvertimeRequest & { staff: StaffRef })[];
   overtimeInProgress: (OvertimeRequest & { staff: StaffRef })[];
   devices: { staff: StaffRef; issues: DeviceIssue[]; health: Partial<DeviceHealth> | null }[];
+  documents: DocumentAlert[];
+  roster: RosterRow[];
   counts: Record<string, number>;
 };
 
@@ -33,7 +56,15 @@ const ref = (s: StaffPublic): StaffRef => ({
   name: s.name,
   contractorId: s.contractorId,
   supervisorId: s.supervisorId,
+  supervisor2Id: s.supervisor2Id ?? null,
+  shiftId: s.shiftId,
+  cprNo: s.cprNo ?? null,
+  phone: s.phone ?? null,
 });
+
+function daysBetween(from: LocalDate, to: LocalDate) {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+}
 
 /** Only problems for the day, never the full list of records. */
 export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, now: Date): Promise<DailyExceptions> {
@@ -65,7 +96,37 @@ export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, 
     })
     .filter((d) => d.issues.length);
 
-  const isToday = date === localDateOf(now, rules.timezone);
+  const today = localDateOf(now, rules.timezone);
+  const isToday = date === today;
+
+  const dayByStaff = new Map(days.map((d) => [d.staffId, d]));
+  const openOt = new Set(scopedOt.filter((o) => !o.otOut).map((o) => o.staffId));
+  const roster: RosterRow[] = staffList
+    .map((s) => {
+      const h = health.get(s.id) ?? null;
+      return {
+        staff: ref(toStaffPublic(s)),
+        day: dayByStaff.get(s.id) ?? null,
+        deviceIssues: deviceIssues(h, rules, now),
+        lastSync: (h?.lastSync as string | undefined) ?? null,
+        overtimeOpen: isToday && openOt.has(s.id),
+      };
+    })
+    .sort((a, b) => a.staff.staffCode.localeCompare(b.staff.staffCode));
+
+  const documents: DocumentAlert[] = [];
+  for (const s of staffList) {
+    for (const [document, expiry] of [
+      ["CPR", s.cprExpiry],
+      ["VISA", s.visaExpiry],
+    ] as const) {
+      if (!expiry) continue;
+      const daysLeft = daysBetween(today, expiry);
+      if (daysLeft <= DOCUMENT_ALERT_DAYS) documents.push({ staff: ref(toStaffPublic(s)), document, expiry, daysLeft });
+    }
+  }
+  documents.sort((a, b) => a.daysLeft - b.daysLeft);
+
   const result: DailyExceptions = {
     date,
     missingIn: pick((d) => d.status === "MISSING_IN" || d.status === "ABSENT"),
@@ -78,11 +139,13 @@ export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, 
     overtimeAutoClosed: scopedOt.filter((o) => o.status === "AUTO_CLOSED"),
     overtimeInProgress: isToday ? scopedOt.filter((o) => !o.otOut) : [],
     devices,
+    documents,
+    roster,
     counts: {},
   };
   result.counts = Object.fromEntries(
     Object.entries(result)
-      .filter(([, v]) => Array.isArray(v))
+      .filter(([k, v]) => Array.isArray(v) && k !== "roster")
       .map(([k, v]) => [k, (v as unknown[]).length]),
   );
   return result;

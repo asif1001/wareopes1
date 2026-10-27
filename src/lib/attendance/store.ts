@@ -11,6 +11,7 @@ export const COL = {
   contractors: "attContractors",
   staff: "attStaff",
   staffCodes: "attStaffCodes",
+  staffCpr: "attStaffCpr",
   shifts: "attShifts",
   geofences: "attGeofences",
   holidays: "attHolidays",
@@ -30,6 +31,7 @@ export const RULES_DOC = "rules";
 export const dayId = (staffId: string, date: LocalDate) => `${staffId}_${date}`;
 export const eventId = (staffId: string, clientEventId: string) => `${staffId}__${clientEventId}`;
 export const normalizeStaffCode = (code: string) => code.trim().toUpperCase();
+export const normalizeCpr = (cpr: string) => cpr.replace(/\D/g, "");
 
 export async function getRules(db: Db): Promise<AttendanceRules> {
   const snap = await db.collection(COL.settings).doc(RULES_DOC).get();

@@ -2,17 +2,22 @@ import { z } from "zod";
 import { MOBILE_AUTH } from "./config";
 import { writeAudit } from "./audit";
 import { AttendanceError, badRequest, forbidden, tooMany, unauthorized } from "./errors";
-import { COL, getStaff, normalizeStaffCode, type Db } from "./store";
-import { getTokenSecret, isValidPin, signToken, verifyPin, verifyToken } from "./tokens";
+import { COL, getStaff, normalizeCpr, normalizeStaffCode, type Db } from "./store";
+import { getTokenSecret, signToken, verifyPin, verifyToken } from "./tokens";
 import type { Staff } from "./types";
 
 export const deviceIdSchema = z.string().regex(/^[A-Za-z0-9_-]{8,128}$/);
 
-const loginSchema = z.object({
-  staffCode: z.string().trim().min(1).max(32),
-  pin: z.string(),
-  deviceId: deviceIdSchema,
-});
+/** `cprNo` is the login; `staffCode` and `pin` are still accepted from older app builds. */
+const loginSchema = z
+  .object({
+    cprNo: z.string().trim().max(32).optional(),
+    staffCode: z.string().trim().max(32).optional(),
+    password: z.string().max(64).optional(),
+    pin: z.string().max(64).optional(),
+    deviceId: deviceIdSchema,
+  })
+  .refine((v) => !!(v.cprNo || v.staffCode) && !!(v.password ?? v.pin));
 
 export type TokenPair = {
   accessToken: string;
@@ -20,7 +25,7 @@ export type TokenPair = {
   accessExpiresIn: number;
 };
 
-const INVALID = "Staff ID or PIN is incorrect.";
+const INVALID = "CPR number or password is incorrect.";
 
 function issueTokens(staff: Staff, now: Date): TokenPair {
   const secret = getTokenSecret();
@@ -32,19 +37,31 @@ function issueTokens(staff: Staff, now: Date): TokenPair {
   };
 }
 
+async function findStaffId(db: Db, loginId: string): Promise<string | null> {
+  const cpr = normalizeCpr(loginId);
+  if (/^\d{9}$/.test(cpr)) {
+    const snap = await db.collection(COL.staffCpr).doc(cpr).get();
+    if (snap.exists) return String((snap.data() as { staffId: string }).staffId);
+  }
+  // Accounts created before CPR login, or a staff code typed instead of the CPR.
+  const code = normalizeStaffCode(loginId);
+  if (!code) return null;
+  const snap = await db.collection(COL.staffCodes).doc(code).get();
+  return snap.exists ? String((snap.data() as { staffId: string }).staffId) : null;
+}
+
 /**
- * Staff ID + PIN login. The first successful login binds the account to the
- * phone; any other phone is refused until a supervisor resets the binding.
+ * CPR number + password login. The first successful login binds the account to
+ * the phone; any other phone is refused until a supervisor resets the binding.
  */
 export async function loginStaff(db: Db, body: unknown, now: Date): Promise<{ staff: Staff; tokens: TokenPair }> {
   const parsed = loginSchema.safeParse(body);
-  if (!parsed.success) throw badRequest("Staff ID, PIN and device are required");
-  const { pin, deviceId } = parsed.data;
-  const staffCode = normalizeStaffCode(parsed.data.staffCode);
+  if (!parsed.success) throw badRequest("CPR number, password and device are required");
+  const { deviceId } = parsed.data;
+  const pin = (parsed.data.password ?? parsed.data.pin)!;
 
-  const codeSnap = await db.collection(COL.staffCodes).doc(staffCode).get();
-  if (!codeSnap.exists) throw unauthorized(INVALID, "INVALID_CREDENTIALS");
-  const staffId = String((codeSnap.data() as { staffId: string }).staffId);
+  const staffId = await findStaffId(db, (parsed.data.cprNo || parsed.data.staffCode)!);
+  if (!staffId) throw unauthorized(INVALID, "INVALID_CREDENTIALS");
   const ref = db.collection(COL.staff).doc(staffId);
 
   type Outcome = { error?: AttendanceError; audit?: string | null; staff?: Staff };
@@ -55,10 +72,10 @@ export async function loginStaff(db: Db, body: unknown, now: Date): Promise<{ st
 
     if (!staff.active) return { error: forbidden("This account is disabled. Contact your supervisor.", "ACCOUNT_DISABLED") };
     if (staff.pinLockedUntil && new Date(staff.pinLockedUntil).getTime() > now.getTime()) {
-      return { error: tooMany("Too many wrong PINs. Try again later or contact your supervisor.", "PIN_LOCKED") };
+      return { error: tooMany("Too many wrong passwords. Try again in 15 minutes or contact your supervisor.", "PIN_LOCKED") };
     }
 
-    const pinOk = isValidPin(pin, MOBILE_AUTH.pinMinLength, MOBILE_AUTH.pinMaxLength) && verifyPin(pin, staff.pinHash);
+    const pinOk = pin.length <= MOBILE_AUTH.passwordMaxLength && verifyPin(pin, staff.pinHash);
     if (!pinOk) {
       const failures = (staff.pinFailures ?? 0) + 1;
       const lock = failures >= MOBILE_AUTH.maxPinFailures;

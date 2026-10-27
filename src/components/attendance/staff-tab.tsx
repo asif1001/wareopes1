@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { Eye, EyeOff, Loader2, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,11 +13,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { api, errorMessage } from "./api";
 import { useAttendance, type StaffRow } from "./context";
-import { DEVICE_ISSUE_LABELS, fmtDateTime } from "./format";
+import { DEVICE_ISSUE_LABELS, fmtDateTime, todayLocal } from "./format";
 
 const NONE = "__none__";
+const PASSWORD_MIN = 4;
+const PASSWORD_MAX = 32;
 
 type FormState = {
+  cprNo: string;
+  cprExpiry: string;
+  visaExpiry: string;
+  phone: string;
   staffCode: string;
   name: string;
   contractorId: string;
@@ -25,10 +31,14 @@ type FormState = {
   supervisor2Id: string;
   shiftId: string;
   geofenceIds: string[];
-  pin: string;
+  password: string;
 };
 
 const emptyForm: FormState = {
+  cprNo: "",
+  cprExpiry: "",
+  visaExpiry: "",
+  phone: "",
   staffCode: "",
   name: "",
   contractorId: "",
@@ -36,8 +46,27 @@ const emptyForm: FormState = {
   supervisor2Id: NONE,
   shiftId: "",
   geofenceIds: [],
-  pin: "",
+  password: "",
 };
+
+const validPassword = (p: string) => p.length >= PASSWORD_MIN && p.length <= PASSWORD_MAX && p.trim() === p;
+
+function daysUntil(date: string | null | undefined) {
+  if (!date) return null;
+  return Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${todayLocal()}T00:00:00Z`)) / 86400000);
+}
+
+function ExpiryLine({ label, date }: { label: string; date: string | null | undefined }) {
+  const days = daysUntil(date);
+  const cls = days == null ? "text-muted-foreground" : days < 0 ? "font-semibold text-red-600" : days <= 30 ? "font-semibold text-orange-600" : "";
+  return (
+    <div className={`text-xs ${cls}`}>
+      {label}: {date ?? "—"}
+      {days != null && days < 0 && " (expired)"}
+      {days != null && days >= 0 && days <= 30 && ` (${days} d)`}
+    </div>
+  );
+}
 
 export function StaffTab() {
   const { staff, contractors, shifts, geofences, approvers, me, manages, userName, contractorName, reload } = useAttendance();
@@ -45,15 +74,22 @@ export function StaffTab() {
   const [search, setSearch] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
   const [editing, setEditing] = useState<StaffRow | "new" | null>(null);
-  const [pinFor, setPinFor] = useState<StaffRow | null>(null);
+  const [passwordFor, setPasswordFor] = useState<StaffRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return [...staff]
       .filter((s) => showDeleted || !s.deleted)
-      .filter((s) => !q || s.staffCode.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
-      .sort((a, b) => Number(!!a.deleted) - Number(!!b.deleted) || Number(b.active) - Number(a.active) || a.staffCode.localeCompare(b.staffCode));
+      .filter(
+        (s) =>
+          !q ||
+          s.staffCode.toLowerCase().includes(q) ||
+          s.name.toLowerCase().includes(q) ||
+          (s.cprNo ?? "").includes(q) ||
+          (s.phone ?? "").replace(/\s/g, "").includes(q.replace(/\s/g, "")),
+      )
+      .sort((a, b) => Number(!!a.deleted) - Number(!!b.deleted) || Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
   }, [staff, search, showDeleted]);
 
   async function action(row: StaffRow, body: Record<string, unknown>, done: string) {
@@ -62,26 +98,31 @@ export function StaffTab() {
       await api(`/staff/${row.id}`, { method: "PATCH", body });
       toast({ title: done });
       await reload();
+      return true;
     } catch (error) {
       toast({ variant: "destructive", title: "Could not update", description: errorMessage(error) });
+      return false;
     } finally {
       setBusy(null);
     }
   }
 
-  const shiftName = (id: string) => shifts.find((s) => s.id === id)?.name ?? "—";
+  const shiftName = (id: string) => {
+    const s = shifts.find((x) => x.id === id);
+    return s ? `${s.name} (${s.startTime}–${s.endTime})` : "—";
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Input placeholder="Search staff ID or name" value={search} onChange={(e) => setSearch(e.target.value)} className="w-64" />
+        <Input placeholder="Search name, CPR, staff code or phone" value={search} onChange={(e) => setSearch(e.target.value)} className="w-72" />
         {me?.canAdd && (
           <Button onClick={() => setEditing("new")} disabled={!contractors.length || !shifts.length}>
             <Plus className="mr-2 h-4 w-4" /> Add staff
           </Button>
         )}
         {me?.canAdd && (!contractors.length || !shifts.length) && (
-          <span className="text-sm text-muted-foreground">Add a contractor and a shift in Setup first.</span>
+          <span className="text-sm text-muted-foreground">Add a contract company and a shift in Setup first.</span>
         )}
         <label className="ml-auto flex items-center gap-2 text-sm">
           <Checkbox checked={showDeleted} onCheckedChange={(v) => setShowDeleted(!!v)} />
@@ -93,9 +134,10 @@ export function StaffTab() {
         <TableHeader>
           <TableRow>
             <TableHead>Staff</TableHead>
-            <TableHead>Contractor</TableHead>
-            <TableHead>Supervisor 1</TableHead>
-            <TableHead>Supervisor 2</TableHead>
+            <TableHead>CPR / documents</TableHead>
+            <TableHead>Contact</TableHead>
+            <TableHead>Contract company</TableHead>
+            <TableHead>Supervisors</TableHead>
             <TableHead>Shift</TableHead>
             <TableHead>App access</TableHead>
             <TableHead>Phone</TableHead>
@@ -108,13 +150,21 @@ export function StaffTab() {
             return (
               <TableRow key={s.id} className={s.active ? undefined : "opacity-60"}>
                 <TableCell>
-                  <div className="font-medium">{s.staffCode}</div>
-                  <div className="text-xs text-muted-foreground">{s.name}</div>
+                  <div className="font-medium">{s.name}</div>
+                  <div className="text-xs text-muted-foreground">Staff code {s.staffCode}</div>
                 </TableCell>
+                <TableCell>
+                  <div className="font-mono text-sm">{s.cprNo ?? "—"}</div>
+                  <ExpiryLine label="CPR exp." date={s.cprExpiry} />
+                  <ExpiryLine label="Visa exp." date={s.visaExpiry} />
+                </TableCell>
+                <TableCell className="text-sm">{s.phone ? <a className="underline" href={`tel:${s.phone}`}>{s.phone}</a> : "—"}</TableCell>
                 <TableCell>{contractorName(s.contractorId)}</TableCell>
-                <TableCell>{userName(s.supervisorId)}</TableCell>
-                <TableCell>{s.supervisor2Id ? userName(s.supervisor2Id) : "—"}</TableCell>
-                <TableCell>{shiftName(s.shiftId)}</TableCell>
+                <TableCell className="text-sm">
+                  <div>1: {userName(s.supervisorId)}</div>
+                  <div className="text-muted-foreground">2: {s.supervisor2Id ? userName(s.supervisor2Id) : "—"}</div>
+                </TableCell>
+                <TableCell className="text-sm">{shiftName(s.shiftId)}</TableCell>
                 <TableCell>
                   {s.deleted ? (
                     <Badge variant="outline">Deleted</Badge>
@@ -124,7 +174,7 @@ export function StaffTab() {
                     <Badge variant="destructive">Access blocked</Badge>
                   )}
                 </TableCell>
-                <TableCell className="max-w-[240px]">
+                <TableCell className="max-w-[220px]">
                   {s.deviceId ? (
                     <div className="text-xs">
                       Linked {fmtDateTime(s.deviceBoundAt)}
@@ -132,13 +182,13 @@ export function StaffTab() {
                       {s.deviceHealth?.appVersion && ` · v${s.deviceHealth.appVersion}`}
                     </div>
                   ) : (
-                    <Badge variant="outline">Not logged in yet</Badge>
+                    !s.deleted && <Badge variant="outline">Not logged in yet</Badge>
                   )}
                   <div className="mt-1 flex flex-wrap gap-1">
                     {s.deviceIssues
                       .filter((i) => s.deviceId || i !== "NO_DATA")
                       .map((i) => (
-                        <Badge key={i} variant="secondary" className="text-[11px]">
+                        <Badge key={i} className="bg-orange-500 text-[11px] hover:bg-orange-500">
                           {DEVICE_ISSUE_LABELS[i] ?? i}
                         </Badge>
                       ))}
@@ -151,9 +201,11 @@ export function StaffTab() {
                       <Button size="sm" variant="outline" onClick={() => setEditing(s)}>
                         Edit
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => setPinFor(s)}>
-                        Set PIN
-                      </Button>
+                      {me?.isAdmin && (
+                        <Button size="sm" variant="outline" onClick={() => setPasswordFor(s)}>
+                          Change password
+                        </Button>
+                      )}
                       {s.deviceId && (
                         <Button
                           size="sm"
@@ -190,7 +242,7 @@ export function StaffTab() {
                           variant="destructive"
                           onClick={() =>
                             confirm(
-                              `Delete ${s.staffCode} · ${s.name}?\n\nTheir app login is removed permanently and the staff ID can be reused. Past attendance stays in the reports. This cannot be undone.`,
+                              `Delete ${s.name} (CPR ${s.cprNo ?? s.staffCode})?\n\nTheir app login is removed permanently and the CPR number can be registered again. Past attendance stays in the reports. This cannot be undone.`,
                             ) && void action(s, { action: "delete" }, "Staff deleted")
                           }
                         >
@@ -213,41 +265,34 @@ export function StaffTab() {
           setEditing(null);
           await reload();
         }}
-        contractors={contractors}
-        shifts={shifts}
-        geofences={geofences}
-        approvers={approvers}
       />
-      <PinDialog
-        staff={pinFor}
-        onClose={() => setPinFor(null)}
-        onSave={async (pin) => {
-          if (!pinFor) return;
-          await action(pinFor, { action: "setPin", pin }, "PIN changed — the staff member must log in again");
-          setPinFor(null);
+      <PasswordDialog
+        staff={passwordFor}
+        onClose={() => setPasswordFor(null)}
+        onSave={async (password) => {
+          if (!passwordFor) return;
+          const done = await action(passwordFor, { action: "setPassword", password }, "Password changed — the staff member must log in again with the new password");
+          if (done) setPasswordFor(null);
         }}
       />
     </div>
   );
 }
 
-function StaffDialog({
-  target,
-  onClose,
-  onSaved,
-  contractors,
-  shifts,
-  geofences,
-  approvers,
-}: {
-  target: StaffRow | "new" | null;
-  onClose: () => void;
-  onSaved: () => Promise<void>;
-  contractors: { id: string; name: string; active: boolean }[];
-  shifts: { id: string; name: string; startTime: string; endTime: string; active: boolean }[];
-  geofences: { id: string; name: string; active: boolean }[];
-  approvers: { id: string; name: string; role: string }[];
-}) {
+function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <Input type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} autoComplete="new-password" />
+      <button type="button" className="absolute right-2 top-2.5 text-muted-foreground" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide password" : "Show password"}>
+        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+}
+
+function StaffDialog({ target, onClose, onSaved }: { target: StaffRow | "new" | null; onClose: () => void; onSaved: () => Promise<void> }) {
+  const { contractors, shifts, geofences, approvers } = useAttendance();
   const { toast } = useToast();
   const isNew = target === "new";
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -258,6 +303,10 @@ function StaffDialog({
     setLastTarget(target);
     if (target && target !== "new") {
       setForm({
+        cprNo: target.cprNo ?? "",
+        cprExpiry: target.cprExpiry ?? "",
+        visaExpiry: target.visaExpiry ?? "",
+        phone: target.phone ?? "",
         staffCode: target.staffCode,
         name: target.name,
         contractorId: target.contractorId,
@@ -265,7 +314,7 @@ function StaffDialog({
         supervisor2Id: target.supervisor2Id ?? NONE,
         shiftId: target.shiftId,
         geofenceIds: target.geofenceIds ?? [],
-        pin: "",
+        password: "",
       });
     } else if (target === "new") {
       setForm(emptyForm);
@@ -273,11 +322,16 @@ function StaffDialog({
   }
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
+  const cprDigits = form.cprNo.replace(/\D/g, "");
 
   async function save() {
     setSaving(true);
     const fields = {
-      staffCode: form.staffCode,
+      cprNo: cprDigits,
+      cprExpiry: form.cprExpiry || null,
+      visaExpiry: form.visaExpiry || null,
+      phone: form.phone.trim() || null,
+      ...(form.staffCode.trim() ? { staffCode: form.staffCode.trim() } : {}),
       name: form.name,
       contractorId: form.contractorId,
       supervisorId: form.supervisorId,
@@ -286,9 +340,12 @@ function StaffDialog({
       geofenceIds: form.geofenceIds,
     };
     try {
-      if (isNew) await api("/staff", { method: "POST", body: { ...fields, pin: form.pin } });
+      if (isNew) await api("/staff", { method: "POST", body: { ...fields, password: form.password } });
       else if (target) await api(`/staff/${target.id}`, { method: "PATCH", body: { action: "update", changes: fields } });
-      toast({ title: isNew ? "Staff added" : "Staff updated" });
+      toast({
+        title: isNew ? "Staff added" : "Staff updated",
+        description: isNew ? `App login: CPR ${cprDigits} with the password you set.` : undefined,
+      });
       await onSaved();
     } catch (error) {
       toast({ variant: "destructive", title: "Could not save", description: errorMessage(error) });
@@ -298,31 +355,48 @@ function StaffDialog({
   }
 
   const valid =
-    form.staffCode.trim() &&
+    /^\d{9}$/.test(cprDigits) &&
     form.name.trim() &&
     form.contractorId &&
     form.supervisorId &&
     form.shiftId &&
     form.supervisor2Id !== form.supervisorId &&
-    (!isNew || /^\d{4,8}$/.test(form.pin));
+    (!isNew || validPassword(form.password));
+
+  const approverOptions = approvers.map((a) => ({ value: a.id, label: `${a.name}${a.role ? ` · ${a.role}` : ""}` }));
 
   return (
     <Dialog open={!!target} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isNew ? "Add staff" : "Edit staff"}</DialogTitle>
           <DialogDescription>
-            Only Supervisor 1, Supervisor 2 and admins can see, correct and approve this person. The phone is linked on first login.
+            The staff member logs in to the app with their CPR number and the password set here. Only Supervisor 1, Supervisor 2 and admins can see, correct and approve this
+            person. The phone is linked on first login.
           </DialogDescription>
         </DialogHeader>
+
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Staff ID">
-            <Input value={form.staffCode} onChange={(e) => set("staffCode", e.target.value)} placeholder="e.g. AC-1023" />
-          </Field>
-          <Field label="Name">
+          <Field label="Full name">
             <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
-          <Field label="Contractor">
+          <Field label="Contact number">
+            <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+973 3xxx xxxx" inputMode="tel" />
+          </Field>
+          <Field label="CPR number (app user ID)">
+            <Input value={form.cprNo} onChange={(e) => set("cprNo", e.target.value)} placeholder="9 digits" inputMode="numeric" maxLength={11} />
+            {form.cprNo && !/^\d{9}$/.test(cprDigits) && <p className="text-xs text-red-600">CPR number must be 9 digits</p>}
+          </Field>
+          <Field label="CPR expiry date">
+            <Input type="date" value={form.cprExpiry} onChange={(e) => set("cprExpiry", e.target.value)} />
+          </Field>
+          <Field label="Visa expiry date">
+            <Input type="date" value={form.visaExpiry} onChange={(e) => set("visaExpiry", e.target.value)} />
+          </Field>
+          <Field label="Staff / badge code (optional)">
+            <Input value={form.staffCode} onChange={(e) => set("staffCode", e.target.value)} placeholder="Defaults to the CPR number" />
+          </Field>
+          <Field label="Contract company">
             <Pick value={form.contractorId} onChange={(v) => set("contractorId", v)} options={contractors.filter((c) => c.active).map((c) => ({ value: c.id, label: c.name }))} />
           </Field>
           <Field label="Shift">
@@ -333,34 +407,35 @@ function StaffDialog({
             />
           </Field>
           <Field label="Supervisor 1">
-            <Pick value={form.supervisorId} onChange={(v) => set("supervisorId", v)} options={approvers.map((a) => ({ value: a.id, label: `${a.name}${a.role ? ` · ${a.role}` : ""}` }))} />
+            <Pick value={form.supervisorId} onChange={(v) => set("supervisorId", v)} options={approverOptions} />
           </Field>
           <Field label="Supervisor 2 (optional)">
             <Pick
               value={form.supervisor2Id}
               onChange={(v) => set("supervisor2Id", v)}
-              options={[{ value: NONE, label: "None" }, ...approvers.filter((a) => a.id !== form.supervisorId).map((a) => ({ value: a.id, label: `${a.name}${a.role ? ` · ${a.role}` : ""}` }))]}
+              options={[{ value: NONE, label: "None" }, ...approverOptions.filter((a) => a.value !== form.supervisorId)]}
             />
           </Field>
           {isNew && (
-            <Field label="First PIN (4–8 digits)">
-              <Input inputMode="numeric" value={form.pin} onChange={(e) => set("pin", e.target.value.replace(/\D/g, ""))} />
+            <Field label={`App password (${PASSWORD_MIN}–${PASSWORD_MAX} characters)`}>
+              <PasswordInput value={form.password} onChange={(v) => set("password", v)} />
+              <p className="text-xs text-muted-foreground">Only admins can change it later.</p>
             </Field>
           )}
           <div className="space-y-1 sm:col-span-2">
             <Label>Work sites (none ticked = all sites)</Label>
             <div className="flex flex-wrap gap-3">
-              {geofences.filter((g) => g.active).map((g) => (
-                <label key={g.id} className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={form.geofenceIds.includes(g.id)}
-                    onCheckedChange={(checked) =>
-                      set("geofenceIds", checked ? [...form.geofenceIds, g.id] : form.geofenceIds.filter((id) => id !== g.id))
-                    }
-                  />
-                  {g.name}
-                </label>
-              ))}
+              {geofences
+                .filter((g) => g.active)
+                .map((g) => (
+                  <label key={g.id} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={form.geofenceIds.includes(g.id)}
+                      onCheckedChange={(checked) => set("geofenceIds", checked ? [...form.geofenceIds, g.id] : form.geofenceIds.filter((id) => id !== g.id))}
+                    />
+                    {g.name}
+                  </label>
+                ))}
             </div>
           </div>
         </div>
@@ -378,25 +453,36 @@ function StaffDialog({
   );
 }
 
-function PinDialog({ staff, onClose, onSave }: { staff: StaffRow | null; onClose: () => void; onSave: (pin: string) => Promise<void> }) {
-  const [pin, setPin] = useState("");
+function PasswordDialog({ staff, onClose, onSave }: { staff: StaffRow | null; onClose: () => void; onSave: (password: string) => Promise<void> }) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const close = () => {
+    setPassword("");
+    setConfirmPassword("");
+    onClose();
+  };
   return (
-    <Dialog open={!!staff} onOpenChange={(open) => !open && (setPin(""), onClose())}>
+    <Dialog open={!!staff} onOpenChange={(open) => !open && close()}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Set PIN for {staff?.name}</DialogTitle>
-          <DialogDescription>Give the new PIN to the staff member in person. Their current session ends.</DialogDescription>
+          <DialogTitle>Change app password</DialogTitle>
+          <DialogDescription>
+            {staff?.name} (CPR {staff?.cprNo ?? staff?.staffCode}). Give the new password to the staff member in person; their phone is logged out.
+          </DialogDescription>
         </DialogHeader>
-        <Input inputMode="numeric" placeholder="4–8 digits" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} />
+        <PasswordInput value={password} onChange={setPassword} placeholder={`${PASSWORD_MIN}–${PASSWORD_MAX} characters`} />
+        <PasswordInput value={confirmPassword} onChange={setConfirmPassword} placeholder="Type it again" />
+        {confirmPassword && confirmPassword !== password && <p className="text-xs text-red-600">The passwords do not match</p>}
         <DialogFooter>
           <Button
-            disabled={!/^\d{4,8}$/.test(pin)}
+            disabled={!validPassword(password) || password !== confirmPassword}
             onClick={async () => {
-              await onSave(pin);
-              setPin("");
+              await onSave(password);
+              setPassword("");
+              setConfirmPassword("");
             }}
           >
-            Save PIN
+            Save password
           </Button>
         </DialogFooter>
       </DialogContent>

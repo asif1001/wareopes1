@@ -126,8 +126,8 @@ export const MOBILE_AUTH = {
   refreshTokenTtlSec: 60 * 60 * 24 * 30,
   maxPinFailures: 5,
   pinLockoutMin: 15,
-  pinMinLength: 4,
-  pinMaxLength: 8,
+  passwordMinLength: 4,
+  passwordMaxLength: 32,
 } as const;
 
 export const MAX_EVENTS_PER_SYNC = 100;

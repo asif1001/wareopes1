@@ -55,20 +55,34 @@ async function seed() {
   const site = await createSetup(adb, actor, "geofences", { name: "TEST Site (sample)", ...SITE, radiusM: 200 }, now);
   await tag(COL.geofences, site.id);
 
-  for (const [code, name] of [
-    ["TEST-001", "Test Staff One"],
-    ["TEST-002", "Test Staff Two"],
+  const soon = new Date(now.getTime() + 20 * 86400_000).toISOString().slice(0, 10);
+  for (const [code, cprNo, name, phone, visaExpiry] of [
+    ["TEST-001", "990000001", "Test Staff One", "+973 3300 0001", soon],
+    ["TEST-002", "990000002", "Test Staff Two", "+973 3300 0002", "2027-06-30"],
   ]) {
     const staff = await createStaff(
       adb,
       actor,
-      { staffCode: code, name, contractorId: contractor.id, supervisorId: adminId, shiftId: shift.id, geofenceIds: [site.id], pin: "1234" },
+      {
+        staffCode: code,
+        cprNo,
+        cprExpiry: "2028-01-31",
+        visaExpiry,
+        phone,
+        name,
+        contractorId: contractor.id,
+        supervisorId: adminId,
+        shiftId: shift.id,
+        geofenceIds: [site.id],
+        password: "Test@1234",
+      },
       // Created a week ago so the month report counts the sample days.
       new Date(now.getTime() - 7 * 86400_000),
     );
     await tag(COL.staff, staff.id);
     await tag(COL.staffCodes, code);
-    console.log(`Created staff ${code} (PIN 1234), Supervisor 1 = ${adminName}`);
+    await tag(COL.staffCpr, cprNo);
+    console.log(`Created ${name}: CPR ${cprNo} / password Test@1234, Supervisor 1 = ${adminName}`);
   }
   console.log("Seed done: TEST contractor, TEST Day shift 07:00–16:00, TEST site, TEST-001, TEST-002.");
 }
@@ -113,16 +127,16 @@ async function phone() {
   const d2 = bahrainDate(-2);
   const d3 = bahrainDate(-3);
 
-  const login = await http("POST", "/api/attendance/mobile/login", { staffCode: "test-001", pin: "1234", deviceId: device });
-  ok("Staff login with staff ID + PIN", login.status === 200, `HTTP ${login.status} ${login.data.error ?? ""}`);
+  const login = await http("POST", "/api/attendance/mobile/login", { cprNo: "990000001", password: "Test@1234", deviceId: device });
+  ok("Staff login with CPR number + password", login.status === 200, `HTTP ${login.status} ${login.data.error ?? ""}`);
   if (login.status !== 200) return;
   const token = String(login.data.accessToken);
 
-  const other = await http("POST", "/api/attendance/mobile/login", { staffCode: "TEST-001", pin: "1234", deviceId: "sample-device-9999" });
+  const other = await http("POST", "/api/attendance/mobile/login", { cprNo: "990000001", password: "Test@1234", deviceId: "sample-device-9999" });
   ok("Second phone for the same staff is blocked", other.status === 403, String(other.data.error ?? ""));
 
-  const wrong = await http("POST", "/api/attendance/mobile/login", { staffCode: "TEST-001", pin: "0000", deviceId: device });
-  ok("Wrong PIN refused", wrong.status === 401);
+  const wrong = await http("POST", "/api/attendance/mobile/login", { cprNo: "990000001", password: "wrong-pass", deviceId: device });
+  ok("Wrong password refused", wrong.status === 401);
 
   const me = await http("GET", "/api/attendance/mobile/me", undefined, token, device);
   const profile = me.data.profile as Json | undefined;
@@ -207,18 +221,18 @@ async function phone() {
     const staffId = String(code.get("staffId"));
     const supervisorId = String((await adb.collection(COL.staff).doc(staffId).get()).get("supervisorId"));
     const actor = { userId: supervisorId, role: "Admin", isAdmin: true };
-    const l2 = await http("POST", "/api/attendance/mobile/login", { staffCode: "TEST-002", pin: "1234", deviceId: "sample-device-0002" });
+    const l2 = await http("POST", "/api/attendance/mobile/login", { cprNo: "990000002", password: "Test@1234", deviceId: "sample-device-0002" });
     const t2 = String(l2.data.accessToken);
     await updateStaff(adb, actor, staffId, { action: "deactivate" }, new Date());
     const blocked = await http("GET", "/api/attendance/mobile/me", undefined, t2, "sample-device-0002");
     ok("Blocked staff is logged out at once", blocked.status === 403, String(blocked.data.error ?? ""));
-    const relog = await http("POST", "/api/attendance/mobile/login", { staffCode: "TEST-002", pin: "1234", deviceId: "sample-device-0002" });
+    const relog = await http("POST", "/api/attendance/mobile/login", { cprNo: "990000002", password: "Test@1234", deviceId: "sample-device-0002" });
     ok("Blocked staff cannot log in", relog.status === 403, String(relog.data.error ?? ""));
     await updateStaff(adb, actor, staffId, { action: "activate" }, new Date());
-    const back = await http("POST", "/api/attendance/mobile/login", { staffCode: "TEST-002", pin: "1234", deviceId: "sample-device-0002" });
+    const back = await http("POST", "/api/attendance/mobile/login", { cprNo: "990000002", password: "Test@1234", deviceId: "sample-device-0002" });
     ok("Access allowed again → can log in", back.status === 200);
     await updateStaff(adb, actor, staffId, { action: "delete" }, new Date());
-    const gone = await http("POST", "/api/attendance/mobile/login", { staffCode: "TEST-002", pin: "1234", deviceId: "sample-device-0002" });
+    const gone = await http("POST", "/api/attendance/mobile/login", { cprNo: "990000002", password: "Test@1234", deviceId: "sample-device-0002" });
     ok("Deleted staff can never log in again", gone.status === 401, String(gone.data.error ?? ""));
   }
 
@@ -258,7 +272,7 @@ async function cleanup() {
     const audit = await adb.collection(COL.audit).where("entityId", "==", id).get();
     for (const d of audit.docs) await del(d.ref);
   }
-  for (const col of [COL.staff, COL.staffCodes, COL.contractors, COL.shifts, COL.geofences]) {
+  for (const col of [COL.staff, COL.staffCodes, COL.staffCpr, COL.contractors, COL.shifts, COL.geofences]) {
     const snap = await adb.collection(col).where("sample", "==", true).get();
     for (const d of snap.docs) {
       const audit = await adb.collection(COL.audit).where("entityId", "==", d.id).get();

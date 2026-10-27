@@ -13,8 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { DAY_STATUSES, type AttendanceDay, type AttendanceEvent, type Correction, type CorrectionField } from "@/lib/attendance/types";
 import { api, errorMessage } from "./api";
-import { useAttendance } from "./context";
-import { FLAG_LABELS, fmtDateTime, fmtMinutes, fmtTime, localToIso, mapsLink } from "./format";
+import { useAttendance, type StaffRow } from "./context";
+import { DEVICE_ISSUE_LABELS, FLAG_LABELS, fmtDateTime, fmtMinutes, fmtTime, localToIso, mapsLink, todayLocal } from "./format";
 
 export function FlagBadges({ flags }: { flags: string[] }) {
   return (
@@ -136,6 +136,7 @@ export function DayReviewDialog({ staffId, date, open, onOpenChange, onChanged }
           </div>
         ) : (
           <div className="space-y-5">
+            {staff && <StaffAndPhone staff={staff} />}
             {day ? (
               <div className="grid gap-3 sm:grid-cols-2">
                 <ValuesCard title="Current (used in reports)" values={day} />
@@ -309,6 +310,63 @@ export function DayReviewDialog({ staffId, date, open, onOpenChange, onChanged }
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function expiryBadge(date: string | null | undefined) {
+  if (!date) return <span className="text-muted-foreground">—</span>;
+  const days = Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${todayLocal()}T00:00:00Z`)) / 86400000);
+  const tone = days < 0 ? "destructive" : days <= 30 ? "secondary" : "outline";
+  return (
+    <Badge variant={tone}>
+      {date}
+      {days < 0 ? " · expired" : days <= 30 ? ` · ${days} d left` : ""}
+    </Badge>
+  );
+}
+
+function StaffAndPhone({ staff }: { staff: StaffRow }) {
+  const { contractorName, userName } = useAttendance();
+  const h = staff.deviceHealth;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-1 rounded-md border p-3 text-sm">
+        <div className="mb-1 font-medium">Staff</div>
+        <div>CPR: {staff.cprNo ?? "—"} · expiry {expiryBadge(staff.cprExpiry)}</div>
+        <div>Visa expiry: {expiryBadge(staff.visaExpiry)}</div>
+        <div>Contact: {staff.phone ? <a className="underline" href={`tel:${staff.phone}`}>{staff.phone}</a> : "—"}</div>
+        <div>Contract company: {contractorName(staff.contractorId)}</div>
+        <div>
+          Supervisors: {userName(staff.supervisorId)}
+          {staff.supervisor2Id ? `, ${userName(staff.supervisor2Id)}` : ""}
+        </div>
+      </div>
+      <div className={`space-y-1 rounded-md border p-3 text-sm ${staff.deviceIssues.length ? "border-orange-400 bg-orange-50" : ""}`}>
+        <div className="mb-1 font-medium">Phone</div>
+        {staff.deviceId ? (
+          <>
+            <div>
+              {h?.manufacturer} {h?.model} {h?.osVersion ? `· ${h.osVersion}` : ""} {h?.appVersion ? `· app ${h.appVersion}` : ""}
+            </div>
+            <div>Last sync: {fmtDateTime(h?.lastSync)}</div>
+            <div>Location permission: {h?.locationPermission ?? "—"}</div>
+          </>
+        ) : (
+          <div className="text-muted-foreground">Not logged in on a phone yet.</div>
+        )}
+        <div className="flex flex-wrap gap-1 pt-1">
+          {staff.deviceIssues.length ? (
+            staff.deviceIssues.map((i) => (
+              <Badge key={i} className="bg-orange-500 hover:bg-orange-500">
+                {DEVICE_ISSUE_LABELS[i] ?? i}
+              </Badge>
+            ))
+          ) : (
+            <Badge variant="outline">No phone problems</Badge>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

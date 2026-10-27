@@ -28,8 +28,9 @@ export function verifyPin(pin: string, stored: string | null | undefined): boole
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-export function isValidPin(pin: unknown, min: number, max: number): pin is string {
-  return typeof pin === "string" && new RegExp(`^\\d{${min},${max}}$`).test(pin);
+/** Staff app password set by an admin: any characters, no leading/trailing spaces. */
+export function isValidPassword(password: unknown, min: number, max: number): password is string {
+  return typeof password === "string" && password.length >= min && password.length <= max && password.trim() === password;
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { AttendanceProvider, useAttendance } from "./context";
+import { OverviewTab } from "./overview-tab";
 import { OvertimeTab } from "./overtime-tab";
 import { RecordsTab } from "./records-tab";
 import { ReportsTab } from "./reports-tab";
@@ -30,7 +31,7 @@ export function AttendanceClientPage() {
 
 function AttendanceTabs() {
   const { me, loading, error } = useAttendance();
-  const [tab, setTab] = useState("today");
+  const [tab, setTab] = useState("overview");
 
   if (loading) {
     return (
@@ -54,6 +55,7 @@ function AttendanceTabs() {
     <Tabs value={tab} onValueChange={setTab} className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <TabsList className="flex-wrap">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="today">Today</TabsTrigger>
           <TabsTrigger value="overtime">Overtime</TabsTrigger>
           <TabsTrigger value="records">Records</TabsTrigger>
@@ -64,8 +66,11 @@ function AttendanceTabs() {
         </TabsList>
         {me.reportViewer && !me.isAdmin && <Badge variant="outline">Read-only report access</Badge>}
       </div>
+      <TabsContent value="overview">
+        <OverviewTab onOpenOvertime={() => setTab("overtime")} />
+      </TabsContent>
       <TabsContent value="today">
-        <TodayTab onOpenOvertime={() => setTab("overtime")} />
+        <TodayTab />
       </TabsContent>
       <TabsContent value="overtime">
         <OvertimeTab />

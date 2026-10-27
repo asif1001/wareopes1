@@ -45,8 +45,15 @@ export type Holiday = {
 
 export type Staff = {
   id: string;
+  /** Employee / badge number; defaults to the CPR number. */
   staffCode: string;
+  /** Bahrain CPR number (9 digits) — the staff member's app login. */
+  cprNo: string | null;
+  cprExpiry: LocalDate | null;
+  visaExpiry: LocalDate | null;
+  phone: string | null;
   name: string;
+  /** Contract company */
   contractorId: string;
   /** Supervisor 1 and Supervisor 2 (WareOps `Users` doc ids): the only non-admins who can view, edit and approve this staff member. */
   supervisorId: string;

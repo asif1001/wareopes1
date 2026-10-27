@@ -38,7 +38,17 @@ async function newStaff(code: string, supervisorId: string, shiftId: string, fen
   const created = await createStaff(
     db,
     admin,
-    { staffCode: code, name: code, contractorId, supervisorId, shiftId, geofenceIds: [fenceId], pin: "1234" },
+    {
+      staffCode: code,
+      cprNo: `9${code.replace(/\D/g, "").padStart(8, "0")}`,
+      name: code,
+      contractorId,
+      supervisorId,
+      shiftId,
+      geofenceIds: [fenceId],
+      pin: "1234",
+      visaExpiry: code === "C-1" ? "2026-11-10" : null,
+    },
     at("2026-10-01", "00:00"),
   );
   await loginStaff(db, { staffCode: code, pin: "1234", deviceId: `device-${code}-xyz` }, at("2026-10-01", "00:00"));
@@ -151,6 +161,28 @@ describe("daily exceptions", () => {
     expect(forSara.missingIn.map((i) => i.staff.staffCode)).toEqual(["C-2"]);
   });
 
+  it("lists every staff member for the Today table and warns about expiring documents", async () => {
+    await sync(ali, [ev("IN", "2026-11-02", "06:55")], at("2026-11-02", "06:55"));
+    const result = await getDailyExceptions(db, admin, "2026-11-02", at("2026-11-02", "09:00"));
+    expect(result.roster.map((r) => [r.staff.staffCode, r.day?.status ?? null])).toEqual([
+      ["C-1", "PENDING"],
+      ["C-2", "MISSING_IN"],
+    ]);
+    expect(result.roster[0].staff.cprNo).toBe("900000001");
+    expect(result.documents).toEqual([expect.objectContaining({ document: "VISA", expiry: "2026-11-10", daysLeft: 8 })]);
+  });
+
+  it("matches the contractor sheet by CPR number too", async () => {
+    await sync(ali, [ev("IN", "2026-11-02", "06:55"), ev("OUT", "2026-11-02", "16:00")], at("2026-11-02", "16:00"));
+    const result = await compareContractorSheet(
+      db,
+      admin,
+      { month: "2026-11", rows: [{ staffCode: "900000001", date: "2026-11-02", status: "P", hours: 9 }] },
+      at("2026-11-03", "09:00"),
+    );
+    expect(result.mismatches.filter((m) => m.date === "2026-11-02")).toEqual([]);
+  });
+
   it("counts overtime waiting for a decision", async () => {
     await sync(ali, [ev("OT_IN", "2026-11-02", "16:45"), ev("OT_OUT", "2026-11-02", "18:45")], at("2026-11-02", "18:45"));
     expect(await pendingCount(db, sup1)).toBe(1);
@@ -245,7 +277,7 @@ describe("supervisor 1 / supervisor 2 and report viewers", () => {
     const created = await createStaff(
       db,
       admin,
-      { staffCode: "C-3", name: "Both", contractorId, supervisorId: "sup1", supervisor2Id: "sup2", shiftId: shift.id, geofenceIds: [fence.id], pin: "1234" },
+      { staffCode: "C-3", cprNo: "900000003", name: "Both", contractorId, supervisorId: "sup1", supervisor2Id: "sup2", shiftId: shift.id, geofenceIds: [fence.id], pin: "1234" },
       at("2026-10-01", "00:00"),
     );
     await loginStaff(db, { staffCode: "C-3", pin: "1234", deviceId: "device-C-3-xyz" }, at("2026-10-01", "00:00"));
@@ -292,7 +324,7 @@ describe("supervisor 1 / supervisor 2 and report viewers", () => {
   it("refuses the same person as Supervisor 1 and Supervisor 2", async () => {
     const shift = fake.all(COL.shifts)[0];
     await expect(
-      createStaff(db, admin, { staffCode: "C-9", name: "X", contractorId, supervisorId: "sup1", supervisor2Id: "sup1", shiftId: shift.id, pin: "1234" }, new Date()),
+      createStaff(db, admin, { staffCode: "C-9", cprNo: "900000009", name: "X", contractorId, supervisorId: "sup1", supervisor2Id: "sup1", shiftId: shift.id, pin: "1234" }, new Date()),
     ).rejects.toMatchObject({ status: 400 });
   });
 });

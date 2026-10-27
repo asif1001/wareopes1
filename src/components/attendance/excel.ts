@@ -24,8 +24,9 @@ export async function exportMonthWorkbook(input: {
     [report.lock?.locked ? "Month is LOCKED" : "Month is open — figures may still change"],
     [],
     [
-      "Contractor",
+      "Contract company",
       "Staff code",
+      "CPR",
       "Name",
       "Days present",
       "of which late",
@@ -43,6 +44,7 @@ export async function exportMonthWorkbook(input: {
     ...report.staff.map((r) => [
       r.contractorName,
       r.staffCode,
+      r.cprNo ?? "",
       r.name,
       r.daysPresent,
       r.daysLate,

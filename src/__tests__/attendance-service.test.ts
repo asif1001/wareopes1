@@ -46,6 +46,10 @@ async function seed(shift = { name: "Day", startTime: "07:00", endTime: "16:00" 
     admin,
     {
       staffCode: "c-101",
+      cprNo: "900000101",
+      cprExpiry: "2027-05-01",
+      visaExpiry: "2026-11-20",
+      phone: "+973 3300 0101",
       name: "Ali",
       contractorId: contractor.id,
       supervisorId: "sup1",
@@ -158,6 +162,35 @@ describe("staff login and device binding", () => {
     await expect(authenticateStaff(db, `Bearer ${tokens.accessToken}`, DEVICE, at(MONDAY, "18:01"))).rejects.toBeTruthy();
     await expect(loginStaff(db, { staffCode: "c-101", pin: "1234", deviceId: DEVICE }, at(MONDAY, "18:02"))).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
     await expect(updateStaff(db, admin, staff.id, { action: "activate" }, at(MONDAY, "18:03"))).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("logs in with the CPR number and password, and stores the staff details", async () => {
+    await updateStaff(db, admin, staff.id, { action: "resetDevice" }, at(MONDAY, "07:00"));
+    const { staff: s } = await loginStaff(db, { cprNo: "900000101", password: "1234", deviceId: DEVICE }, at(MONDAY, "07:01"));
+    expect(s).toMatchObject({ cprNo: "900000101", cprExpiry: "2027-05-01", visaExpiry: "2026-11-20", phone: "+973 3300 0101" });
+    await expect(loginStaff(db, { cprNo: "900000101", password: "wrong", deviceId: DEVICE }, at(MONDAY, "07:02"))).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
+  });
+
+  it("lets only an admin set or change the app password", async () => {
+    await expect(updateStaff(db, supervisor, staff.id, { action: "setPassword", password: "Ekk#2026" }, at(MONDAY, "08:00"))).rejects.toMatchObject({ status: 403 });
+    await updateStaff(db, admin, staff.id, { action: "setPassword", password: "Ekk#2026" }, at(MONDAY, "08:01"));
+    await expect(loginStaff(db, { cprNo: "900000101", password: "1234", deviceId: DEVICE }, at(MONDAY, "08:02"))).rejects.toBeTruthy();
+    await expect(loginStaff(db, { cprNo: "900000101", password: "Ekk#2026", deviceId: DEVICE }, at(MONDAY, "08:03"))).resolves.toBeTruthy();
+  });
+
+  it("refuses a CPR number that is already registered or not 9 digits", async () => {
+    const base = { name: "X", contractorId: staff.contractorId, supervisorId: "sup1", shiftId: staff.shiftId, password: "1234" };
+    await expect(createStaff(db, admin, { ...base, cprNo: "900000101" }, new Date())).rejects.toMatchObject({ status: 409 });
+    await expect(createStaff(db, admin, { ...base, cprNo: "12345" }, new Date())).rejects.toMatchObject({ status: 400 });
+    const created = await createStaff(db, admin, { ...base, cprNo: "900-000-202" }, new Date());
+    expect(created).toMatchObject({ cprNo: "900000202", staffCode: "900000202" });
+  });
+
+  it("moves the CPR login when an admin corrects the CPR number", async () => {
+    await updateStaff(db, admin, staff.id, { action: "update", changes: { cprNo: "900000999" } }, at(MONDAY, "08:00"));
+    await updateStaff(db, admin, staff.id, { action: "resetDevice" }, at(MONDAY, "08:01"));
+    await expect(loginStaff(db, { cprNo: "900000999", password: "1234", deviceId: DEVICE }, at(MONDAY, "08:02"))).resolves.toBeTruthy();
+    await expect(loginStaff(db, { cprNo: "900000101", password: "1234", deviceId: DEVICE }, at(MONDAY, "08:03"))).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
   });
 
   it("never stores the PIN in plain text", async () => {

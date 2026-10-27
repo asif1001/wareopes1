@@ -6,6 +6,7 @@ export type DayException = { date: LocalDate; status: DayStatus; flags: DayFlag[
 export type StaffMonthRow = {
   staffId: string;
   staffCode: string;
+  cprNo: string | null;
   name: string;
   contractorId: string;
   contractorName: string;
@@ -22,7 +23,7 @@ export type StaffMonthRow = {
   exceptions: DayException[];
 };
 
-export type ContractorMonthRow = Omit<StaffMonthRow, "staffId" | "staffCode" | "name" | "exceptions"> & {
+export type ContractorMonthRow = Omit<StaffMonthRow, "staffId" | "staffCode" | "cprNo" | "name" | "exceptions"> & {
   staffCount: number;
 };
 
@@ -57,6 +58,7 @@ export function buildMonthReport(input: {
     rows.set(s.id, {
       staffId: s.id,
       staffCode: s.staffCode,
+      cprNo: s.cprNo ?? null,
       name: s.name,
       contractorId: s.contractorId,
       contractorName: contractorName.get(s.contractorId) ?? "",
@@ -218,7 +220,12 @@ export function compareWithContractor(input: {
   overtime: OvertimeRequest[];
   toleranceMin: number;
 }): Mismatch[] {
-  const byCode = new Map(input.staff.map((s) => [s.staffCode.toUpperCase(), s]));
+  // Contractor sheets may use our staff code or the CPR number.
+  const byCode = new Map<string, StaffPublic>();
+  for (const s of input.staff) {
+    if (s.cprNo) byCode.set(s.cprNo, s);
+    byCode.set(s.staffCode.toUpperCase(), s);
+  }
   const dayKey = (staffId: string, date: string) => `${staffId}|${date}`;
   const days = new Map(input.days.filter((d) => d.month === input.month).map((d) => [dayKey(d.staffId, d.date), d]));
   const ot = new Map<string, number>();
@@ -236,7 +243,7 @@ export function compareWithContractor(input: {
     if (!row.date.startsWith(input.month)) continue;
     const code = row.staffCode.trim().toUpperCase();
     const contractor = { status: row.status ?? null, hours: row.hours ?? null, otHours: row.otHours ?? null };
-    const staff = byCode.get(code);
+    const staff = byCode.get(code) ?? byCode.get(code.replace(/\D/g, ""));
     if (!staff) {
       mismatches.push({ kind: "UNKNOWN_STAFF", staffCode: code, date: row.date, contractor, ours: null });
       continue;
