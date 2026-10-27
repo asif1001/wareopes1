@@ -183,6 +183,12 @@ describe("regular attendance sync", () => {
     expect(dayDoc(MONDAY)!.status).toBe("LATE");
   });
 
+  it("answers in the order the phone sent the events", async () => {
+    const results = await sync([ev("OUT", MONDAY, "16:02"), ev("OT_IN", MONDAY, "16:10"), ev("IN", MONDAY, "06:55")], at(MONDAY, "17:00"));
+    expect(results.map((r) => r.status)).toEqual(["ACCEPTED", "REJECTED", "ACCEPTED"]);
+    expect(results[1].code).toBe("OT_TOO_EARLY");
+  });
+
   it("syncs an offline day once, with no duplicates on retry", async () => {
     const offline = [ev("IN", MONDAY, "06:55"), ev("OUT", MONDAY, "16:02")];
     const first = await sync(offline, at(MONDAY, "20:00"));

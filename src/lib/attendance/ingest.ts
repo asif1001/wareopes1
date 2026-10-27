@@ -133,23 +133,24 @@ export async function ingestEvents(db: Db, staff: Staff, body: unknown, now: Dat
   const driftSec = (now.getTime() - new Date(batch.data.sentAt).getTime()) / 1000;
   const ctx: Context = { staff, rules, shift, geofences, driftSec, now };
 
-  const results: EventResult[] = [];
-  const prepared: (Prepared | null)[] = batch.data.events.map((raw) => {
+  // Results are returned in the order the phone sent the events; processing is in time order.
+  const results: EventResult[] = new Array(batch.data.events.length);
+  const prepared: ((Prepared & { index: number }) | null)[] = batch.data.events.map((raw, index) => {
     const parsed = incomingEventSchema.safeParse(raw);
     if (!parsed.success) {
       const clientEventId =
         raw && typeof raw === "object" && typeof (raw as { clientEventId?: unknown }).clientEventId === "string"
           ? (raw as { clientEventId: string }).clientEventId
           : null;
-      results.push({ clientEventId, status: "REJECTED", code: "INVALID_EVENT", message: "Invalid event data" });
+      results[index] = { clientEventId, status: "REJECTED", code: "INVALID_EVENT", message: "Invalid event data" };
       return null;
     }
-    return prepare(parsed.data, ctx);
+    return { ...prepare(parsed.data, ctx), index };
   });
 
-  const valid = prepared.filter((p): p is Prepared => !!p).sort((a, b) =>
-    a.event.effectiveTime.localeCompare(b.event.effectiveTime),
-  );
+  const valid = prepared
+    .filter((p): p is Prepared & { index: number } => !!p)
+    .sort((a, b) => a.event.effectiveTime.localeCompare(b.event.effectiveTime));
   if (!valid.length) return results;
 
   const dates = valid.map((p) => p.event.attendanceDate).sort();
@@ -162,7 +163,7 @@ export async function ingestEvents(db: Db, staff: Staff, body: unknown, now: Dat
   const touched = new Set<LocalDate>();
   for (const item of valid) {
     const result = await storeEvent(db, item, ctx, holidays, lockedMonths);
-    results.push(result);
+    results[item.index] = result;
     if (result.status === "ACCEPTED" && (item.event.type === "IN" || item.event.type === "OUT")) {
       touched.add(item.event.attendanceDate);
     }
