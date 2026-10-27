@@ -24,6 +24,7 @@ export const COL = {
   deviceHealth: "attDeviceHealth",
   consents: "attConsents",
   photos: "attPhotos",
+  crashReports: "attCrashReports",
 } as const;
 
 export const RULES_DOC = "rules";
