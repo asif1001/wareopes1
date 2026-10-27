@@ -53,3 +53,8 @@ runConfig:
       value: https://wareopes--expotracker-6e353.us-central1.hosted.app
     # Firebase Admin SDK will use the default service account in App Hosting
     # No need to set FIREBASE_ADMIN_CREDENTIALS_BASE64 as App Hosting provides this automatically
+env:
+  - variable: ATTENDANCE_TOKEN_SECRET
+    secret: attendance-token-secret
+  - variable: ATTENDANCE_CRON_SECRET
+    secret: attendance-cron-secret
