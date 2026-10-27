@@ -2,8 +2,8 @@ import type { NextRequest } from "next/server";
 import { scopeStaff } from "@/lib/attendance/actor";
 import { badRequest } from "@/lib/attendance/errors";
 import { attendanceDb, fail, ok, requireActor } from "@/lib/attendance/http";
-import { listOvertime, withEventDetails } from "@/lib/attendance/overtime";
-import { listStaff } from "@/lib/attendance/store";
+import { autoCloseOvertime, listOvertime, withEventDetails } from "@/lib/attendance/overtime";
+import { getRules, listStaff } from "@/lib/attendance/store";
 import { isValidMonth } from "@/lib/attendance/time";
 import type { OvertimeStatus } from "@/lib/attendance/types";
 
@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     if (status && !STATUSES.includes(status)) throw badRequest("Unknown status");
     if (month && !isValidMonth(month)) throw badRequest("Month must be YYYY-MM");
     const db = await attendanceDb();
+    await autoCloseOvertime(db, await getRules(db), new Date());
     const ids = new Set(scopeStaff(actor, await listStaff(db)).map((s) => s.id));
     const items = (await listOvertime(db, { status: status ?? undefined, month: month ?? undefined })).filter((o) =>
       ids.has(o.staffId),

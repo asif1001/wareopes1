@@ -1,7 +1,7 @@
 import { scopeManagedStaff, scopeStaff, type Actor } from "./actor";
 import { ensureDays } from "./days";
 import { deviceIssues, type DeviceIssue } from "./health";
-import { listOvertime } from "./overtime";
+import { autoCloseOvertime, listOvertime } from "./overtime";
 import { COL, getRules, listStaff, toStaffPublic, type Db } from "./store";
 import { localDateOf } from "./time";
 import type { AttendanceDay, DayFlag, DeviceHealth, LocalDate, OvertimeRequest, StaffPublic } from "./types";
@@ -69,6 +69,8 @@ function daysBetween(from: LocalDate, to: LocalDate) {
 /** Only problems for the day, never the full list of records. */
 export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, now: Date): Promise<DailyExceptions> {
   const rules = await getRules(db);
+  // Schedulers may run only daily (e.g. Vercel Hobby), so close forgotten OT whenever supervisors look.
+  await autoCloseOvertime(db, rules, now);
   const staffList = scopeStaff(actor, await listStaff(db)).filter((s) => s.active);
   const staffById = new Map(staffList.map((s) => [s.id, toStaffPublic(s)]));
 

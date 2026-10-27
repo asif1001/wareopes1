@@ -49,7 +49,16 @@ firebase apphosting:secrets:grantaccess attendance-cron-secret --backend wareope
       secret: attendance-cron-secret
 ```
 
-### 2. Scheduler (every 15 minutes)
+### Vercel (current production host)
+
+WareOps production runs on Vercel (`wareopes1` project, https://wareopes1.vercel.app), deployed from `master`.
+Production environment variables: `ATTENDANCE_TOKEN_SECRET`, `ATTENDANCE_CRON_SECRET` and `CRON_SECRET`
+(same value as `ATTENDANCE_CRON_SECRET`; Vercel Cron sends it as `Authorization: Bearer …`).
+`vercel.json` runs `GET /api/attendance/cron?job=all` daily at 21:05 UTC (00:05 Bahrain), which works on
+every Vercel plan. On a Pro plan you can change the schedule to `*/15 * * * *`. Forgotten overtime is also
+auto-closed whenever the Overview, Today or Overtime tabs are opened, so a daily job is enough.
+
+### 2. Scheduler on Google Cloud (only if hosting on Firebase App Hosting)
 
 ```bash
 gcloud scheduler jobs create http attendance-cron \
