@@ -12,6 +12,7 @@ import {
   countRackLocations,
   sanitizeZone,
 } from "./rack-builder";
+import { countDesignLocations, designLocations, normalizeRackDesign } from "./rack-design";
 
 export const SAMPLE_BRAND_RULES: BrandRule[] = [
   { prefix: "CEIL", brand: "CEIL" },
@@ -135,6 +136,7 @@ export function buildLocator(
 }
 
 export function capacityOf(layout: WarehouseLayout): number {
+  if (layout.rackDesign) return countDesignLocations(normalizeRackDesign(layout.rackDesign));
   if (layout.rackBuilder) return countRackLocations(layout.rackBuilder);
   return layout.subInventories.reduce((total, sub) => {
     if (sub.locations?.length) return total + sub.locations.length;
@@ -173,6 +175,26 @@ export function buildLocationMap(
   layout: WarehouseLayout,
 ): Map<string, LocationMeta> {
   const map = new Map<string, LocationMeta>();
+  if (layout.rackDesign) {
+    for (const location of designLocations(normalizeRackDesign(layout.rackDesign))) {
+      if (map.size >= MAX_LOCATIONS) break;
+      const aisle = /^\d+$/.test(location.rack.bay) ? Number(location.rack.bay) : location.rack.row + 1;
+      map.set(location.locator, {
+        locator: location.locator,
+        sub: location.zone,
+        kind: "rack",
+        aisle,
+        bay: location.rack.num,
+        rowCode: location.rack.bay,
+        rackCode: location.rackLabel,
+        level: location.levelCode,
+        bin: location.binCode,
+        locType: "Racking",
+        unplanned: false,
+      });
+    }
+    return map;
+  }
   if (layout.rackBuilder) {
     const zone = sanitizeZone(layout.rackBuilder.zone);
     for (const location of buildRackLocations(layout.rackBuilder)) {

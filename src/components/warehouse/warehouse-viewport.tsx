@@ -23,13 +23,16 @@ type Props = {
   locations: DrawLocation[];
   selected: string | null;
   onSelect: (locator: string | null) => void;
+  /** Keep the camera where the user left it when the plan changes (live setup preview). */
+  keepCamera?: boolean;
+  className?: string;
 };
 
 export const WarehouseViewport = forwardRef<WarehouseViewportHandle, Props>(
-  function WarehouseViewport({ plan, locations, selected, onSelect }, ref) {
+  function WarehouseViewport({ plan, locations, selected, onSelect, keepCamera = false, className }, ref) {
     const hostRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<{
-      setPlan: (plan: ScenePlan) => void;
+      setPlan: (plan: ScenePlan, keepCamera?: boolean) => void;
       setLocations: (locations: DrawLocation[]) => void;
       setSelected: (locator: string | null) => void;
       setAutoRotate: (enabled: boolean) => void;
@@ -90,8 +93,13 @@ export const WarehouseViewport = forwardRef<WarehouseViewportHandle, Props>(
       };
     }, []);
 
+    const keepCameraRef = useRef(keepCamera);
     useEffect(() => {
-      sceneRef.current?.setPlan(plan);
+      keepCameraRef.current = keepCamera;
+    }, [keepCamera]);
+
+    useEffect(() => {
+      sceneRef.current?.setPlan(plan, keepCameraRef.current);
     }, [plan]);
 
     useEffect(() => {
@@ -117,7 +125,7 @@ export const WarehouseViewport = forwardRef<WarehouseViewportHandle, Props>(
     );
 
     return (
-      <div className="relative h-[420px] w-full overflow-hidden rounded-lg border bg-[#0a1523] sm:h-[520px] xl:h-[620px]">
+      <div className={className ?? "relative h-[420px] w-full overflow-hidden rounded-lg border bg-[#0a1523] sm:h-[520px] xl:h-[620px]"}>
         <div ref={hostRef} className="absolute inset-0" />
 
         {status === "loading" && (

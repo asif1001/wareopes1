@@ -44,10 +44,7 @@ import type { Branch } from "@/lib/types";
 import { analyzeWarehouse, compareSummaries } from "@/lib/warehouse/analyze";
 import { exportWarehouseWorkbook } from "@/lib/warehouse/export";
 import { capacityOf, createLayout } from "@/lib/warehouse/layout";
-import {
-  buildLayoutWithRackBuilder,
-  createRackBuilderConfig,
-} from "@/lib/warehouse/rack-builder";
+import { buildLayoutWithDesign, createRackDesign, designForLayout } from "@/lib/warehouse/rack-design";
 import { computeScenePlan } from "@/lib/warehouse/geometry";
 import { withTimeout } from "@/lib/warehouse/timeout";
 import {
@@ -86,6 +83,7 @@ import {
   type ImportConfirmPayload,
 } from "./import-dialog";
 import { WarehouseLayoutEditor } from "./layout-editor";
+import { RackFloorPlan } from "./rack-floor-plan";
 import {
   WarehouseViewport,
   type WarehouseViewportHandle,
@@ -511,6 +509,34 @@ export function WarehouseClientPage() {
     return drawn;
   }, [scenePlan, report, layout, resolvedByLocator, filters, colorMode]);
 
+  // Setup preview: every planned location, empty ones as floor pads, so the racking is always visible.
+  const setupLocations = useMemo<DrawLocation[]>(() => {
+    if (!scenePlan) return [];
+    const colorMap = buildBrandColorMap(report?.summary.brandRows.map((row) => row.brand) ?? []);
+    const drawn: DrawLocation[] = [];
+    for (const [locator, plan] of scenePlan.locations) {
+      const resolved = resolvedByLocator.get(locator);
+      const occupied = Boolean(resolved?.occupied);
+      let color = EMPTY_COLOR;
+      if (resolved?.meta.unplanned) color = UNPLANNED_COLOR;
+      else if (occupied) color = resolved!.mixed ? MIXED_COLOR : (colorMap.get(resolved!.brands[0]) ?? OCCUPIED_COLOR);
+      const height = occupied ? plan.size[1] : 0.12;
+      const baseY = plan.position[1] - plan.size[1] / 2;
+      drawn.push({ locator, position: [plan.position[0], baseY + height / 2, plan.position[2]], size: [plan.size[0], height, plan.size[2]], color });
+    }
+    return drawn;
+  }, [scenePlan, report, resolvedByLocator]);
+
+  const occupiedLocators = useMemo(() => {
+    const set = new Set<string>();
+    report?.locations.forEach((value, key) => {
+      if (value.occupied) set.add(key);
+    });
+    return set;
+  }, [report]);
+
+  const setupDesign = useMemo(() => (layout ? designForLayout(layout) : null), [layout]);
+
   const selectedLocation = useMemo(
     () => (selected ? (resolvedByLocator.get(selected) ?? null) : null),
     [selected, resolvedByLocator],
@@ -759,12 +785,7 @@ export function WarehouseClientPage() {
 
   const startManualLayout = () => {
     if (!branch) return;
-    setLayout(
-      buildLayoutWithRackBuilder(
-        createLayout(branchId, branchName),
-        createRackBuilderConfig("T"),
-      ),
-    );
+    setLayout(buildLayoutWithDesign(createLayout(branchId, branchName), createRackDesign()));
     setLayoutDirty(true);
   };
 
@@ -1634,17 +1655,55 @@ export function WarehouseClientPage() {
                   {layout && (
                     <WarehouseLayoutEditor
                       layout={layout}
+                      readOnly={!can("warehouse", "edit")}
                       onChange={(next) => {
                         setLayout(next);
                         setLayoutDirty(true);
                       }}
+                      renderPreview={(zoneIndex) => (
+                        <Card className="overflow-hidden">
+                          <Tabs defaultValue="3d">
+                            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                              <div>
+                                <CardTitle className="text-base">Live preview</CardTitle>
+                                <CardDescription>Updates as you change the racking.</CardDescription>
+                              </div>
+                              <TabsList>
+                                <TabsTrigger value="3d">3D view</TabsTrigger>
+                                <TabsTrigger value="plan">Floor plan</TabsTrigger>
+                              </TabsList>
+                            </CardHeader>
+                            <CardContent className="pt-0">
+                              <TabsContent value="3d" className="mt-0">
+                                {scenePlan && (
+                                  <WarehouseViewport
+                                    plan={scenePlan}
+                                    locations={setupLocations}
+                                    selected={selected}
+                                    onSelect={handleSelect}
+                                    keepCamera
+                                    className="relative h-[420px] w-full overflow-hidden rounded-lg border bg-[#0a1523] xl:h-[520px]"
+                                  />
+                                )}
+                              </TabsContent>
+                              <TabsContent value="plan" className="mt-0">
+                                <div className="h-[420px] rounded-lg border bg-gradient-to-b from-[#f9fcff] to-[#e8f0fa] xl:h-[520px]">
+                                  {setupDesign?.zones[zoneIndex] && (
+                                    <RackFloorPlan zone={setupDesign.zones[zoneIndex]} occupied={occupiedLocators} />
+                                  )}
+                                </div>
+                              </TabsContent>
+                            </CardContent>
+                          </Tabs>
+                        </Card>
+                      )}
                     />
                   )}
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
                       onClick={() => void handleSaveLayout()}
-                      disabled={!layoutDirty || savingLayout}
+                      disabled={!layoutDirty || savingLayout || !can("warehouse", "edit")}
                     >
                       {savingLayout ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />

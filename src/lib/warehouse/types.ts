@@ -7,6 +7,8 @@
  * branch so empty locations are part of the occupancy calculation.
  */
 
+import type { RackDesign } from "./rack-design";
+
 export type NumberRange = {
   min: number;
   max: number;
@@ -100,8 +102,10 @@ export type WarehouseLayout = {
   name: string;
   subInventories: SubInventoryLayout[];
   brandRules: BrandRule[];
-  /** When present, the 3D rack builder defines the warehouse structure. */
+  /** Previous rack builder; still read for layouts saved before the rack designer. */
   rackBuilder?: RackBuilderConfig;
+  /** When present, the rack designer (zones, aisles, racks) defines the warehouse structure. */
+  rackDesign?: RackDesign;
   notes?: string;
   updatedAt?: string;
   updatedBy?: string;

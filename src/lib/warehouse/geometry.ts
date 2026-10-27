@@ -5,6 +5,7 @@ import {
   rowValuesFor,
 } from "./layout";
 import { buildRackLocations, sanitizeZone } from "./rack-builder";
+import { buildZoneModel, levelLabel, normalizeRackDesign, zoneLocations, type RackDesign } from "./rack-design";
 import type { LocationMeta, RackBuilderConfig, WarehouseLayout } from "./types";
 
 /** Physical dimensions (metres) used by the 3D scene. */
@@ -265,6 +266,156 @@ function computeRackBuilderPlan(
   };
 }
 
+/** Space between zones when a branch has several designer zones. */
+const ZONE_GAP = 8;
+
+function computeRackDesignPlan(
+  layout: WarehouseLayout,
+  design: RackDesign,
+  unplannedLocators: LocationMeta[],
+): ScenePlan {
+  const planned = buildLocationMap(layout);
+  const locations = new Map<string, SceneLocationPlan>();
+  const frames: SceneFrame[] = [];
+  const labels: SceneLabel[] = [];
+  let offsetX = 0;
+
+  design.zones.forEach((zone, zoneIndex) => {
+    const model = buildZoneModel(zone);
+    const { bounds } = model;
+    const X = (x: number) => x - bounds.x0 + offsetX;
+    const Z = (y: number) => y - bounds.y0;
+    const W = zone.rackW;
+    const D = zone.rackD;
+
+    for (const loc of zoneLocations(zone, zoneIndex, model)) {
+      const meta = planned.get(loc.locator);
+      if (!meta) continue;
+      const r = loc.rack;
+      const along: [number, number] = [-r.n[1], r.n[0]];
+      const left: [number, number] = [r.fx + (along[0] * W) / 2, r.fy + (along[1] * W) / 2];
+      const t = (loc.bin - 0.5) / zone.bins;
+      const px = left[0] - along[0] * W * t - (r.n[0] * D) / 2;
+      const py = left[1] - along[1] * W * t - (r.n[1] * D) / 2;
+      const binLen = (W / zone.bins) * 0.88;
+      const alongX = r.n[1] !== 0;
+      locations.set(loc.locator, {
+        locator: loc.locator,
+        sub: zone.zone,
+        kind: "rack",
+        position: [X(px), loc.levelIndex * r.pitch + r.pitch / 2, Z(py)],
+        size: alongX ? [binLen, r.pitch * 0.72, D * 0.88] : [D * 0.88, r.pitch * 0.72, binLen],
+        meta,
+        unplanned: false,
+      });
+    }
+
+    const uprights = new Set<string>();
+    for (const r of model.racks) {
+      for (const [ux, uy] of [
+        [r.x0, r.y0],
+        [r.x1, r.y0],
+        [r.x0, r.y1],
+        [r.x1, r.y1],
+      ]) {
+        const key = `${ux.toFixed(3)}|${uy.toFixed(3)}|${r.height.toFixed(2)}`;
+        if (uprights.has(key)) continue;
+        uprights.add(key);
+        frames.push({ center: [X(ux), r.height / 2, Z(uy)], size: [0.14, r.height, 0.14] });
+      }
+      const alongX = r.n[1] !== 0;
+      for (let level = 1; level <= r.levels; level += 1) {
+        const y = level * r.pitch;
+        if (alongX) {
+          for (const edge of [r.y0, r.y1]) frames.push({ center: [X(r.cx), y, Z(edge)], size: [(r.x1 - r.x0) * 0.98, 0.1, 0.1] });
+        } else {
+          for (const edge of [r.x0, r.x1]) frames.push({ center: [X(edge), y, Z(r.cy)], size: [0.1, 0.1, (r.y1 - r.y0) * 0.98] });
+        }
+      }
+    }
+
+    for (const a of model.aisles) {
+      labels.push({ text: a.label, position: [X(a.x + a.w / 2), 0.35, Z(a.y + a.h / 2)], kind: "aisle" });
+    }
+    zone.rows.forEach((row, i) => {
+      const first = model.racks.find((r) => r.row === i && r.num === row.start);
+      if (!first) return;
+      labels.push({
+        text: `R${i + 1} · ${first.id}`,
+        position: [X(first.fx + first.n[0] * 0.6), first.height + 0.6, Z(first.fy + first.n[1] * 0.6)],
+        kind: "detail",
+      });
+    });
+    labels.push({ text: `Zone ${zone.zone}`, position: [X(bounds.x0) - 1.5, model.height + 1.6, Z(bounds.y0) - 2.5], kind: "area" });
+    const r0 = model.racks[0];
+    if (r0) {
+      for (let level = 0; level < r0.levels; level += 1) {
+        labels.push({
+          text: levelLabel(zone, level),
+          position: [X(r0.x0) - 1.2, level * r0.pitch + r0.pitch / 2, Z(r0.y0) - 1.2],
+          kind: "detail",
+        });
+      }
+    }
+
+    offsetX += bounds.x1 - bounds.x0 + ZONE_GAP;
+  });
+
+  const overflowX = offsetX + 2;
+  unplannedLocators.forEach((meta, index) => {
+    if (locations.has(meta.locator)) return;
+    locations.set(meta.locator, {
+      locator: meta.locator,
+      sub: meta.sub,
+      kind: meta.kind,
+      position: [overflowX + (index % 8) * 2.7, 0.7, Math.floor(index / 8) * 2.7],
+      size: [BULK_SIZE * 0.7, 1.3, BULK_SIZE * 0.7],
+      meta,
+      unplanned: true,
+    });
+  });
+  if (unplannedLocators.length) {
+    labels.push({ text: "Unmapped locations", position: [overflowX + 9, 1.3, -2], kind: "area" });
+  }
+
+  let min: Vec3 = [Infinity, 0, Infinity];
+  let max: Vec3 = [-Infinity, 0, -Infinity];
+  const expand = (center: Vec3, size: Vec3) => {
+    for (let k = 0; k < 3; k += 1) {
+      min[k] = Math.min(min[k], center[k] - size[k] / 2);
+      max[k] = Math.max(max[k], center[k] + size[k] / 2);
+    }
+  };
+  for (const location of locations.values()) expand(location.position, location.size);
+  for (const frame of frames) expand(frame.center, frame.size);
+  if (!Number.isFinite(min[0])) {
+    min = [-10, 0, -10];
+    max = [10, 10, 10];
+  }
+  const cx = (min[0] + max[0]) / 2;
+  const cz = (min[2] + max[2]) / 2;
+  for (const location of locations.values()) {
+    location.position[0] -= cx;
+    location.position[2] -= cz;
+  }
+  for (const frame of frames) {
+    frame.center[0] -= cx;
+    frame.center[2] -= cz;
+  }
+  for (const label of labels) {
+    label.position[0] -= cx;
+    label.position[2] -= cz;
+  }
+  return {
+    locations,
+    frames,
+    labels,
+    bounds: { min: [min[0] - cx, min[1], min[2] - cz], max: [max[0] - cx, max[1], max[2] - cz] },
+    center: [0, (min[1] + max[1]) / 2, 0],
+    radius: Math.max(12, Math.hypot(max[0] - min[0], max[2] - min[2]) / 2),
+  };
+}
+
 /**
  * Turn a warehouse layout into drawable geometry. Planned locations are laid
  * out in contiguous blocks per storage area; locators that are not part of the
@@ -275,6 +426,9 @@ export function computeScenePlan(
   layout: WarehouseLayout,
   unplannedLocators: LocationMeta[] = [],
 ): ScenePlan {
+  if (layout.rackDesign) {
+    return computeRackDesignPlan(layout, normalizeRackDesign(layout.rackDesign), unplannedLocators);
+  }
   if (layout.rackBuilder) {
     return computeRackBuilderPlan(
       layout,

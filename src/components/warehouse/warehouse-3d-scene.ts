@@ -195,7 +195,7 @@ export class WarehouseScene {
     this.animate();
   }
 
-  setPlan(plan: ScenePlan): void {
+  setPlan(plan: ScenePlan, keepCamera = false): void {
     this.plan = plan;
     this.disposeGroup(this.frameGroup);
     this.disposeGroup(this.labelGroup);
@@ -280,7 +280,7 @@ export class WarehouseScene {
       this.labelGroup.add(sprite);
     });
 
-    this.resetView(false);
+    if (!keepCamera) this.resetView(false);
   }
 
   setLocations(locations: DrawLocation[]): void {
