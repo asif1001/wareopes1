@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Edit } from "lucide-react";
 import { Department, Branch, Role, User, userRoles, PermissionAction, AppPageKey, Source, ContainerSize } from "@/lib/types";
-import { APP_PAGES, PERMISSION_ACTIONS } from "@/lib/role-utils";
 import { useFormStatus } from "react-dom";
 import { useActionState, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -40,19 +39,12 @@ export function UserEditForm({ departments, roles, user, roleDefaults, onSuccess
         }
     }, [state, toast, onSuccess]);
 
-    const getInitialChecked = (page: AppPageKey, action: PermissionAction) => {
-        const actions = user.permissions?.[page];
-        if (Array.isArray(actions)) return actions.includes(action);
-        const rolePerm = roleDefaults?.[page]?.[action];
-        return !!rolePerm; // fallback to role default if available
-    };
-
     return (
         <form ref={formRef} action={formAction}>
             <Card className="max-w-3xl mx-auto">
                 <CardHeader>
                     <CardTitle>Edit User</CardTitle>
-                    <CardDescription>Update the user&apos;s details and permissions.</CardDescription>
+                    <CardDescription>Update the user&apos;s details and role.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <input type="hidden" name="id" value={user.id} />
@@ -113,25 +105,7 @@ export function UserEditForm({ departments, roles, user, roleDefaults, onSuccess
                         </div>
                     </div>
 
-                    <div className="space-y-3">
-                        <Label>Permissions</Label>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {APP_PAGES.map(page => (
-                                <div key={page} className="border rounded-md p-3">
-                                    <div className="font-medium mb-2 capitalize">{page}</div>
-                                    <div className="flex flex-wrap gap-3">
-                                        {PERMISSION_ACTIONS.map(action => (
-                                            <label key={action} className="flex items-center gap-2">
-                                               <input type="checkbox" name={`perm:${page}:${action}`} defaultChecked={getInitialChecked(page as AppPageKey, action as PermissionAction)} />
-                                                <span className="capitalize">{action}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground">Unchecked boxes rely on role defaults.</p>
-                    </div>
+                    <p className="mt-4 text-sm text-muted-foreground">Page and action access is managed in Settings → Access control (Admin only).</p>
                 </CardContent>
                 <CardFooter>
                     <SubmitButton />

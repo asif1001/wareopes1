@@ -276,7 +276,7 @@ export async function getUsers(): Promise<User[]> {
           roleMap.set(String(data?.name || ''), data);
         });
         return usersSnap.docs.map((d: any) => {
-          const raw = (d.data ? d.data() : d) as any;
+          const { password: _password, ...raw } = (d.data ? d.data() : d) as any;
           let permissions = raw?.permissions as any | undefined;
           if (!permissions && raw?.role) {
             const role = roleMap.get(String(raw.role));
@@ -310,7 +310,7 @@ export async function getUsers(): Promise<User[]> {
       roleMap.set(String(data?.name || ''), data);
     });
     return usersSnap.docs.map(doc => {
-      const raw = doc.data() as any;
+      const { password: _password, ...raw } = doc.data() as any;
       let permissions = raw?.permissions as any | undefined;
       if (!permissions && raw?.role) {
         const role = roleMap.get(String(raw.role));

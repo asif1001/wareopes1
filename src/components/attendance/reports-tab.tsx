@@ -153,10 +153,12 @@ export function ReportsTab() {
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={() => void exportExcel()} disabled={!report || exporting}>
-          {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-          Download Excel
-        </Button>
+        {me?.canExport && (
+          <Button onClick={() => void exportExcel()} disabled={!report || exporting}>
+            {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            Download Excel
+          </Button>
+        )}
         <input
           ref={fileRef}
           type="file"

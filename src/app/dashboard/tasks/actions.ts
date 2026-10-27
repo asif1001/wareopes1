@@ -6,6 +6,7 @@ import { Task, TaskPriority, TaskStatus, AuditLog, SerializableTask } from "@/li
 import { makeSerializable } from "@/lib/serialization";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { nanoid } from "nanoid";
+import { actionDenied } from "@/lib/permissions/server";
 
 const taskStatusEnum: [TaskStatus, ...TaskStatus[]] = ["Backlog", "To Do", "In Progress", "Blocked", "On Hold", "Review", "Done"];
 const taskPriorityEnum: [TaskPriority, ...TaskPriority[]] = ["No Priority", "Low", "Medium", "High", "Urgent"];
@@ -88,6 +89,8 @@ export async function saveTaskAction(
     prevState: { success: boolean, error: string | null, fieldErrors?: { [key: string]: string[] } },
     formData: FormData
 ): Promise<{ success: boolean, error: string | null, fieldErrors?: { [key: string]: string[] } }> {
+    const denied = await actionDenied('tasks', formData.get('id') ? 'edit' : 'add');
+    if (denied) return { success: false, error: denied };
     try {
         const rawData = Object.fromEntries(formData.entries());
         
@@ -169,6 +172,8 @@ export async function saveTaskAction(
 }
 
 export async function saveTask(formData: FormData) {
+    const denied = await actionDenied('tasks', formData.get('id') ? 'edit' : 'add');
+    if (denied) return { success: false, error: denied };
     const rawData = Object.fromEntries(formData.entries());
 
     const parsed = taskSchema.safeParse({
@@ -247,6 +252,8 @@ export async function saveTask(formData: FormData) {
 }
 
 export async function deleteTask(taskId: string) {
+    const denied = await actionDenied('tasks', 'delete');
+    if (denied) return { success: false, error: denied };
     try {
         const { getAdminDb } = await import('@/lib/firebase/admin');
         const adb = await getAdminDb();
@@ -263,6 +270,8 @@ export async function deleteTask(taskId: string) {
 }
 
 export async function addComment(formData: FormData) {
+    const denied = await actionDenied('tasks', 'edit');
+    if (denied) return { success: false, error: denied };
     const rawData = Object.fromEntries(formData.entries());
     const parsed = commentSchema.safeParse(rawData);
 
@@ -303,6 +312,8 @@ export async function addComment(formData: FormData) {
 }
 
 export async function addAttachment(formData: FormData) {
+    const denied = await actionDenied('tasks', 'edit');
+    if (denied) return { success: false, error: denied };
     const rawData = {
         taskId: formData.get('taskId'),
         file: formData.get('file'),

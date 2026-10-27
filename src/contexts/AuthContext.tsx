@@ -23,14 +23,11 @@ import { getAuth, signInAnonymously } from 'firebase/auth';
 import { app } from '@/lib/firebase/firebase';
 import { 
   getCurrentSession, 
-  login as authLogin, 
   logout as authLogout,
   isAdmin as checkIsAdmin,
   refreshSession,
   createSession
 } from '@/lib/auth';
-import { getUsers } from '@/lib/firebase/firestore';
-
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
@@ -127,13 +124,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (response.status === 401) {
         return { success: false, error: 'Invalid employee number or password' };
       } else {
-        // Server error - fall back to client-side authentication
-        console.warn('Server-side login failed, attempting client-side authentication');
-        const result = await authLogin(employeeNo, password);
-        if (result.success && result.user) {
-          setUser(result.user);
-        }
-        return result;
+        // Only the server may verify passwords and issue the signed session.
+        const data = await response.json().catch(() => ({}));
+        return { success: false, error: data?.error || 'Login failed. Please try again.' };
       }
     } catch (error: any) {
       console.error('Login error:', error);
@@ -199,7 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Only check admin status after hydration to prevent server/client mismatch
-  const isAdmin = isHydrated ? checkIsAdmin() : false;
+  const isAdmin = isHydrated ? (user ? String(user.role || '').toLowerCase() === 'admin' : checkIsAdmin()) : false;
 
   const value = {
     user,

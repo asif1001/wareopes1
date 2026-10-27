@@ -1,3 +1,4 @@
+import { guardPage } from "@/lib/permissions/server";
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -50,7 +51,8 @@ function ShipmentsSkeleton() {
 }
 
 
-export default function ShipmentsPage() {
+export default async function ShipmentsPage() {
+  await guardPage("shipments");
   return (
     <Suspense fallback={<ShipmentsSkeleton />}>
       <Shipments />

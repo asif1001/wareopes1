@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { SESSION_COOKIE, verifySession } from '@/lib/session';
 
-// Proxy to protect dashboard routes
-export function proxy(request: NextRequest) {
-  const session = request.cookies.get('session');
+// Protect dashboard routes: only a validly signed session gets through.
+// Per-page permissions are checked on the server by each page (guardPage).
+export async function proxy(request: NextRequest) {
+  const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
   if (!session) {
-    return NextResponse.redirect(new URL('/', request.url));
+    const response = NextResponse.redirect(new URL('/', request.url));
+    if (request.cookies.get(SESSION_COOKIE)) response.cookies.delete(SESSION_COOKIE);
+    return response;
   }
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/dashboard/:path*', '/my-account/:path*', '/forms/:path*', '/support/:path*'],
 };

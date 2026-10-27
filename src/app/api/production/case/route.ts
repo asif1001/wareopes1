@@ -1,3 +1,4 @@
+import { apiAccess } from '@/lib/permissions/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -8,6 +9,8 @@ function sanitize(s: any) {
 }
 
 export async function GET(req: NextRequest) {
+  const gate = await apiAccess('production', 'view');
+  if (!gate.ok) return gate.response;
   try {
     const { searchParams } = new URL(req.url);
     const shipmentId = sanitize(searchParams.get('shipmentId'));

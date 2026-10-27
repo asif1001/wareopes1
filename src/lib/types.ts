@@ -210,9 +210,10 @@ export type Role = {
   permissions?: string[]; // optional permissions assigned to this role
 };
 
-// Granular permissions
-export type PermissionAction = 'view' | 'add' | 'edit' | 'delete';
-export type AppPageKey = 'shipments' | 'dispatches' | 'tasks' | 'settings' | 'production' | 'productivity' | 'maintenance' | 'licenses' | 'oil_status' | 'warehouse' | 'attendance'; // extendable
+// Granular permissions — modules and actions are defined in src/lib/permissions/registry.ts
+import type { ModuleKey, PermissionAction as RegistryAction } from "./permissions/registry";
+export type PermissionAction = RegistryAction;
+export type AppPageKey = ModuleKey;
 export type UserPermissions = Partial<Record<AppPageKey, PermissionAction[]>>;
 
 export type User = {

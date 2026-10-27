@@ -13,6 +13,8 @@ export type Me = {
   canAdd: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  canApprove: boolean;
+  canExport: boolean;
   timezone: string;
 };
 

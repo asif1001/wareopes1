@@ -1,3 +1,4 @@
+import { apiAccess } from '@/lib/permissions/server';
 export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -152,24 +153,9 @@ function generateAuditLogs(
 
 export async function GET(request: NextRequest) {
     try {
-        // Identify current user from secure session cookie
-        const { cookies } = await import('next/headers');
-        const sessionCookie = (await cookies()).get('session');
-
-        let currentUserId: string | null = null;
-        if (sessionCookie?.value) {
-            try {
-                const sessionData = JSON.parse(sessionCookie.value);
-                currentUserId = sessionData?.id || null;
-            } catch {
-                // Fallback for legacy plain string cookies
-                currentUserId = sessionCookie.value;
-            }
-        }
-
-        if (!currentUserId) {
-            return NextResponse.json({ error: 'Unauthorized: no session' }, { status: 401 });
-        }
+        const gate = await apiAccess('tasks', 'view');
+        if (!gate.ok) return gate.response;
+        const currentUserId = gate.access.userId;
 
         // Use Admin SDK to query only tasks where the user is reporter or assignee
         const { getAdminDb } = await import('@/lib/firebase/admin');
@@ -231,15 +217,9 @@ export async function POST(request: NextRequest) {
         }
 
         const { id, ...taskData } = parsed.data;
-        const { cookies } = await import('next/headers');
-        const sessionCookie = (await cookies()).get('session');
-        let currentUserId = 'unknown';
-        try {
-            const sessionData = sessionCookie?.value ? JSON.parse(sessionCookie.value) : null;
-            currentUserId = sessionData?.id || (sessionCookie?.value || 'unknown');
-        } catch {
-            currentUserId = sessionCookie?.value || 'unknown';
-        }
+        const gate = await apiAccess('tasks', id ? 'edit' : 'add');
+        if (!gate.ok) return gate.response;
+        const currentUserId = gate.access.userId;
 
         // Compute bucket name used for uploads (for error reporting)
         const envBucket = (process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '').replace(/^gs:\/\//, '');
@@ -370,6 +350,8 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
     try {
+        const gate = await apiAccess('tasks', 'delete');
+        if (!gate.ok) return gate.response;
         const { id } = await request.json().catch(() => ({ id: undefined }));
         if (!id || typeof id !== 'string' || id.trim() === '') {
             return NextResponse.json({ success: false, error: 'Task id is required.' }, { status: 400 });

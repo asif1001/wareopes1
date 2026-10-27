@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
+import { useCan } from "@/hooks/use-can";
 import { format } from 'date-fns';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
@@ -65,6 +66,7 @@ const expandContainers = (shipment: SerializableShipment) => {
 export function ContainerBookingModal({ shipment }: { shipment: SerializableShipment }) {
     const [open, setOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const can = useCan();
     const [submitError, setSubmitError] = useState<string | null>(null);
     const { toast } = useToast();
     const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -161,7 +163,9 @@ export function ContainerBookingModal({ shipment }: { shipment: SerializableShip
             }
         }
     };
-    
+
+    if (!can('shipments', 'edit')) return null;
+
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>

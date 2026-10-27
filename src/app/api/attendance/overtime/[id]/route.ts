@@ -11,7 +11,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
-    const actor = await requireActor("edit");
+    const actor = await requireActor("approve");
     const item = await decideOvertime(await attendanceDb(), actor, id, await readJson(request), new Date());
     return ok({ item });
   } catch (error) {

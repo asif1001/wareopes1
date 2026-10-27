@@ -16,12 +16,15 @@ import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialo
 import type { User, Source, ContainerSize, Department, Branch, Role } from "@/lib/types";
 import { AddUserDialog } from "@/components/add-user-dialog";
 
-import { AdminRoute } from "@/components/AdminRoute";
+import { redirect } from "next/navigation";
+import { guardPage } from "@/lib/permissions/server";
+import { can } from "@/lib/permissions/resolve";
+import { getAccessControlData } from "./access-actions";
+import { AccessControlPanel } from "@/components/access-control/access-control-panel";
+
 import { getFormTemplatesAction } from "@/app/actions";
 import { RoleFormsSettings } from "@/components/role-forms-settings";
 import { ExistingUsersCard } from "@/components/settings-users-table";
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
 
 function UsersTable({ users, departments, roles }: { users: User[], departments: Department[], roles: Role[] }) {
   const serializableUsers = JSON.parse(JSON.stringify(users));
@@ -233,51 +236,10 @@ function RolesTable({ roles }: { roles: Role[] }) {
 }
 
 export default async function SettingsPage() {
-  // Server-side gate: ensure user has settings:view or is admin
-  const c = await cookies();
-  const rawSession = c.get('session')?.value;
-  let userId: string | null = null;
-  if (rawSession) {
-    try {
-      const parsed = JSON.parse(rawSession);
-      userId = typeof parsed?.id === 'string' ? parsed.id : rawSession;
-    } catch {
-      userId = rawSession;
-    }
-  }
-  if (!userId) {
-    redirect('/');
-  }
-
-  const { getAdminDb } = await import('@/lib/firebase/admin');
-  const adb = await getAdminDb();
-  const snap = await adb.collection('Users').doc(userId!).get();
-  const udata = snap.exists ? (snap.data() as any) : {};
-  if (!udata?.role && !udata?.permissions) {
-    redirect('/dashboard');
-  }
-
-  let permissions = udata?.permissions as any | undefined;
-  if (!permissions && udata?.role) {
-    const rolesSnap = await adb.collection('Roles').where('name', '==', String(udata.role)).get();
-    if (!rolesSnap.empty) {
-      const roleData = rolesSnap.docs[0].data() as any;
-      const arr = Array.isArray(roleData?.permissions) ? roleData.permissions : [];
-      const normalized: any = {};
-      for (const item of arr) {
-        if (typeof item !== 'string') continue;
-        const [page, action] = item.split(':');
-        if (!page || !action) continue;
-        (normalized[page] ||= []).push(action);
-      }
-      permissions = Object.keys(normalized).length ? normalized : undefined;
-    }
-  }
-  const isAdmin = String(udata?.role || '').toLowerCase() === 'admin';
-  const canViewSettings = isAdmin || (Array.isArray(permissions?.settings) && permissions.settings.includes('view'));
-  if (!canViewSettings) {
-    redirect('/dashboard');
-  }
+  const access = await guardPage('signed-in');
+  const canUsers = can(access, 'user_management', 'view');
+  const canMaster = can(access, 'settings', 'view');
+  if (!canUsers && !canMaster) redirect('/dashboard?denied=settings');
 
   const [
     departments,
@@ -291,76 +253,99 @@ export default async function SettingsPage() {
     getDepartments(),
     getBranches(),
     getRoles(),
-    getUsers(),
+    canUsers ? getUsers() : Promise.resolve([] as User[]),
     getSources(),
     getContainerSizes(),
-    getFormTemplatesAction()
+    access.isAdmin ? getFormTemplatesAction() : Promise.resolve({ success: true, data: [] } as Awaited<ReturnType<typeof getFormTemplatesAction>>)
   ]);
+  const accessControl = access.isAdmin ? await getAccessControlData() : null;
 
   const serializableDepartments = departments.map(makeSerializable);
   const serializableBranches = branches.map(makeSerializable);
   const serializableRoles = roles.map(makeSerializable);
   const initialTemplates = formsResult.success && formsResult.data ? formsResult.data.map(makeSerializable) : [];
 
+  const tabs = [
+    canUsers && { value: 'users', label: 'User' },
+    canMaster && { value: 'sources', label: 'Source' },
+    canMaster && { value: 'containers', label: 'Container Size' },
+    canMaster && { value: 'departments', label: 'Department' },
+    canMaster && { value: 'branches', label: 'Branch' },
+    access.isAdmin && { value: 'role-forms', label: 'Role-Based Forms' },
+    access.isAdmin && { value: 'roles', label: 'Roles' },
+    accessControl && { value: 'access', label: 'Access control' },
+  ].filter(Boolean) as { value: string; label: string }[];
+
   return (
-    <AdminRoute>
-      <div className="flex flex-col h-full">
-        <DashboardHeader title="Settings" />
-        <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
-          <Tabs defaultValue="users">
-            <TabsList className="grid w-full grid-cols-7">
-              <TabsTrigger value="users">User</TabsTrigger>
-              <TabsTrigger value="sources">Source</TabsTrigger>
-              <TabsTrigger value="containers">Container Size</TabsTrigger>
-              <TabsTrigger value="departments">Department</TabsTrigger>
-              <TabsTrigger value="branches">Branch</TabsTrigger>
-              <TabsTrigger value="role-forms">Role-Based Forms</TabsTrigger>
-              <TabsTrigger value="roles">Roles</TabsTrigger>
-            </TabsList>
+    <div className="flex flex-col h-full">
+      <DashboardHeader title="Settings" />
+      <main className="flex-1 flex flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
+        <Tabs defaultValue={tabs[0]?.value}>
+          <TabsList className="flex h-auto w-full flex-wrap justify-start">
+            {tabs.map((t) => (
+              <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
+            ))}
+          </TabsList>
+          {canUsers && (
             <TabsContent value="users">
               <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-end">
-                  <AddUserDialog departments={serializableDepartments} roles={serializableRoles} />
-                </div>
+                {can(access, 'user_management', 'add') && (
+                  <div className="flex items-center justify-end">
+                    <AddUserDialog departments={serializableDepartments} roles={serializableRoles} />
+                  </div>
+                )}
                 <UsersTable users={users} departments={departments} roles={roles} />
               </div>
             </TabsContent>
-            <TabsContent value="sources">
-              <div className="grid lg:grid-cols-2 gap-6">
-                  <SourceForm />
-                  <SourcesTable sources={sources} />
-              </div>
-            </TabsContent>
-            <TabsContent value="containers">
-              <div className="grid lg:grid-cols-2 gap-6">
-                  <ContainerSizeForm />
-                  <ContainerSizesTable containerSizes={containerSizes} />
-              </div>
-            </TabsContent>
-            <TabsContent value="departments">
-              <div className="grid lg:grid-cols-2 gap-6">
-                  <DepartmentForm branches={serializableBranches} />
-                  <DepartmentsTable departments={departments} branches={branches} />
-              </div>
-            </TabsContent>
-            <TabsContent value="branches">
-              <div className="grid lg:grid-cols-2 gap-6">
-                  <BranchForm />
-                  <BranchesTable branches={branches} />
-              </div>
-            </TabsContent>
+          )}
+          {canMaster && (
+            <>
+              <TabsContent value="sources">
+                <div className="grid lg:grid-cols-2 gap-6">
+                    <SourceForm />
+                    <SourcesTable sources={sources} />
+                </div>
+              </TabsContent>
+              <TabsContent value="containers">
+                <div className="grid lg:grid-cols-2 gap-6">
+                    <ContainerSizeForm />
+                    <ContainerSizesTable containerSizes={containerSizes} />
+                </div>
+              </TabsContent>
+              <TabsContent value="departments">
+                <div className="grid lg:grid-cols-2 gap-6">
+                    <DepartmentForm branches={serializableBranches} />
+                    <DepartmentsTable departments={departments} branches={branches} />
+                </div>
+              </TabsContent>
+              <TabsContent value="branches">
+                <div className="grid lg:grid-cols-2 gap-6">
+                    <BranchForm />
+                    <BranchesTable branches={branches} />
+                </div>
+              </TabsContent>
+            </>
+          )}
+          {access.isAdmin && (
             <TabsContent value="role-forms">
               <RoleFormsSettings initialTemplates={initialTemplates} roles={serializableRoles} />
             </TabsContent>
+          )}
+          {access.isAdmin && (
             <TabsContent value="roles">
               <div className="grid lg:grid-cols-2 gap-6">
-                <RoleForm />
+                <RoleForm roles={serializableRoles} />
                 <RolesTable roles={roles} />
               </div>
             </TabsContent>
-          </Tabs>
-        </main>
-      </div>
-    </AdminRoute>
+          )}
+          {accessControl && (
+            <TabsContent value="access">
+              <AccessControlPanel {...accessControl} />
+            </TabsContent>
+          )}
+        </Tabs>
+      </main>
+    </div>
   );
 }

@@ -121,7 +121,7 @@ export function OvertimeTab() {
                 <TableCell className="max-w-[200px] truncate text-xs">{o.reason || "—"}</TableCell>
                 <TableCell>
                   <Button size="sm" variant="outline" onClick={() => setSelected(o)}>
-                    {manages(staff) && me?.canEdit && o.otOut && (o.status === "PENDING" || o.status === "AUTO_CLOSED") ? "Review" : "View"}
+                    {manages(staff) && me?.canApprove && o.otOut && (o.status === "PENDING" || o.status === "AUTO_CLOSED") ? "Review" : "View"}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -132,7 +132,7 @@ export function OvertimeTab() {
 
       <DecisionDialog
         ot={selected}
-        canDecide={!!selected && !!me?.canEdit && manages(staffById.get(selected.staffId))}
+        canDecide={!!selected && !!me?.canApprove && manages(staffById.get(selected.staffId))}
         showPhotos={!!selected && manages(staffById.get(selected.staffId))}
         userName={userName}
         onClose={() => setSelected(null)}

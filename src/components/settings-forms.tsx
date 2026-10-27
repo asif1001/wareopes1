@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Department, Branch, Role, userRoles } from "@/lib/types";
-import { APP_PAGES, PERMISSION_ACTIONS } from "@/lib/role-utils";
 import { useEffect, useRef, useActionState, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -18,50 +17,6 @@ function SubmitButton({ text = "Save" }: { text?: string }) {
             {pending ? "Saving..." : text}
         </Button>
     );
-}
-
-function RolePermissions() {
-  const [permInput, setPermInput] = useState("");
-  const [permissions, setPermissions] = useState<string[]>([]);
-
-  const addPerm = () => {
-    const p = permInput.trim();
-    if (!p) return;
-    if (permissions.includes(p)) return;
-    setPermissions(prev => [...prev, p]);
-    setPermInput("");
-  };
-
-  const removePerm = (p: string) => {
-    setPermissions(prev => prev.filter(x => x !== p));
-  };
-
-  return (
-    <div className="grid gap-2">
-      <Label htmlFor="permissionInput">Permissions</Label>
-      <div className="flex gap-2">
-        <Input
-          id="permissionInput"
-          value={permInput}
-          onChange={(e) => setPermInput(e.target.value)}
-          placeholder="e.g. manage_users"
-        />
-        <Button type="button" onClick={addPerm}>Add</Button>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {permissions.map(p => (
-          <div key={p} className="flex items-center gap-2 border rounded px-2 py-1 text-sm">
-            <span>{p}</span>
-            <Button type="button" variant="ghost" size="sm" onClick={() => removePerm(p)}>Remove</Button>
-            <input type="hidden" name="permissions" value={p} />
-          </div>
-        ))}
-        {permissions.length === 0 && (
-          <p className="text-xs text-muted-foreground">Add permissions or leave empty.</p>
-        )}
-      </div>
-    </div>
-  );
 }
 
 export function UserForm({ departments, roles }: { departments: Department[]; roles: Role[] }) {
@@ -158,26 +113,7 @@ export function UserForm({ departments, roles }: { departments: Department[]; ro
                             If not set, user will be redirected based on their role default
                         </p>
                     </div>
-                    {/* Permissions grid */}
-                    <div className="space-y-2">
-                        <Label>Permissions</Label>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {APP_PAGES.map(page => (
-                                <div key={page} className="border rounded-md p-3">
-                                    <div className="font-medium mb-2 capitalize">{page}</div>
-                                    <div className="flex flex-wrap gap-3">
-                                        {PERMISSION_ACTIONS.map(action => (
-                                            <label key={action} className="flex items-center gap-2">
-                                                <input type="checkbox" name={`perm:${page}:${action}`} />
-                                                <span className="capitalize">{action}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground">If left blank, role-based defaults apply.</p>
-                    </div>
+                    <p className="text-sm text-muted-foreground">Access comes from the role. To give this user extra or less access, use Settings → Access control after saving.</p>
                 </CardContent>
                 <CardFooter>
                     <SubmitButton />
@@ -358,7 +294,7 @@ export function BranchForm() {
     );
 }
 
-export function RoleForm() {
+export function RoleForm({ roles }: { roles: Role[] }) {
   const [state, formAction] = useActionState(addRoleAction, { message: "", nonce: 0 });
   const formRef = useRef<HTMLFormElement>(null);
   const { toast } = useToast();
@@ -379,7 +315,7 @@ export function RoleForm() {
       <form action={formAction} ref={formRef}>
         <CardHeader>
           <CardTitle>Create Role</CardTitle>
-          <CardDescription>Define a role name and optional permissions.</CardDescription>
+          <CardDescription>New roles start with no access. Set what the role can do in the Access control tab.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2">
@@ -387,7 +323,24 @@ export function RoleForm() {
             <Input id="name" name="name" required />
           </div>
 
-          <RolePermissions key={state.nonce} />
+          <div className="grid gap-2" key={state.nonce}>
+            <Label htmlFor="copyFrom">Copy permissions from</Label>
+            <Select name="copyFrom" defaultValue="none">
+              <SelectTrigger id="copyFrom">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Nothing (no access)</SelectItem>
+                {roles
+                  .filter((r) => r.name.trim().toLowerCase() !== "admin")
+                  .map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
         <CardFooter>
           <SubmitButton />

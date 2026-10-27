@@ -1,20 +1,9 @@
 import { AppPageKey, PermissionAction } from "./types";
+import { MODULE_KEYS, PERMISSION_ACTIONS as ACTIONS } from "./permissions/registry";
 
-// Centralized lists of pages and actions used across forms and server actions
-export const APP_PAGES: AppPageKey[] = [
-  "shipments",
-  "dispatches",
-  "tasks",
-  "settings",
-  "production",
-  "productivity",
-  "maintenance",
-  "licenses",
-  "oil_status",
-  "warehouse",
-  "attendance",
-];
-export const PERMISSION_ACTIONS: PermissionAction[] = ["view", "add", "edit", "delete"];
+// Pages and actions come from the permission registry (src/lib/permissions/registry.ts).
+export const APP_PAGES: AppPageKey[] = [...MODULE_KEYS];
+export const PERMISSION_ACTIONS: PermissionAction[] = [...ACTIONS];
 
 
 // Existing utilities

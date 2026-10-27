@@ -1,6 +1,9 @@
+import { apiAccess } from '@/lib/permissions/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
+  const gate = await apiAccess('productivity', 'edit');
+  if (!gate.ok) return gate.response;
   try {
     const body = await req.json();
     const { date, userId, sortingEntries = [], packingEntries = [] } = body || {};

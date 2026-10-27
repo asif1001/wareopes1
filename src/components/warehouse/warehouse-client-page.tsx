@@ -37,6 +37,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/contexts/AuthContext";
 import { DashboardHeader } from "@/components/dashboard-header";
 import type { Branch } from "@/lib/types";
@@ -177,6 +178,7 @@ function LegendRow({
 export function WarehouseClientPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const can = useCan();
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchesLoaded, setBranchesLoaded] = useState(false);
@@ -766,7 +768,7 @@ export function WarehouseClientPage() {
     setLayoutDirty(true);
   };
 
-  const canUpload = Boolean(branch);
+  const canUpload = Boolean(branch) && can("warehouse", "add");
   const hasData = records.length > 0;
 
   return (
@@ -863,11 +865,11 @@ export function WarehouseClientPage() {
                 type="button"
                 variant="outline"
                 onClick={handleExport}
-                disabled={!report}
+                disabled={!report || !can("warehouse", "export")}
               >
                 <Download className="mr-2 h-4 w-4" /> Export
               </Button>
-              {layout && (
+              {layout && can("warehouse", "edit") && (
                 <Button
                   type="button"
                   variant={layoutDirty ? "default" : "outline"}
@@ -961,13 +963,14 @@ export function WarehouseClientPage() {
                 ))}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" onClick={() => setImportOpen(true)}>
+                <Button type="button" onClick={() => setImportOpen(true)} disabled={!canUpload}>
                   <Upload className="mr-2 h-4 w-4" /> Upload inventory file
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={startManualLayout}
+                  disabled={!can("warehouse", "edit")}
                 >
                   Create rack layout
                 </Button>
@@ -1745,7 +1748,7 @@ export function WarehouseClientPage() {
                       <Button
                         type="button"
                         variant="destructive"
-                        disabled={deletingBranch}
+                        disabled={deletingBranch || !can("warehouse", "delete")}
                         onClick={() => void handleDeleteBranchData()}
                       >
                         {deletingBranch ? (

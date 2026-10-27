@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -11,48 +10,14 @@ function normalizePermissions(raw: any) {
 }
 
 async function authorize() {
-  const c = await cookies();
-  const rawSession = c.get('session')?.value;
-  let userId: string | null = null;
-  if (rawSession) {
-    try {
-      const parsed = JSON.parse(rawSession);
-      userId = typeof parsed?.id === 'string' ? parsed.id : rawSession;
-    } catch {
-      userId = rawSession;
-    }
-  }
-  if (!userId) return { ok: false, reason: 'UNAUTHENTICATED' } as const;
-
-  const { getAdminDb } = await import('@/lib/firebase/admin');
-  const adb = await getAdminDb();
-
-  const snap = await adb.collection('Users').doc(userId!).get();
-  const udata = snap.exists ? (snap.data() as any) : {};
-  const isAdmin = String(udata?.role || '').toLowerCase() === 'admin';
-
-  let permissions = udata?.permissions as any | undefined;
-  if (!permissions && udata?.role) {
-    const rolesSnap = await adb.collection('Roles').where('name', '==', String(udata.role)).get();
-    if (!rolesSnap.empty) {
-      const roleData = rolesSnap.docs[0].data() as any;
-      const arr = Array.isArray(roleData?.permissions) ? roleData.permissions : [];
-      const normalized: any = {};
-      for (const item of arr) {
-        if (typeof item !== 'string') continue;
-        const [page, action] = item.split(':');
-        if (!page || !action) continue;
-        (normalized[page] ||= []).push(action);
-      }
-      permissions = Object.keys(normalized).length ? normalized : undefined;
-    }
-  }
-
-  const canAdd = isAdmin || (Array.isArray(permissions?.production) && permissions.production.includes('add'));
-  const canDelete = isAdmin || (Array.isArray(permissions?.production) && permissions.production.includes('delete'));
-  return { ok: canAdd || canDelete, reason: canAdd || canDelete ? undefined : 'FORBIDDEN', userId, canAdd, canDelete } as const;
+  const { getAccess } = await import('@/lib/permissions/server');
+  const { can } = await import('@/lib/permissions/resolve');
+  const access = await getAccess();
+  if (!access) return { ok: false, reason: 'UNAUTHENTICATED' } as const;
+  const canAdd = can(access, 'production', 'add');
+  const canDelete = can(access, 'production', 'delete');
+  return { ok: canAdd || canDelete, reason: canAdd || canDelete ? undefined : 'FORBIDDEN', userId: access.userId, canAdd, canDelete } as const;
 }
-
 function sanitizeCaseNumber(s: any) {
   const str = String(s ?? '').trim();
   return str.replace(/[^-A-Za-z0-9_/\\]/g, '');

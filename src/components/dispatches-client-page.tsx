@@ -50,7 +50,8 @@ import { DispatchForm } from "@/components/dispatch-form";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { SerializableDispatch, User, ContainerSize } from "@/lib/types";
-import { getDispatches, getUsers, getContainerSizes } from "@/lib/firebase/firestore";
+import { getDispatches, getContainerSizes } from "@/lib/firebase/firestore";
+import { getUsersForLookupAction } from "@/app/actions";
 
 function DispatchTable({ dispatches, users, containerSizes, onUpdated }: { dispatches: SerializableDispatch[], users: User[], containerSizes: ContainerSize[], onUpdated: (dispatch: SerializableDispatch) => void }) {
     if (dispatches.length === 0) {
@@ -145,7 +146,7 @@ export function DispatchesClientPage({
         const fetchLookups = async () => {
             try {
                 const [fetchedUsers, fetchedContainerSizes] = await Promise.all([
-                    getUsers(),
+                    getUsersForLookupAction(),
                     getContainerSizes()
                 ]);
                 setUsers(fetchedUsers);

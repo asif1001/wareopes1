@@ -1,3 +1,4 @@
+import { apiAccess } from '@/lib/permissions/server';
 export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
@@ -15,6 +16,8 @@ const containerBookingsSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const gate = await apiAccess('shipments', 'edit');
+  if (!gate.ok) return gate.response;
     try {
         const formData = await request.formData();
         const rawData = Object.fromEntries(formData.entries());

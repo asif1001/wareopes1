@@ -2,6 +2,7 @@ export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase/admin';
+import { SESSION_COOKIE, isSessionConfigured, sessionCookieOptions, signSession } from '@/lib/session';
 
 // Retry configuration
 const MAX_RETRIES = 3;
@@ -129,15 +130,25 @@ export async function POST(request: NextRequest) {
             redirectPage: userData.redirectPage, // propagate user redirect preference
         };
 
+        if (!isSessionConfigured()) {
+            console.error('Login failed: SESSION_SECRET is not configured');
+            return NextResponse.json({ error: 'Login is not configured on the server. Contact the administrator.' }, { status: 500 });
+        }
+
         const response = NextResponse.json(sessionData);
-        
-        // Set session cookie
-        response.cookies.set('session', JSON.stringify(sessionData), {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 60 * 60 * 24 * 7, // 7 days
+
+        // Signed session cookie: the server rejects it if it is edited.
+        const token = await signSession({
+            id: userDoc.id,
+            employeeNo: String(userData.employeeNo ?? ''),
+            name: userData.name || userData.fullName,
+            email: userData.email,
+            role: userData.role,
+            department: userData.department,
+            branch: userData.branch,
+            redirectPage: userData.redirectPage,
         });
+        response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions);
 
         return response;
 

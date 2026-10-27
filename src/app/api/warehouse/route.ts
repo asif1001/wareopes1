@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { apiAccess } from "@/lib/permissions/server";
 import { normalizeLayout } from "@/lib/warehouse/layout";
 import type {
   SnapshotMeta,
@@ -11,10 +12,6 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const CHUNK_SIZE = 400;
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
 
 function serverError(error: unknown) {
   console.error("Warehouse API error:", error);
@@ -35,7 +32,8 @@ function layoutFromDoc(
 }
 
 export async function GET(request: NextRequest) {
-  if (!request.cookies.get("session")) return unauthorized();
+  const gate = await apiAccess("warehouse", "view");
+  if (!gate.ok) return gate.response;
   try {
     const { searchParams } = new URL(request.url);
     const kind = searchParams.get("kind");
@@ -101,12 +99,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!request.cookies.get("session")) return unauthorized();
+  const gate = await apiAccess("warehouse", "view");
+  if (!gate.ok) return gate.response;
   try {
     const body = await request.json();
     const adb = await getAdminDb();
 
     if (body?.type === "layout") {
+      const editGate = await apiAccess("warehouse", "edit");
+      if (!editGate.ok) return editGate.response;
       const layout = normalizeLayout(body.layout as WarehouseLayout);
       const id = layout.id || `layout_${layout.branchId || "new"}`;
       const payload = { ...layout, id };
@@ -118,6 +119,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (body?.type === "snapshot") {
+      const addGate = await apiAccess("warehouse", "add");
+      if (!addGate.ok) return addGate.response;
       const meta = body.meta as SnapshotMeta;
       const records = (body.records as WarehouseRecord[]) ?? [];
       if (!meta?.id || !meta?.branchId) {
@@ -163,7 +166,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!request.cookies.get("session")) return unauthorized();
+  const gate = await apiAccess("warehouse", "delete");
+  if (!gate.ok) return gate.response;
   try {
     const { searchParams } = new URL(request.url);
     const branchId = searchParams.get("branchId");

@@ -36,7 +36,7 @@ export async function readJson(request: Request): Promise<unknown> {
 
 /**
  * WareOps user with the given permission on the `attendance` page. Admins always
- * pass; report viewers (Attendance settings) pass for "view" only.
+ * pass; report viewers (Attendance settings) pass for "view" and "export" only.
  */
 export async function requireActor(action: PermissionAction): Promise<Actor> {
   const { getCurrentUserPermissions, hasPermission, isAdmin } = await import("@/lib/server-permissions");
@@ -45,7 +45,7 @@ export async function requireActor(action: PermissionAction): Promise<Actor> {
   const admin = isAdmin(role);
   const rules = await getRules(await attendanceDb());
   const reportViewer = rules.reportViewerIds.includes(userId);
-  const allowed = admin || hasPermission(permissions, "attendance", action) || (action === "view" && reportViewer);
+  const allowed = admin || hasPermission(permissions, "attendance", action) || ((action === "view" || action === "export") && reportViewer);
   if (!allowed) throw forbidden();
   return { userId, role: role ?? "", isAdmin: admin, reportViewer };
 }

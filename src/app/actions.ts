@@ -6,7 +6,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { APP_PAGES, PERMISSION_ACTIONS } from "@/lib/role-utils";
+import { actionDenied, getAccess, requireAdmin } from "@/lib/permissions/server";
+import { isAdminRole } from "@/lib/permissions/resolve";
+import { writeAccessAudit } from "@/lib/permissions/audit";
 
 export async function logoutAction() {
     (await cookies()).delete('session');
@@ -24,6 +26,8 @@ export async function generateReportAction(
     error: string | null
   }> {
     try {
+      const denied = await actionDenied('reports', 'view');
+      if (denied) return { output: null, error: denied };
       const apiKey =
         process.env.GEMINI_API_KEY ||
         process.env.GOOGLE_API_KEY ||
@@ -81,24 +85,24 @@ export async function submitSupportTicketAction(formData: FormData): Promise<{ s
 
 // Dedicated profile update action used by My Account page
 export async function updateUserProfileAction(userId: string, profile: Partial<User>): Promise<{ success: boolean; message?: string; error?: string }> {
-    try {
-        if (!userId) {
-            return { success: false, error: 'Missing user id' };
-        }
-        const { getAdminDb } = await import('@/lib/firebase/admin');
-        const adb = await getAdminDb();
-        await adb.collection('Users').doc(userId).update(profile);
-        // Revalidate settings/dashboard pages where user profile may appear
+    const { updateOwnProfile } = await import('@/lib/profile');
+    const { status: _status, ...result } = await updateOwnProfile(userId, profile);
+    if (result.success) {
         try { revalidatePath('/dashboard/settings'); } catch {}
-        return { success: true, message: 'Profile updated successfully.' };
-    } catch (e: any) {
-        return { success: false, error: e?.message || 'Failed to update profile.' };
     }
+    return result;
 }
 
 // Add Actions
 export async function addUserAction(prevState: any, formData: FormData) {
     try {
+        const denied = await actionDenied('user_management', 'add');
+        if (denied) return { message: denied };
+        const actor = (await getAccess())!;
+        const requestedRole = String(formData.get("role") || "");
+        if (isAdminRole(requestedRole) && !actor.isAdmin) {
+            return { message: "Only an admin can create Admin users." };
+        }
         const employeeNoRaw = String(formData.get("employeeNo") || "").trim();
         if (!employeeNoRaw) {
             return { message: "Employee No/CPR No is required." };
@@ -113,37 +117,22 @@ export async function addUserAction(prevState: any, formData: FormData) {
             return { message: "Employee No/CPR No already exists." };
         }
 
-        // Parse permissions from checkbox inputs `perm:<page>:<action>`
-        const pages = APP_PAGES;
-        const actions = PERMISSION_ACTIONS;
-        const permissions: UserPermissions = {};
-        let anyPerm = false;
-        for (const p of pages) {
-            const selected: string[] = [];
-            for (const a of actions) {
-                const v = formData.get(`perm:${p}:${a}`);
-                if (v !== null && v !== undefined) selected.push(a);
-            }
-            if (selected.length) {
-                (permissions as any)[p] = selected;
-                anyPerm = true;
-            }
-        }
-
+        // Access comes from the role; individual overrides are set in Settings → Access control (admins only).
         const redirectPage = formData.get("redirectPage") as string;
-        
-        const newUser: Omit<User, 'id'> = {
+
+        const newUser: Omit<User, 'id'> & { permissionsVersion: number } = {
             fullName: formData.get("fullName") as string,
             employeeNo: employeeNoRaw,
             password: formData.get("password") as string, // Note: In a real app, hash this!
             email: formData.get("email") as string,
             department: formData.get("department") as string,
-            role: formData.get("role") as UserRole,
-            permissions: anyPerm ? permissions : undefined,
+            role: requestedRole as UserRole,
+            permissionsVersion: 2,
             redirectPage: redirectPage && redirectPage !== "" ? redirectPage : undefined,
         };
 
-        await adb.collection('Users').add(newUser);
+        const ref = await adb.collection('Users').add(JSON.parse(JSON.stringify(newUser)));
+        await writeAccessAudit({ by: actor.userId, byName: actor.name, action: 'USER_CREATED', targetType: 'user', targetId: ref.id, targetName: String(newUser.fullName || employeeNoRaw), before: null, after: { role: requestedRole } });
         try { revalidatePath("/dashboard/settings"); } catch {}
         return { message: "User added successfully." };
     } catch (e: any) {
@@ -153,6 +142,8 @@ export async function addUserAction(prevState: any, formData: FormData) {
 
 export async function addSourceAction(prevState: any, formData: FormData) {
     try {
+        const denied = await actionDenied('settings', 'add');
+        if (denied) return { message: denied };
         const newSource: Omit<Source, 'id'> = {
             shortName: formData.get("shortName") as string,
             name: formData.get("name") as string,
@@ -169,6 +160,8 @@ export async function addSourceAction(prevState: any, formData: FormData) {
 
 export async function addContainerSizeAction(prevState: any, formData: FormData) {
     try {
+        const denied = await actionDenied('settings', 'add');
+        if (denied) return { message: denied };
         const newSize: Omit<ContainerSize, 'id'> = {
             size: formData.get("size") as string,
             cmb: formData.get("cmb") as string,
@@ -185,6 +178,8 @@ export async function addContainerSizeAction(prevState: any, formData: FormData)
 
 export async function addDepartmentAction(prevState: any, formData: FormData) {
     try {
+        const denied = await actionDenied('settings', 'add');
+        if (denied) return { message: denied };
         const newDepartment: Omit<Department, 'id'> = {
             name: formData.get("name") as string,
             branch: formData.get("branch") as string,
@@ -201,6 +196,8 @@ export async function addDepartmentAction(prevState: any, formData: FormData) {
 
 export async function addBranchAction(prevState: any, formData: FormData) {
     try {
+        const denied = await actionDenied('settings', 'add');
+        if (denied) return { message: denied };
         const newBranch: Omit<Branch, 'id'> = {
             name: formData.get("name") as string,
             code: formData.get("code") as string,
@@ -216,34 +213,13 @@ export async function addBranchAction(prevState: any, formData: FormData) {
 }
 
 // Role Actions
-async function ensureAdmin(): Promise<{ id: string } | null> {
-  const me = await (async () => {
-    try {
-      const c = await cookies();
-      const rawSession = c.get('session')?.value;
-      if (!rawSession) return null;
-
-      // Support both plain userId and JSON session cookie
-      let id: string = '';
-      try {
-        const parsed = JSON.parse(rawSession);
-        id = typeof parsed?.id === 'string' ? parsed.id : '';
-      } catch {
-        // Not JSON; treat as userId
-        id = rawSession;
-      }
-
-      if (!id) return null;
-
-      const { getAdminDb } = await import('@/lib/firebase/admin');
-      const adb = await getAdminDb();
-      const snap = await adb.collection('Users').doc(id).get();
-      const role = (snap.exists ? (snap.data() as any)?.role : undefined) || undefined;
-      if (role !== 'Admin') return null;
-      return { id };
-    } catch { return null; }
-  })();
-  return me;
+async function ensureAdmin(): Promise<{ id: string; name: string } | null> {
+  try {
+    const admin = await requireAdmin();
+    return { id: admin.userId, name: admin.name };
+  } catch {
+    return null;
+  }
 }
 
 export async function addRoleAction(prevState: any, formData: FormData): Promise<{ message: string; nonce: number }>{
@@ -253,17 +229,26 @@ export async function addRoleAction(prevState: any, formData: FormData): Promise
     if (!admin) return { message: 'Forbidden: Admin only', nonce: currentNonce };
 
     const name = String(formData.get('name') || '').trim();
-    const permissions = formData.getAll('permissions').map(String).filter(Boolean);
     if (!name) return { message: 'Role name is required', nonce: currentNonce };
+    if (isAdminRole(name)) return { message: 'The Admin role is built in', nonce: currentNonce };
 
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
+    const { PERMISSIONS_VERSION, effectiveRolePermissions, serializeRolePermissions } = await import('@/lib/permissions/resolve');
 
-    // Unique check on name
-    const existing = await adb.collection('Roles').where('name', '==', name).limit(1).get();
-    if (!existing.empty) return { message: 'Role name already exists', nonce: currentNonce };
+    // Unique check on name (case-insensitive)
+    const all = await adb.collection('Roles').get();
+    if (all.docs.some((d) => String(d.get('name') || '').trim().toLowerCase() === name.toLowerCase())) {
+      return { message: 'Role name already exists', nonce: currentNonce };
+    }
 
-    await adb.collection('Roles').add({ name, permissions });
+    // New roles start with no access (or a copy of another role); permissions are set in Access control.
+    const copyFrom = String(formData.get('copyFrom') || '');
+    const source = copyFrom ? all.docs.find((d) => d.id === copyFrom) : undefined;
+    const permissions = source ? serializeRolePermissions(effectiveRolePermissions(source.get('permissions'), source.get('permissionsVersion'))) : [];
+
+    const ref = await adb.collection('Roles').add({ name, permissions, permissionsVersion: PERMISSIONS_VERSION });
+    await writeAccessAudit({ by: admin.id, byName: admin.name, action: 'ROLE_CREATED', targetType: 'role', targetId: ref.id, targetName: name, before: null, after: permissions });
     try { revalidatePath('/dashboard/settings'); } catch {}
     return { message: 'Role added successfully.', nonce: currentNonce + 1 };
   } catch (e: any) {
@@ -282,7 +267,13 @@ export async function deleteRoleAction(prevState: any, formData: FormData): Prom
 
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
-    await adb.collection('Roles').doc(id).delete();
+    const ref = adb.collection('Roles').doc(id);
+    const before = (await ref.get()).data() ?? null;
+    const roleName = String((before as any)?.name || id);
+    const inUse = await adb.collection('Users').where('role', '==', roleName).limit(1).get();
+    if (!inUse.empty) return { message: `Role "${roleName}" is still assigned to users. Move them to another role first.` };
+    await ref.delete();
+    await writeAccessAudit({ by: admin.id, byName: admin.name, action: 'ROLE_DELETED', targetType: 'role', targetId: id, targetName: roleName, before, after: null });
     try { revalidatePath('/dashboard/settings'); } catch {}
     return { message: 'Role deleted successfully.' };
   } catch (e: any) {
@@ -293,15 +284,26 @@ export async function deleteRoleAction(prevState: any, formData: FormData): Prom
 // Delete actions: support both direct call with id (used programmatically)
 // and form-based server action signature (prevState, formData) used by UI forms.
 export async function deleteUserAction(prevState: any, formData: FormData): Promise<{ message: string }> {
+    const denied = await actionDenied('user_management', 'delete');
+    if (denied) return { message: denied };
+    const actor = (await getAccess())!;
     const id = String(formData.get('id'));
+    if (id === actor.userId) return { message: 'You cannot delete your own account.' };
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
-    await adb.collection('Users').doc(id).delete();
+    const ref = adb.collection('Users').doc(id);
+    const target = (await ref.get()).data() as any;
+    if (!target) return { message: 'User not found.' };
+    if (isAdminRole(target.role) && !actor.isAdmin) return { message: 'Only an admin can delete an Admin user.' };
+    await ref.delete();
+    await writeAccessAudit({ by: actor.userId, byName: actor.name, action: 'USER_DELETED', targetType: 'user', targetId: id, targetName: String(target.fullName || target.employeeNo || id), before: { role: target.role, permissions: target.permissions ?? null }, after: null });
     revalidatePath("/dashboard/settings");
     return { message: 'User deleted successfully.' };
 }
 
 export async function deleteSourceAction(prevState: any, formData: FormData): Promise<{ message: string }> {
+    const denied = await actionDenied('settings', 'delete');
+    if (denied) return { message: denied };
     const id = String(formData.get('id'));
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
@@ -311,6 +313,8 @@ export async function deleteSourceAction(prevState: any, formData: FormData): Pr
 }
 
 export async function deleteContainerSizeAction(prevState: any, formData: FormData): Promise<{ message: string }> {
+    const denied = await actionDenied('settings', 'delete');
+    if (denied) return { message: denied };
     const id = String(formData.get('id'));
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
@@ -320,6 +324,8 @@ export async function deleteContainerSizeAction(prevState: any, formData: FormDa
 }
 
 export async function deleteDepartmentAction(prevState: any, formData: FormData): Promise<{ message: string }> {
+    const denied = await actionDenied('settings', 'delete');
+    if (denied) return { message: denied };
     const id = String(formData.get('id'));
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
@@ -329,6 +335,8 @@ export async function deleteDepartmentAction(prevState: any, formData: FormData)
 }
 
 export async function deleteBranchAction(prevState: any, formData: FormData): Promise<{ message: string }> {
+    const denied = await actionDenied('settings', 'delete');
+    if (denied) return { message: denied };
     const id = String(formData.get('id'));
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
@@ -341,41 +349,41 @@ export async function deleteBranchAction(prevState: any, formData: FormData): Pr
 // Update Actions
 export async function updateUserAction(prevState: any, formData: FormData) {
     try {
+        const denied = await actionDenied('user_management', 'edit');
+        if (denied) return { message: denied };
+        const actor = (await getAccess())!;
         const id = formData.get("id") as string;
 
-        // Parse permissions from checkbox inputs `perm:<page>:<action>`
-        const pages = APP_PAGES;
-        const actions = PERMISSION_ACTIONS;
-        const permissions: UserPermissions = {};
-        let anyPerm = false;
-        for (const p of pages) {
-            const selected: string[] = [];
-            for (const a of actions) {
-                const v = formData.get(`perm:${p}:${a}`);
-                if (v !== null && v !== undefined) selected.push(a);
-            }
-            if (selected.length) {
-                (permissions as any)[p] = selected;
-                anyPerm = true;
-            }
-        }
+        const { getAdminDb } = await import('@/lib/firebase/admin');
+        const adb = await getAdminDb();
+        const ref = adb.collection('Users').doc(id);
+        const current = (await ref.get()).data() as any;
+        if (!current) return { message: "User not found." };
+        if (isAdminRole(current.role) && !actor.isAdmin) return { message: "Only an admin can edit an Admin user." };
+
+        // Roles decide access, so only admins may change them (and nobody can change their own).
+        const requestedRole = String(formData.get("role") || current.role || "");
+        const roleChanged = requestedRole !== String(current.role || "");
+        if (roleChanged && !actor.isAdmin) return { message: "Only an admin can change a user's role." };
+        if (roleChanged && id === actor.userId) return { message: "You cannot change your own role." };
 
         const redirectPage = formData.get("redirectPage") as string;
         const newPassword = String(formData.get("newPassword") || "").trim();
-        
+
+        // Individual permissions are managed in Settings → Access control and are left untouched here.
         const updatedUser: Partial<User> = {
             fullName: formData.get("fullName") as string,
             employeeNo: formData.get("employeeNo") as string,
             email: formData.get("email") as string,
             department: formData.get("department") as string,
-            role: formData.get("role") as UserRole,
-            permissions: anyPerm ? permissions : undefined,
+            role: requestedRole as UserRole,
             redirectPage: redirectPage && redirectPage !== "" ? redirectPage : undefined,
             ...(newPassword ? { password: newPassword } : {}),
         };
-        const { getAdminDb } = await import('@/lib/firebase/admin');
-        const adb = await getAdminDb();
-        await adb.collection('Users').doc(id).update(updatedUser);
+        await ref.update(JSON.parse(JSON.stringify(updatedUser)));
+        if (roleChanged) {
+            await writeAccessAudit({ by: actor.userId, byName: actor.name, action: 'USER_ROLE_CHANGED', targetType: 'user', targetId: id, targetName: String(current.fullName || current.employeeNo || id), before: { role: current.role }, after: { role: requestedRole } });
+        }
         revalidatePath("/dashboard/settings");
         return { message: "User updated successfully." };
     } catch (e: any) {
@@ -385,6 +393,8 @@ export async function updateUserAction(prevState: any, formData: FormData) {
 
 export async function updateSourceAction(prevState: any, formData: FormData) {
     try {
+        const denied = await actionDenied('settings', 'edit');
+        if (denied) return { message: denied };
         const id = formData.get("id") as string;
         const updatedSource: Partial<Source> = {
             shortName: formData.get("shortName") as string,
@@ -402,6 +412,8 @@ export async function updateSourceAction(prevState: any, formData: FormData) {
 
 export async function updateContainerSizeAction(prevState: any, formData: FormData) {
     try {
+        const denied = await actionDenied('settings', 'edit');
+        if (denied) return { message: denied };
         const id = formData.get("id") as string;
         const updatedSize: Partial<ContainerSize> = {
             size: formData.get("size") as string,
@@ -419,6 +431,8 @@ export async function updateContainerSizeAction(prevState: any, formData: FormDa
 
 export async function updateDepartmentAction(prevState: any, formData: FormData) {
     try {
+        const denied = await actionDenied('settings', 'edit');
+        if (denied) return { message: denied };
         const id = formData.get("id") as string;
         const updatedDepartment: Partial<Department> = {
             name: formData.get("name") as string,
@@ -436,6 +450,8 @@ export async function updateDepartmentAction(prevState: any, formData: FormData)
 
 export async function updateBranchAction(prevState: any, formData: FormData) {
     try {
+        const denied = await actionDenied('settings', 'edit');
+        if (denied) return { message: denied };
         const id = formData.get("id") as string;
         const updatedBranch: Partial<Branch> = {
             name: formData.get("name") as string,
@@ -454,6 +470,8 @@ export async function updateBranchAction(prevState: any, formData: FormData) {
 // Task-related server action wrappers expected by client hooks/components
 // These forward to the real implementations which may live in dashboard/tasks/actions.ts
 export async function getTasksOptimizedAction(options?: any) {
+    const denied = await actionDenied('tasks', 'view');
+    if (denied) return { success: false, error: denied };
     const mod = await import('./dashboard/tasks/actions');
     // If the dashboard module provides an optimized tasks fetch, use it.
     if ((mod as any).getTasksOptimized) {
@@ -476,7 +494,16 @@ export async function getTasksOptimizedAction(options?: any) {
     return { success: true, data: [] };
 }
 
+/** User list for pickers (no passwords); any signed-in user. */
+export async function getUsersForLookupAction(): Promise<User[]> {
+    if (await actionDenied()) return [];
+    const { getUsers } = await import('@/lib/firebase/firestore');
+    return getUsers();
+}
+
 export async function getUsersMinimalAction() {
+    const denied = await actionDenied();
+    if (denied) return { success: false, error: denied };
     const mod = await import('./dashboard/tasks/actions').catch(() => null);
     if (mod && (mod as any).getUsersMinimal) {
         try {
@@ -491,6 +518,8 @@ export async function getUsersMinimalAction() {
 }
 
 export async function getTaskCountsAction() {
+    const denied = await actionDenied('tasks', 'view');
+    if (denied) return { success: false, error: denied };
     const mod = await import('./dashboard/tasks/actions').catch(() => null);
     if (mod && (mod as any).getTaskCounts) {
         try {
@@ -528,6 +557,8 @@ function buildTaskFormData(input: any, id?: string): FormData {
 }
 
 export async function updateTaskAction(id: string, data: any) {
+    const denied = await actionDenied('tasks', 'edit');
+    if (denied) return { success: false, error: denied };
     const mod = await import('./dashboard/tasks/actions').catch(() => null);
     try {
         if (mod && (mod as any).saveTask) {
@@ -551,6 +582,8 @@ export async function updateTaskAction(id: string, data: any) {
 }
 
 export async function createTaskAction(data: any) {
+    const denied = await actionDenied('tasks', 'add');
+    if (denied) return { success: false, error: denied };
     const mod = await import('./dashboard/tasks/actions').catch(() => null);
     try {
         if (mod && (mod as any).saveTask) {
@@ -574,6 +607,8 @@ export async function createTaskAction(data: any) {
 }
 
 export async function deleteTaskAction(id: string) {
+    const denied = await actionDenied('tasks', 'delete');
+    if (denied) return { success: false, error: denied };
     const mod = await import('./dashboard/tasks/actions').catch(() => null);
     try {
         if (mod && (mod as any).deleteTask) {
@@ -589,6 +624,8 @@ export async function deleteTaskAction(id: string) {
 }
 
 export async function batchUpdateTasksAction(updates: any[]) {
+    const denied = await actionDenied('tasks', 'edit');
+    if (denied) return { success: false, error: denied };
     const mod = await import('./dashboard/tasks/actions').catch(() => null);
     try {
         if (mod && (mod as any).batchUpdateTasks) {
@@ -622,6 +659,8 @@ const shipmentSchema = z.object({
 });
 
 export async function bulkAddShipmentsAction(prevState: any, formData: FormData): Promise<{ success?: string | null; error?: string | null }> {
+    const denied = await actionDenied('shipments', 'add');
+    if (denied) return { error: denied };
     try {
         const jsonString = formData.get('shipments') as string;
         if (!jsonString) {
@@ -690,15 +729,10 @@ function sanitizeSlug(input: string): string {
 
 async function getCurrentUserServer(): Promise<{ id: string; role?: string } | null> {
   try {
-    const c = await cookies();
-    const id = c.get('session')?.value;
-    if (!id) return null;
-    const { getAdminDb } = await import('@/lib/firebase/admin');
-    const adb = await getAdminDb();
-    const snap = await adb.collection('Users').doc(id).get();
-    if (!snap.exists) return { id };
-    const data = snap.data() as any;
-    return { id, role: data?.role };
+    const access = await getAccess();
+    if (!access) return null;
+    // Form-template management keeps its Admin-only rule.
+    return { id: access.userId, role: access.isAdmin ? 'Admin' : access.role };
   } catch {
     return null;
   }
@@ -706,6 +740,8 @@ async function getCurrentUserServer(): Promise<{ id: string; role?: string } | n
 
 export async function getFormTemplatesAction(): Promise<{ success: boolean; data?: FormTemplate[]; error?: string }>{
   try {
+    const denied = await actionDenied();
+    if (denied) return { success: false, error: denied };
     const { getAdminDb } = await import('@/lib/firebase/admin');
     const adb = await getAdminDb();
     const q = await adb.collection('FormTemplates').orderBy('slug').get();

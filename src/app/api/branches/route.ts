@@ -1,7 +1,10 @@
+import { apiAccess } from '@/lib/permissions/server';
 import { NextResponse } from "next/server";
 import { getBranches } from "@/lib/firebase/firestore";
 
 export async function GET() {
+  const gate = await apiAccess();
+  if (!gate.ok) return gate.response;
   try {
     const branches = await getBranches();
     return NextResponse.json({ items: branches }, { status: 200 });

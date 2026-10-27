@@ -1,3 +1,4 @@
+import { guardPage } from "@/lib/permissions/server";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardHeader } from "@/components/dashboard-header";
@@ -44,7 +45,8 @@ function OilStatusSkeleton() {
   )
 }
 
-export default function OilStatusPage() {
+export default async function OilStatusPage() {
+  await guardPage("oil_status");
   return (
     <Suspense fallback={<OilStatusSkeleton />}>
       <OilStatus />

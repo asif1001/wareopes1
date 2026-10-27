@@ -2,7 +2,7 @@ import { makeSerializable } from "@/lib/serialization";
 import { TasksClientPage } from "@/components/tasks-client-page";
 import { SerializableTask, SerializableUserProfile } from "@/lib/task-types";
 import { getUsers as getUsersFromFirestore } from "@/lib/firebase/firestore";
-import { cookies } from 'next/headers';
+import { guardPage } from '@/lib/permissions/server';
 
 async function getTasksForUser(userId: string): Promise<SerializableTask[]> {
     // Server-side: use Admin SDK and restrict to reporterId or assigneeId matching userId
@@ -43,17 +43,9 @@ async function getUsers(): Promise<SerializableUserProfile[]> {
 }
 
 export default async function TasksPage() {
-    const sessionCookie = (await cookies()).get('session');
-    let currentUserId = '';
-    try {
-        const sessionData = sessionCookie?.value ? JSON.parse(sessionCookie.value) : null;
-        currentUserId = sessionData?.id || '';
-    } catch {
-        // Fallback for legacy plain string cookies
-        currentUserId = sessionCookie?.value || '';
-    }
+    const { userId: currentUserId } = await guardPage('tasks');
 
-    const tasks = currentUserId ? await getTasksForUser(currentUserId) : [];
+    const tasks = await getTasksForUser(currentUserId);
     const users = await getUsers();
 
     return <TasksClientPage initialTasks={tasks} users={users} currentUserId={currentUserId} />;

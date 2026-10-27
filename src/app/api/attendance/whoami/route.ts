@@ -10,7 +10,8 @@ export async function GET() {
     const actor = await requireActor("view");
     const { getCurrentUserPermissions, hasPermission } = await import("@/lib/server-permissions");
     const { permissions } = await getCurrentUserPermissions();
-    const can = (action: "add" | "edit" | "delete") => actor.isAdmin || hasPermission(permissions, "attendance", action);
+    const can = (action: "add" | "edit" | "delete" | "approve" | "export") =>
+      actor.isAdmin || hasPermission(permissions, "attendance", action) || (action === "export" && actor.reportViewer);
     const rules = await getRules(await attendanceDb());
     return ok({
       me: {
@@ -21,6 +22,8 @@ export async function GET() {
         canAdd: can("add"),
         canEdit: can("edit"),
         canDelete: can("delete"),
+        canApprove: can("approve"),
+        canExport: can("export"),
         timezone: rules.timezone,
       },
     });

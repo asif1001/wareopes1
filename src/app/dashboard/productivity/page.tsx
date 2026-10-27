@@ -2,9 +2,8 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
 
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
 import NextDynamic from 'next/dynamic';
+import { guardPage } from '@/lib/permissions/server';
 import { DashboardHeader } from '@/components/dashboard-header';
 import { getWipShipments } from '@/lib/firebase/firestore';
 import { makeSerializable } from '@/lib/serialization';
@@ -14,50 +13,7 @@ import type { SerializableShipment } from '@/lib/types';
 const ProductivityClientPage = NextDynamic(() => import('@/components/productivity-client-page').then(m => m.ProductivityClientPage));
 
 async function authorizeProductivityView() {
-  const c = await cookies();
-  const rawSession = c.get('session')?.value;
-  let userId: string | null = null;
-  if (rawSession) {
-    try {
-      const parsed = JSON.parse(rawSession);
-      userId = typeof parsed?.id === 'string' ? parsed.id : rawSession;
-    } catch {
-      userId = rawSession;
-    }
-  }
-  if (!userId) {
-    redirect('/');
-  }
-
-  const { getAdminDb } = await import('@/lib/firebase/admin');
-  const adb = await getAdminDb();
-  const snap = await adb.collection('Users').doc(userId!).get();
-  const udata = snap.exists ? (snap.data() as any) : {};
-  if (!udata?.role && !udata?.permissions) {
-    redirect('/dashboard');
-  }
-
-  let permissions = udata?.permissions as any | undefined;
-  if (!permissions && udata?.role) {
-    const rolesSnap = await adb.collection('Roles').where('name', '==', String(udata.role)).get();
-    if (!rolesSnap.empty) {
-      const roleData = rolesSnap.docs[0].data() as any;
-      const arr = Array.isArray(roleData?.permissions) ? roleData.permissions : [];
-      const normalized: any = {};
-      for (const item of arr) {
-        if (typeof item !== 'string') continue;
-        const [page, action] = item.split(':');
-        if (!page || !action) continue;
-        (normalized[page] ||= []).push(action);
-      }
-      permissions = Object.keys(normalized).length ? normalized : undefined;
-    }
-  }
-  const isAdmin = String(udata?.role || '').toLowerCase() === 'admin';
-  const canViewProductivity = isAdmin || (Array.isArray(permissions?.productivity) && permissions.productivity.includes('view'));
-  if (!canViewProductivity) {
-    redirect('/dashboard');
-  }
+  await guardPage('productivity');
 }
 
 async function Productivity() {

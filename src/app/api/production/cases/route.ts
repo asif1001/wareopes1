@@ -1,6 +1,9 @@
+import { apiAccess } from '@/lib/permissions/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
+  const gate = await apiAccess('production', 'view');
+  if (!gate.ok) return gate.response;
   try {
     const { searchParams } = new URL(req.url);
     const shipmentId = searchParams.get('shipmentId');

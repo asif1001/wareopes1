@@ -1,3 +1,4 @@
+import { guardPage } from "@/lib/permissions/server";
 import {
     PlusCircle,
   } from "lucide-react"
@@ -38,7 +39,8 @@ import {
     }
   };
   
-  export default function FeedbackPage() {
+  export default async function FeedbackPage() {
+  await guardPage("feedback");
     return (
       <div className="flex flex-col h-full">
         <DashboardHeader title="Feedback & Complaints" />

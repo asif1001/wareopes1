@@ -1,9 +1,11 @@
+import { guardPage } from "@/lib/permissions/server";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { ReportGenerator } from "@/components/report-generator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AssetReports } from "@/components/reports/asset-reports";
 
-export default function ReportsPage() {
+export default async function ReportsPage() {
+  await guardPage("reports");
   return (
     <div className="flex flex-col h-full">
       <DashboardHeader title="Reports" />

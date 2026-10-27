@@ -7,52 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Shield, ArrowLeft } from "lucide-react";
 import type { UserPermissions } from "@/lib/types";
-import { cookies } from "next/headers";
+import { getCurrentUserPermissions } from '@/lib/server-permissions'
 
-async function getCurrentUserPermissions(): Promise<{ ok: boolean; role?: string; permissions?: UserPermissions }>{
-  try {
-    const sessionCookie = (await cookies()).get('session');
-    let userId: string | null = null;
-    if (sessionCookie?.value) {
-      try {
-        const parsed = JSON.parse(sessionCookie.value);
-        userId = typeof parsed?.id === 'string' ? parsed.id : sessionCookie.value;
-      } catch {
-        userId = sessionCookie.value;
-      }
-    }
-    if (!userId) return { ok: false };
-
-    const { getAdminDb } = await import('@/lib/firebase/admin');
-    const adb = await getAdminDb();
-    const userSnap = await adb.collection('Users').doc(userId).get();
-    if (!userSnap.exists) return { ok: false };
-    const udata = userSnap.data() as any;
-    let permissions: UserPermissions | undefined = udata?.permissions as any;
-    const role: string | undefined = udata?.role;
-
-    // Normalize permissions from role if explicit not set
-    if (!permissions && role) {
-      const rolesSnap = await adb.collection('Roles').where('name', '==', String(role)).get();
-      if (!rolesSnap.empty) {
-        const roleData = rolesSnap.docs[0].data() as any;
-        const arr = Array.isArray(roleData?.permissions) ? roleData.permissions : [];
-        const normalized: Record<string, string[]> = {};
-        for (const item of arr) {
-          if (typeof item !== 'string') continue;
-          const [page, action] = item.split(':');
-          if (!page || !action) continue;
-          (normalized[page] ||= []).push(action);
-        }
-        permissions = normalized as any;
-      }
-    }
-
-    return { ok: true, role, permissions };
-  } catch {
-    return { ok: false };
-  }
-}
 
 export default function MaintenancePage() {
   const Page = async () => {

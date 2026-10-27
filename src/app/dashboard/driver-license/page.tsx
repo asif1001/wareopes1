@@ -2,48 +2,8 @@ import { Suspense } from "react"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { DriverLicenseClientPage } from "@/components/driver-license-client-page"
 import { getUsers } from "@/lib/firebase/firestore"
-import { cookies } from "next/headers"
+import { getCurrentUserPermissions } from '@/lib/server-permissions'
 
-async function getCurrentUserPermissions(): Promise<{ ok: boolean; role?: string; permissions?: any }>{
-  try {
-    const sessionCookie = (await cookies()).get('session')
-    let userId: string | null = null
-    if (sessionCookie?.value) {
-      try {
-        const parsed = JSON.parse(sessionCookie.value)
-        userId = typeof parsed?.id === 'string' ? parsed.id : sessionCookie.value
-      } catch {
-        userId = sessionCookie.value
-      }
-    }
-    if (!userId) return { ok: false }
-    const { getAdminDb } = await import('@/lib/firebase/admin')
-    const adb = await getAdminDb()
-    const userSnap = await adb.collection('Users').doc(userId).get()
-    if (!userSnap.exists) return { ok: false }
-    const udata = userSnap.data() as any
-    let permissions: any | undefined = udata?.permissions as any
-    const role: string | undefined = udata?.role
-    if (!permissions && role) {
-      const rolesSnap = await adb.collection('Roles').where('name', '==', String(role)).get()
-      if (!rolesSnap.empty) {
-        const roleData = rolesSnap.docs[0].data() as any
-        const arr = Array.isArray(roleData?.permissions) ? roleData.permissions : []
-        const normalized: Record<string, string[]> = {}
-        for (const item of arr) {
-          if (typeof item !== 'string') continue
-          const [page, action] = item.split(':')
-          if (!page || !action) continue
-          ;(normalized[page] ||= []).push(action)
-        }
-        permissions = normalized as any
-      }
-    }
-    return { ok: true, role, permissions }
-  } catch {
-    return { ok: false }
-  }
-}
 
 export default function DriverLicensePage() {
   const Page = async () => {

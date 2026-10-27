@@ -1,47 +1,16 @@
 import type { UserPermissions } from '@/lib/types';
-import { cookies } from 'next/headers';
+import { getAccess } from '@/lib/permissions/server';
+import { isAdminRole } from '@/lib/permissions/resolve';
 
+/**
+ * The signed-in user's effective permissions (role + per-module overrides; Admin has everything).
+ * Kept for existing callers; new code can use `requireAccess` from `@/lib/permissions/server`.
+ */
 export async function getCurrentUserPermissions(): Promise<{ ok: boolean; userId?: string; role?: string; permissions?: UserPermissions; branch?: string }>{
   try {
-    const sessionCookie = (await cookies()).get('session');
-    let userId: string | null = null;
-    if (sessionCookie?.value) {
-      try {
-        const parsed = JSON.parse(sessionCookie.value);
-        userId = typeof parsed?.id === 'string' ? parsed.id : sessionCookie.value;
-      } catch {
-        userId = sessionCookie.value;
-      }
-    }
-    if (!userId) return { ok: false };
-
-    const { getAdminDb } = await import('@/lib/firebase/admin');
-    const adb = await getAdminDb();
-    const userSnap = await adb.collection('Users').doc(userId).get();
-    if (!userSnap.exists) return { ok: false };
-    const udata = userSnap.data() as any;
-    let permissions: UserPermissions | undefined = udata?.permissions as any;
-    const role: string | undefined = udata?.role;
-    const branch: string | undefined = typeof udata?.branch === 'string' ? udata.branch : undefined;
-
-    // Normalize permissions from role if explicit not set
-    if (!permissions && role) {
-      const rolesSnap = await adb.collection('Roles').where('name', '==', String(role)).get();
-      if (!rolesSnap.empty) {
-        const roleData = rolesSnap.docs[0].data() as any;
-        const arr = Array.isArray(roleData?.permissions) ? roleData.permissions : [];
-        const normalized: Record<string, string[]> = {};
-        for (const item of arr) {
-          if (typeof item !== 'string') continue;
-          const [page, action] = item.split(':');
-          if (!page || !action) continue;
-          (normalized[page] ||= []).push(action);
-        }
-        permissions = normalized as any;
-      }
-    }
-
-    return { ok: true, userId, role, permissions, branch };
+    const access = await getAccess();
+    if (!access) return { ok: false };
+    return { ok: true, userId: access.userId, role: access.role, permissions: access.permissions, branch: access.branch };
   } catch {
     return { ok: false };
   }
@@ -54,5 +23,5 @@ export function hasPermission(permissions: UserPermissions | undefined, page: ke
 }
 
 export function isAdmin(role?: string): boolean {
-  return role === 'Admin';
+  return isAdminRole(role);
 }

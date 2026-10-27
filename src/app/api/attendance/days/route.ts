@@ -7,14 +7,14 @@ import { isValidLocalDate, isValidMonth } from "@/lib/attendance/time";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** `?date=YYYY-MM-DD` or `?staffId=…&month=YYYY-MM` */
+/** `?date=YYYY-MM-DD`, `?staffId=…&month=YYYY-MM`, or `?month=YYYY-MM` for every staff member (Excel export, needs "export"). */
 export async function GET(request: NextRequest) {
   try {
-    const actor = await requireActor("view");
     const q = request.nextUrl.searchParams;
     const date = q.get("date") ?? undefined;
     const month = q.get("month") ?? undefined;
     const staffId = q.get("staffId") ?? undefined;
+    const actor = await requireActor(month && !staffId ? "export" : "view");
     if (date && !isValidLocalDate(date)) throw badRequest("Date must be YYYY-MM-DD");
     if (month && !isValidMonth(month)) throw badRequest("Month must be YYYY-MM");
     if (!date && !month) throw badRequest("Provide a date or a month");

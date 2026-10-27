@@ -1,3 +1,4 @@
+import { guardPage } from "@/lib/permissions/server";
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
@@ -61,7 +62,8 @@ function DispatchesSkeleton() {
 }
 
 
-export default function DispatchesPage() {
+export default async function DispatchesPage() {
+  await guardPage("dispatches");
   return (
     <Suspense fallback={<DispatchesSkeleton />}>
       <Dispatches />

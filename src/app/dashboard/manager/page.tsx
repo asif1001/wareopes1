@@ -1,3 +1,4 @@
+import { guardPage } from "@/lib/permissions/server";
 import { Suspense } from "react";
 export const dynamic = 'force-dynamic';
 import { statCards } from "@/lib/data";
@@ -104,7 +105,8 @@ function DashboardSkeleton() {
   )
 }
 
-export default function ManagerDashboardPage() {
+export default async function ManagerDashboardPage() {
+  await guardPage("dashboard");
   return (
     <div className="flex flex-col h-full">
       <DashboardHeader title="Manager Dashboard" />

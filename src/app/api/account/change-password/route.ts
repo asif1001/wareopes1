@@ -1,4 +1,7 @@
+import { apiAccess } from '@/lib/permissions/server';
 export async function POST(req: Request) {
+  const gate = await apiAccess();
+  if (!gate.ok) return gate.response;
   const formData = await req.formData();
   const current = formData.get("currentPassword");
   const next = formData.get("newPassword");

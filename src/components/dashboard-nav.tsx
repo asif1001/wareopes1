@@ -5,6 +5,7 @@ import { Boxes, LayoutDashboard, Flag, FileText, GanttChartSquare, MessageSquare
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { moduleForPath } from "@/lib/permissions/registry";
 import type { AppPageKey } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -159,14 +160,14 @@ export function DashboardNav() {
     };
 
     // Filter navigation items based on permissions
-    const filteredNavItems = isLoading 
-        ? navItems.filter(item => !item.pageKey && item.href !== "/dashboard/attendance") // Show only non-permission-gated items during loading
+    // Every item belongs to a registry module; anything unregistered is Admin only (deny by default).
+    const filteredNavItems = isLoading
+        ? []
         : navItems.filter(item => {
             if (item.href === "/dashboard/attendance") return attendanceCount !== null;
-            // Always show Dashboard and items without pageKey
-            if (!item.pageKey) return true;
-            // For items with pageKey, check view permission
-            return hasViewPermission(item.pageKey);
+            if (item.href === "/dashboard/settings") return hasViewPermission("settings") || hasViewPermission("user_management");
+            const key = item.pageKey ?? moduleForPath(item.href)?.key;
+            return key ? hasViewPermission(key) : isAdmin;
         });
 
     return (

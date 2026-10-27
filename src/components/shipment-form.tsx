@@ -26,6 +26,8 @@ import { saveShipmentAction, deleteShipmentAction } from "@/app/dashboard/shipme
 import { cn } from "@/lib/utils";
 import { useFormStatus } from "react-dom";
 import { useAuth } from '@/contexts/AuthContext';
+import { useCan } from '@/hooks/use-can';
+
 
 
 function DatePickerField({ name, control, label, required }: { name: any, control: any, label: string, required?: boolean }) {
@@ -175,7 +177,8 @@ export function ShipmentForm({
         }
     }, [user, refreshUser]);
 
-    const canDelete = !!(user && (user as any).permissions && Array.isArray((user as any).permissions.shipments) && (user as any).permissions.shipments.includes('delete'));
+    const can = useCan();
+    const canDelete = can('shipments', 'delete');
 
     const form = useForm<ShipmentFormData>({
         defaultValues: parseShipmentData(shipment) || {
@@ -254,6 +257,8 @@ export function ShipmentForm({
     const handleDeleted = () => {
         setOpen(false);
     }
+
+    if (!can('shipments', isEditMode ? 'edit' : 'add')) return null;
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>

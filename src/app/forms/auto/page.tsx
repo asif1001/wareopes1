@@ -1,32 +1,11 @@
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { findAutoRedirectFormForRoleAction } from '@/app/actions';
+import { getAccess } from '@/lib/permissions/server';
 
 export default async function AutoFormRedirectPage() {
-  // Get current user role from Users collection via Admin
   let role: string | null = null;
   try {
-    const c = await cookies();
-    const raw = c.get('session')?.value;
-    let userId: string | null = null;
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        userId = parsed?.id || null;
-      } catch {
-        // Legacy/plain string cookie
-        userId = raw;
-      }
-    }
-
-    if (userId) {
-      const { getAdminDb } = await import('@/lib/firebase/admin');
-      const adb = await getAdminDb();
-      const snap = await adb.collection('Users').doc(userId).get();
-      if (snap.exists) {
-        role = (snap.data() as any)?.role || null;
-      }
-    }
+    role = (await getAccess())?.role || null;
   } catch {}
 
   // If no role or not logged in, fallback to dashboard

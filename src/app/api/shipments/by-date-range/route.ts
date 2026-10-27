@@ -1,7 +1,10 @@
+import { apiAccess } from '@/lib/permissions/server';
 import { NextResponse } from "next/server";
 import { getShipmentsByDateRange } from "@/lib/firebase/firestore";
 
 export async function GET(req: Request) {
+  const gate = await apiAccess('shipments', 'view');
+  if (!gate.ok) return gate.response;
   try {
     const url = new URL(req.url);
     const fromStr = url.searchParams.get("from");

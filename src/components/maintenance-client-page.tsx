@@ -17,7 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import type { User, Branch } from "@/lib/types";
-import { getUsers, getBranches } from "@/lib/firebase/firestore";
+import { getBranches } from "@/lib/firebase/firestore";
+import { getUsersForLookupAction } from "@/app/actions";
 import { useAuth } from "@/contexts/AuthContext";
 import { storage } from "@/lib/firebase/firebase";
 import { cn } from "@/lib/utils";
@@ -324,7 +325,7 @@ export function MaintenanceClientPage({ initialUsers, initialBranches, initialVe
       try {
         // Skip client fetch if we already have server-provided users
         if (users.length > 0) return;
-        const list = await getUsers();
+        const list = await getUsersForLookupAction();
         if (active) setUsers(list);
       } catch (e) {
         console.warn("Failed to fetch users", e);
