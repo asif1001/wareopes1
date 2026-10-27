@@ -148,6 +148,7 @@ const staffActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("resetDevice") }),
   z.object({ action: z.literal("activate") }),
   z.object({ action: z.literal("deactivate") }),
+  z.object({ action: z.literal("delete") }),
 ]);
 
 async function assertRefs(db: Db, refs: Partial<z.infer<typeof staffFields>>, current?: Staff) {
@@ -210,6 +211,7 @@ export async function updateStaff(db: Db, actor: Actor, staffId: string, body: u
   if (!parsed.success) throw badRequest(parsed.error.issues[0]?.message ?? "Invalid request");
   const staff = await getStaff(db, staffId);
   if (!canManageStaff(actor, staff)) throw forbidden("You do not supervise this staff member");
+  if (staff.deleted) throw conflict("This staff account was deleted. Create a new account instead.");
 
   const ref = db.collection(COL.staff).doc(staffId);
   const stamp = { updatedAt: now.toISOString() };
@@ -261,6 +263,35 @@ export async function updateStaff(db: Db, actor: Actor, staffId: string, body: u
       what = "STAFF_DEACTIVATED";
       await ref.update(updates);
       break;
+    case "delete": {
+      const [events, days, overtime] = await Promise.all([
+        db.collection(COL.events).where("staffId", "==", staffId).limit(1).get(),
+        db.collection(COL.days).where("staffId", "==", staffId).limit(1).get(),
+        db.collection(COL.overtime).where("staffId", "==", staffId).limit(1).get(),
+      ]);
+      const hasHistory = !events.empty || !days.empty || !overtime.empty;
+      updates = {
+        active: false,
+        deleted: true,
+        deletedAt: now.toISOString(),
+        deletedBy: actor.userId,
+        pinHash: null,
+        deviceId: null,
+        deviceBoundAt: null,
+        ...revoke,
+        ...stamp,
+      };
+      what = hasHistory ? "STAFF_DELETED_HISTORY_KEPT" : "STAFF_DELETED";
+      const codeRef = db.collection(COL.staffCodes).doc(staff.staffCode);
+      await db.runTransaction(async (tx) => {
+        const code = await tx.get(codeRef);
+        if (code.exists && (code.data() as { staffId?: string }).staffId === staffId) tx.delete(codeRef);
+        if (hasHistory) tx.update(ref, updates);
+        else tx.delete(ref);
+      });
+      await db.collection(COL.deviceHealth).doc(staffId).delete();
+      break;
+    }
   }
 
   const after = { ...staff, ...updates };

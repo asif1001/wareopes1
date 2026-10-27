@@ -131,6 +131,35 @@ describe("staff login and device binding", () => {
     await expect(authenticateStaff(db, `Bearer ${refreshed.tokens.accessToken}`, DEVICE, at(MONDAY, "09:31"))).resolves.toBeTruthy();
   });
 
+  it("blocks a deactivated account at once and lets it back in when re-activated", async () => {
+    const { tokens } = await loginStaff(db, { staffCode: "c-101", pin: "1234", deviceId: DEVICE }, at(MONDAY, "08:00"));
+    await updateStaff(db, supervisor, staff.id, { action: "deactivate" }, at(MONDAY, "08:05"));
+    await expect(authenticateStaff(db, `Bearer ${tokens.accessToken}`, DEVICE, at(MONDAY, "08:06"))).rejects.toMatchObject({ code: "ACCOUNT_DISABLED" });
+    await expect(loginStaff(db, { staffCode: "c-101", pin: "1234", deviceId: DEVICE }, at(MONDAY, "08:07"))).rejects.toMatchObject({ code: "ACCOUNT_DISABLED" });
+    await updateStaff(db, supervisor, staff.id, { action: "activate" }, at(MONDAY, "08:10"));
+    await expect(loginStaff(db, { staffCode: "c-101", pin: "1234", deviceId: DEVICE }, at(MONDAY, "08:11"))).resolves.toBeTruthy();
+  });
+
+  it("erases a deleted account with no records and frees the staff ID", async () => {
+    await updateStaff(db, admin, staff.id, { action: "delete" }, at(MONDAY, "08:00"));
+    expect(fake.all(COL.staff)).toHaveLength(0);
+    expect(fake.all(COL.staffCodes)).toHaveLength(0);
+    await expect(loginStaff(db, { staffCode: "c-101", pin: "1234", deviceId: DEVICE }, at(MONDAY, "08:01"))).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
+  });
+
+  it("keeps the history of a deleted account but removes its login for good", async () => {
+    const { tokens } = await loginStaff(db, { staffCode: "c-101", pin: "1234", deviceId: DEVICE }, at(MONDAY, "08:00"));
+    await sync([ev("IN", MONDAY, "06:55")], at(MONDAY, "06:55"));
+    await updateStaff(db, admin, staff.id, { action: "delete" }, at(MONDAY, "18:00"));
+    const kept = fake.all<Staff>(COL.staff)[0];
+    expect(kept).toMatchObject({ deleted: true, active: false, pinHash: null, deviceId: null });
+    expect(fake.all(COL.staffCodes)).toHaveLength(0);
+    expect(fake.all(COL.events)).toHaveLength(1);
+    await expect(authenticateStaff(db, `Bearer ${tokens.accessToken}`, DEVICE, at(MONDAY, "18:01"))).rejects.toBeTruthy();
+    await expect(loginStaff(db, { staffCode: "c-101", pin: "1234", deviceId: DEVICE }, at(MONDAY, "18:02"))).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
+    await expect(updateStaff(db, admin, staff.id, { action: "activate" }, at(MONDAY, "18:03"))).rejects.toMatchObject({ status: 409 });
+  });
+
   it("never stores the PIN in plain text", async () => {
     const stored = fake.all<Staff>(COL.staff)[0];
     expect(stored.pinHash).toMatch(/^scrypt\$/);

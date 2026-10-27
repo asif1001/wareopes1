@@ -47,8 +47,13 @@ export function buildMonthReport(input: {
   overtime: OvertimeRequest[];
 }): MonthReport {
   const contractorName = new Map(input.contractors.map((c) => [c.id, c.name]));
+  const withData = new Set([
+    ...input.days.filter((d) => d.month === input.month).map((d) => d.staffId),
+    ...input.overtime.filter((o) => o.month === input.month).map((o) => o.staffId),
+  ]);
   const rows = new Map<string, StaffMonthRow>();
-  for (const s of input.staff) {
+  // Blocked or deleted staff appear only in months where they have records.
+  for (const s of input.staff.filter((x) => x.active || withData.has(x.id))) {
     rows.set(s.id, {
       staffId: s.id,
       staffCode: s.staffCode,

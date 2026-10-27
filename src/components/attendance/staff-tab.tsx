@@ -43,6 +43,7 @@ export function StaffTab() {
   const { staff, contractors, shifts, geofences, approvers, me, manages, userName, contractorName, reload } = useAttendance();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [showDeleted, setShowDeleted] = useState(false);
   const [editing, setEditing] = useState<StaffRow | "new" | null>(null);
   const [pinFor, setPinFor] = useState<StaffRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -50,9 +51,10 @@ export function StaffTab() {
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return [...staff]
+      .filter((s) => showDeleted || !s.deleted)
       .filter((s) => !q || s.staffCode.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
-      .sort((a, b) => Number(b.active) - Number(a.active) || a.staffCode.localeCompare(b.staffCode));
-  }, [staff, search]);
+      .sort((a, b) => Number(!!a.deleted) - Number(!!b.deleted) || Number(b.active) - Number(a.active) || a.staffCode.localeCompare(b.staffCode));
+  }, [staff, search, showDeleted]);
 
   async function action(row: StaffRow, body: Record<string, unknown>, done: string) {
     setBusy(row.id);
@@ -81,6 +83,10 @@ export function StaffTab() {
         {me?.canAdd && (!contractors.length || !shifts.length) && (
           <span className="text-sm text-muted-foreground">Add a contractor and a shift in Setup first.</span>
         )}
+        <label className="ml-auto flex items-center gap-2 text-sm">
+          <Checkbox checked={showDeleted} onCheckedChange={(v) => setShowDeleted(!!v)} />
+          Show deleted
+        </label>
       </div>
 
       <Table>
@@ -91,26 +97,33 @@ export function StaffTab() {
             <TableHead>Supervisor 1</TableHead>
             <TableHead>Supervisor 2</TableHead>
             <TableHead>Shift</TableHead>
+            <TableHead>App access</TableHead>
             <TableHead>Phone</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((s) => {
-            const canManage = manages(s) && !!me?.canEdit;
+            const canManage = manages(s) && !!me?.canEdit && !s.deleted;
             return (
-              <TableRow key={s.id} className={s.active ? undefined : "opacity-50"}>
+              <TableRow key={s.id} className={s.active ? undefined : "opacity-60"}>
                 <TableCell>
                   <div className="font-medium">{s.staffCode}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {s.name}
-                    {!s.active && " · inactive"}
-                  </div>
+                  <div className="text-xs text-muted-foreground">{s.name}</div>
                 </TableCell>
                 <TableCell>{contractorName(s.contractorId)}</TableCell>
                 <TableCell>{userName(s.supervisorId)}</TableCell>
                 <TableCell>{s.supervisor2Id ? userName(s.supervisor2Id) : "—"}</TableCell>
                 <TableCell>{shiftName(s.shiftId)}</TableCell>
+                <TableCell>
+                  {s.deleted ? (
+                    <Badge variant="outline">Deleted</Badge>
+                  ) : s.active ? (
+                    <Badge>Can use app</Badge>
+                  ) : (
+                    <Badge variant="destructive">Access blocked</Badge>
+                  )}
+                </TableCell>
                 <TableCell className="max-w-[240px]">
                   {s.deviceId ? (
                     <div className="text-xs">
@@ -153,20 +166,37 @@ export function StaffTab() {
                           Reset phone
                         </Button>
                       )}
-                      {me?.canDelete &&
-                        (s.active ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => confirm(`Deactivate ${s.name}? They will be logged out.`) && void action(s, { action: "deactivate" }, "Staff deactivated")}
-                          >
-                            Deactivate
-                          </Button>
-                        ) : (
-                          <Button size="sm" variant="ghost" onClick={() => void action(s, { action: "activate" }, "Staff activated")}>
-                            Activate
-                          </Button>
-                        ))}
+                      {s.active
+                        ? me?.canDelete && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                confirm(`Block ${s.name} from the app? They are logged out at once and cannot log in until you allow access again.`) &&
+                                void action(s, { action: "deactivate" }, "Access blocked")
+                              }
+                            >
+                              Block access
+                            </Button>
+                          )
+                        : (
+                            <Button size="sm" variant="outline" onClick={() => void action(s, { action: "activate" }, "Access allowed again")}>
+                              Allow access
+                            </Button>
+                          )}
+                      {me?.canDelete && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() =>
+                            confirm(
+                              `Delete ${s.staffCode} · ${s.name}?\n\nTheir app login is removed permanently and the staff ID can be reused. Past attendance stays in the reports. This cannot be undone.`,
+                            ) && void action(s, { action: "delete" }, "Staff deleted")
+                          }
+                        >
+                          Delete
+                        </Button>
+                      )}
                     </div>
                   )}
                 </TableCell>

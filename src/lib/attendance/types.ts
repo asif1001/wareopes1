@@ -62,6 +62,10 @@ export type Staff = {
   tokenVersion: number;
   consentAt: IsoInstant | null;
   consentVersion: string | null;
+  /** Deleted accounts can never log in again; kept only when they have attendance history. */
+  deleted?: boolean;
+  deletedAt?: IsoInstant | null;
+  deletedBy?: string | null;
   createdAt: IsoInstant;
   updatedAt: IsoInstant;
 };

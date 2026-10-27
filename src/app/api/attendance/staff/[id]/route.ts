@@ -22,13 +22,13 @@ export async function GET(_request: NextRequest, { params }: Params) {
   }
 }
 
-/** Body: `{ action: "update" | "setPin" | "resetDevice" | "activate" | "deactivate", … }` */
+/** Body: `{ action: "update" | "setPin" | "resetDevice" | "activate" | "deactivate" | "delete", … }` */
 export async function PATCH(request: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const body = await readJson(request);
-    const isDeactivate = (body as { action?: string } | null)?.action === "deactivate";
-    const actor = await requireActor(isDeactivate ? "delete" : "edit");
+    const action = (body as { action?: string } | null)?.action;
+    const actor = await requireActor(action === "deactivate" || action === "delete" ? "delete" : "edit");
     const item = await updateStaff(await attendanceDb(), actor, id, body, new Date());
     return ok({ item });
   } catch (error) {
