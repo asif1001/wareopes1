@@ -1,6 +1,6 @@
 import { scopeManagedStaff, scopeStaff, type Actor } from "./actor";
 import { ensureDays } from "./days";
-import { deviceIssues, type DeviceIssue } from "./health";
+import { deviceIssues, siteIssuesByStaff, type DeviceIssue } from "./health";
 import { autoCloseOvertime, listOvertime } from "./overtime";
 import { COL, getRules, listStaff, toStaffPublic, type Db } from "./store";
 import { localDateOf } from "./time";
@@ -89,12 +89,13 @@ export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, 
   };
   const scopedOt = allOt.map(withStaff).filter((x): x is OvertimeRequest & { staff: StaffRef } => !!x);
 
-  const healthSnap = await db.collection(COL.deviceHealth).get();
+  const [healthSnap, siteIssues] = await Promise.all([db.collection(COL.deviceHealth).get(), siteIssuesByStaff(db, staffList, now)]);
   const health = new Map(healthSnap.docs.map((d) => [d.id, d.data() as Partial<DeviceHealth>]));
+  const issuesOf = (id: string) => [...(siteIssues.get(id) ?? []), ...deviceIssues(health.get(id) ?? null, rules, now)];
   const devices = staffList
     .map((s) => {
       const h = health.get(s.id) ?? null;
-      return { staff: ref(toStaffPublic(s)), issues: deviceIssues(h, rules, now), health: h };
+      return { staff: ref(toStaffPublic(s)), issues: issuesOf(s.id), health: h };
     })
     .filter((d) => d.issues.length);
 
@@ -109,7 +110,7 @@ export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, 
       return {
         staff: ref(toStaffPublic(s)),
         day: dayByStaff.get(s.id) ?? null,
-        deviceIssues: deviceIssues(h, rules, now),
+        deviceIssues: issuesOf(s.id),
         lastSync: (h?.lastSync as string | undefined) ?? null,
         overtimeOpen: isToday && openOt.has(s.id),
       };

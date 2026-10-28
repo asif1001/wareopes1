@@ -426,14 +426,15 @@ function StaffDialog({ target, onClose, onSaved }: { target: StaffRow | "new" | 
             <Label>Work sites (none ticked = all sites)</Label>
             <div className="flex flex-wrap gap-3">
               {geofences
-                .filter((g) => g.active)
+                .filter((g) => g.active || form.geofenceIds.includes(g.id))
                 .map((g) => (
-                  <label key={g.id} className="flex items-center gap-2 text-sm">
+                  <label key={g.id} className={`flex items-center gap-2 text-sm ${g.active ? "" : "text-destructive"}`}>
                     <Checkbox
                       checked={form.geofenceIds.includes(g.id)}
                       onCheckedChange={(checked) => set("geofenceIds", checked ? [...form.geofenceIds, g.id] : form.geofenceIds.filter((id) => id !== g.id))}
                     />
                     {g.name}
+                    {!g.active && " (inactive — untick)"}
                   </label>
                 ))}
             </div>

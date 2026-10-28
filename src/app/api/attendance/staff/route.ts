@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { scopeStaff } from "@/lib/attendance/actor";
-import { deviceIssues } from "@/lib/attendance/health";
+import { deviceIssues, siteIssuesByStaff } from "@/lib/attendance/health";
 import { attendanceDb, fail, ok, readJson, requireActor } from "@/lib/attendance/http";
 import { createStaff } from "@/lib/attendance/setup";
 import { COL, getRules, listStaff, toStaffPublic } from "@/lib/attendance/store";
@@ -20,9 +20,12 @@ export async function GET() {
       getRules(db),
     ]);
     const health = new Map(healthSnap.docs.map((d) => [d.id, d.data() as Partial<DeviceHealth>]));
-    const items = scopeStaff(actor, staff).map((s) => {
+    const scoped = scopeStaff(actor, staff);
+    const siteIssues = await siteIssuesByStaff(db, scoped, now);
+    const items = scoped.map((s) => {
       const h = health.get(s.id) ?? null;
-      return { ...toStaffPublic(s), deviceHealth: h, deviceIssues: s.active ? deviceIssues(h, rules, now) : [] };
+      const issues = s.active ? [...(siteIssues.get(s.id) ?? []), ...deviceIssues(h, rules, now)] : [];
+      return { ...toStaffPublic(s), deviceHealth: h, deviceIssues: issues };
     });
     return ok({ items });
   } catch (error) {

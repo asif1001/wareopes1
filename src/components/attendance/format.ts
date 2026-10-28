@@ -76,6 +76,8 @@ export const DEVICE_ISSUE_LABELS: Record<string, string> = {
   MOCK_APP: "Fake GPS app",
   ROOTED: "Rooted phone",
   APP_OUTDATED: "App outdated",
+  NO_ACTIVE_SITE: "No active site",
+  FAR_FROM_SITE: "Last tap far from site",
 };
 
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

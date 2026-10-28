@@ -100,9 +100,21 @@ export async function updateSetup(db: Db, actor: Actor, entity: SetupEntity, id:
   if (typeof (body as { active?: unknown })?.active === "boolean" && entity !== "holidays") {
     (after as Record<string, unknown>).active = (body as { active: boolean }).active;
   }
+  if (entity === "geofences" && before.active !== false && (after as Record<string, unknown>).active === false) {
+    await assertSiteUnused(db, id);
+  }
   await ref.set(after);
   await writeAudit(db, { who: actor.userId, what: "UPDATED", entity: collectionFor[entity], entityId: id, before, after }, now);
   return { ...after, id };
+}
+
+/** A site that active staff still use cannot be switched off (their phones would lose it silently). */
+async function assertSiteUnused(db: Db, geofenceId: string) {
+  const users = await db.collection(COL.staff).where("geofenceIds", "array-contains", geofenceId).get();
+  const names = users.docs.filter((d) => d.get("active") && !d.get("deleted")).map((d) => String(d.get("name")));
+  if (names.length) {
+    throw badRequest(`This site is assigned to ${names.slice(0, 5).join(", ")}${names.length > 5 ? ` and ${names.length - 5} more` : ""}. Remove it from their profile first.`);
+  }
 }
 
 /** Holidays are deleted; everything else is deactivated so history keeps its references. */
@@ -111,6 +123,7 @@ export async function removeSetup(db: Db, actor: Actor, entity: SetupEntity, id:
   const snap = await ref.get();
   if (!snap.exists) throw notFound();
   const before = snap.data();
+  if (entity === "geofences") await assertSiteUnused(db, id);
   if (entity === "holidays") await ref.delete();
   else await ref.update({ active: false });
   await writeAudit(
@@ -203,7 +216,9 @@ async function assertRefs(db: Db, refs: Partial<z.infer<typeof staffFields>>, cu
     if (!(await db.collection(col).doc(id).get()).exists) throw badRequest(`${label} not found`);
   }
   for (const id of refs.geofenceIds ?? []) {
-    if (!(await db.collection(COL.geofences).doc(id).get()).exists) throw badRequest("Geofence not found");
+    const fence = await db.collection(COL.geofences).doc(id).get();
+    if (!fence.exists) throw badRequest("Geofence not found");
+    if (fence.get("active") === false) throw badRequest(`Site "${fence.get("name")}" is inactive. Untick it or activate it first.`);
   }
 }
 

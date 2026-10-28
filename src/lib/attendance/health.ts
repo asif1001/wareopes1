@@ -3,7 +3,8 @@ import { CONSENT_VERSION, type AttendanceRules } from "./config";
 import { writeAudit } from "./audit";
 import { badRequest } from "./errors";
 import { COL, type Db } from "./store";
-import type { DeviceHealth, Staff } from "./types";
+import { haversineMeters } from "./geo";
+import type { AttendanceEvent, DeviceHealth, Geofence, Staff } from "./types";
 
 export const healthSchema = z.object({
   locationPermission: z.enum(["ALWAYS", "WHILE_IN_USE", "DENIED"]),
@@ -41,7 +42,45 @@ export type DeviceIssue =
   | "NOTIFICATIONS_OFF"
   | "MOCK_APP"
   | "ROOTED"
-  | "APP_OUTDATED";
+  | "APP_OUTDATED"
+  | "NO_ACTIVE_SITE"
+  | "FAR_FROM_SITE";
+
+/** A tap this far outside every assigned site usually means a wrong site pin. */
+export const FAR_FROM_SITE_M = 1000;
+const FAR_LOOKBACK_MS = 3 * 24 * 3600 * 1000;
+
+/**
+ * Site problems that stop automatic IN/OUT even when the phone is fine:
+ * the staff member has no active site, or their latest tap is far from every site.
+ */
+export async function siteIssuesByStaff(db: Db, staff: Pick<Staff, "id" | "geofenceIds">[], now: Date): Promise<Map<string, DeviceIssue[]>> {
+  const since = new Date(now.getTime() - FAR_LOOKBACK_MS).toISOString();
+  const [fenceSnap, eventSnap] = await Promise.all([
+    db.collection(COL.geofences).get(),
+    db.collection(COL.events).where("receivedAt", ">=", since).get(),
+  ]);
+  const active = fenceSnap.docs.map((d) => ({ ...(d.data() as Geofence), id: d.id })).filter((g) => g.active);
+  const latest = new Map<string, AttendanceEvent>();
+  for (const d of eventSnap.docs) {
+    const e = d.data() as AttendanceEvent;
+    if (e.lat == null || e.lng == null) continue;
+    const prev = latest.get(e.staffId);
+    if (!prev || e.deviceTime > prev.deviceTime) latest.set(e.staffId, e);
+  }
+  const out = new Map<string, DeviceIssue[]>();
+  for (const s of staff) {
+    const fences = s.geofenceIds?.length ? active.filter((g) => s.geofenceIds.includes(g.id)) : active;
+    const issues: DeviceIssue[] = [];
+    if (!fences.length) issues.push("NO_ACTIVE_SITE");
+    const e = latest.get(s.id);
+    if (fences.length && e && fences.every((g) => haversineMeters(e.lat!, e.lng!, g.lat, g.lng) - g.radiusM > FAR_FROM_SITE_M)) {
+      issues.push("FAR_FROM_SITE");
+    }
+    out.set(s.id, issues);
+  }
+  return out;
+}
 
 /** Compare dotted versions ("1.2.10" > "1.2.9"). */
 export function compareVersions(a: string, b: string): number {
