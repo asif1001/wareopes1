@@ -14,18 +14,18 @@ export const maxDuration = 60;
  * - Vercel Cron: `GET /api/attendance/cron?job=all` with `Authorization: Bearer $CRON_SECRET` (see vercel.json).
  * - Any other scheduler: `POST` with header `X-Cron-Secret: $ATTENDANCE_CRON_SECRET`.
  */
-function authorised(request: NextRequest) {
+function authorised(request: NextRequest, job: CronJob) {
   const provided =
     request.headers.get("x-cron-secret") ?? request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  return [process.env.ATTENDANCE_CRON_SECRET, process.env.CRON_SECRET].some(
-    (secret) => !!secret && secret.length >= 32 && safeEqual(provided, secret),
-  );
+  // REMINDER_CRON_SECRET is given to the outside 5-minute scheduler and may only send iPhone reminders.
+  const secrets = [process.env.ATTENDANCE_CRON_SECRET, process.env.CRON_SECRET, job === "reminders" ? process.env.REMINDER_CRON_SECRET : undefined];
+  return secrets.some((secret) => !!secret && secret.length >= 32 && safeEqual(provided, secret));
 }
 
 async function handle(request: NextRequest) {
   try {
-    if (!authorised(request)) throw unauthorized();
     const job = (request.nextUrl.searchParams.get("job") ?? "all") as CronJob;
+    if (!authorised(request, job)) throw unauthorized();
     if (!CRON_JOBS.includes(job)) throw badRequest("Unknown job");
     const result = await runCron(await attendanceDb(), job, new Date(), firebasePhotoStore);
     return ok({ job, result });
