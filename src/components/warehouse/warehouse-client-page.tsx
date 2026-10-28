@@ -634,11 +634,18 @@ export function WarehouseClientPage() {
         description:
           result.storage === "cloud"
             ? "The branch layout and capacity are now shared with the team."
-            : "The warehouse API could not be reached, so the layout was saved in this browser only.",
+            : `Saved in this browser only. ${result.reason ?? "The warehouse API could not be reached."}`,
       });
     } catch (error) {
       console.error("Failed to save layout", error);
-      toast({ variant: "destructive", title: "Could not save the layout" });
+      toast({
+        variant: "destructive",
+        title: "Could not save the layout",
+        description:
+          error instanceof Error && error.message
+            ? error.message
+            : "The layout could not be saved.",
+      });
     } finally {
       setSavingLayout(false);
     }
@@ -692,14 +699,17 @@ export function WarehouseClientPage() {
         description:
           result.storage === "cloud"
             ? `${formatNumber(parsed.records.length)} rows saved for ${branch.name}.`
-            : "The warehouse API could not be reached, so the snapshot was saved in this browser only.",
+            : `Saved in this browser only. ${result.reason ?? "The warehouse API could not be reached."}`,
       });
     } catch (error) {
       console.error("Failed to save warehouse snapshot", error);
       toast({
         variant: "destructive",
         title: "Import failed",
-        description: "The snapshot could not be saved.",
+        description:
+          error instanceof Error && error.message
+            ? error.message
+            : "The snapshot could not be saved.",
       });
     } finally {
       setSavingImport(false);

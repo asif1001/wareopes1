@@ -18,11 +18,30 @@ type LocalSnapshot = {
  * The warehouse page stores data through /api/warehouse (Firebase Admin), so
  * it does not depend on client-side Firestore rules or anonymous auth.
  * When the server cannot be reached, everything falls back to localStorage.
+ *
+ * The "cloud is down" flag expires after a short cooldown: a single failed
+ * request (for example a layout that Firestore rejected) must not stop every
+ * later save in the same browser session from trying again.
  */
-let cloudBlocked = false;
+const CLOUD_COOLDOWN_MS = 15000;
+let cloudBlockedUntil = 0;
 
 function cloudUnavailable(): never {
   throw new Error("Warehouse storage is unavailable");
+}
+
+function isCloudBlocked(): boolean {
+  return Date.now() < cloudBlockedUntil;
+}
+
+function blockCloud(): void {
+  cloudBlockedUntil = Date.now() + CLOUD_COOLDOWN_MS;
+}
+
+function reasonOf(error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (!message) return "The warehouse API could not be reached.";
+  return message.length > 220 ? `${message.slice(0, 217)}...` : message;
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -78,14 +97,39 @@ export function mergeLayouts(
 ): WarehouseLayout[] {
   const byBranch = new Map<string, WarehouseLayout>();
   for (const layout of local) byBranch.set(layout.branchId, layout);
-  for (const layout of cloud) byBranch.set(layout.branchId, layout);
+  for (const layout of cloud) {
+    const existing = byBranch.get(layout.branchId);
+    // Never hide a layout that was saved locally because the API was down:
+    // the newer copy wins, and the cloud copy wins only on a tie.
+    if (!existing || layoutTime(layout) >= layoutTime(existing)) {
+      byBranch.set(layout.branchId, layout);
+    }
+  }
   return [...byBranch.values()].sort((a, b) =>
     a.branchName.localeCompare(b.branchName),
   );
 }
 
+function layoutTime(layout: WarehouseLayout | null | undefined): number {
+  if (!layout?.updatedAt) return 0;
+  const time = new Date(layout.updatedAt).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+async function readApiError(response: Response): Promise<string> {
+  try {
+    const data = (await response.json()) as { error?: unknown };
+    if (typeof data?.error === "string" && data.error.trim()) {
+      return data.error;
+    }
+  } catch {
+    // The response body was not JSON; fall back to the status code.
+  }
+  return `Warehouse API responded ${response.status}`;
+}
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  if (cloudBlocked) cloudUnavailable();
+  if (isCloudBlocked()) cloudUnavailable();
   try {
     const response = await withTimeout(
       fetch(path, {
@@ -100,10 +144,11 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
       API_TIMEOUT_MS,
       "Warehouse storage",
     );
-    if (!response.ok) throw new Error(`Warehouse API ${response.status}`);
+    if (!response.ok) throw new Error(await readApiError(response));
+    cloudBlockedUntil = 0;
     return (await response.json()) as T;
   } catch (error) {
-    cloudBlocked = true;
+    blockCloud();
     throw error;
   }
 }
@@ -133,23 +178,34 @@ export async function listLayouts(): Promise<{
 export async function getLayoutForBranch(
   branchId: string,
 ): Promise<WarehouseLayout | null> {
-  const local = readLocalLayouts()[branchId] ?? null;
+  const cached = readLocalLayouts()[branchId] ?? null;
+  const local = cached ? normalizeLayout(cached) : null;
   try {
     const data = await apiRequest<{ layouts: WarehouseLayout[] }>(
       `/api/warehouse?kind=layouts&branchId=${encodeURIComponent(branchId)}`,
     );
     const first = data.layouts?.[0];
-    if (first) return normalizeLayout(first);
+    if (first) {
+      const cloud = normalizeLayout(first);
+      if (!local || layoutTime(cloud) >= layoutTime(local)) return cloud;
+    }
   } catch {
     // Fall back to the locally cached layout below.
   }
-  return local ? normalizeLayout(local) : null;
+  return local;
 }
+
+export type SaveLayoutResult = {
+  layout: WarehouseLayout;
+  storage: StorageMode;
+  /** Why the layout was kept in the browser when `storage` is "local". */
+  reason?: string;
+};
 
 export async function saveLayout(
   layout: WarehouseLayout,
   updatedBy?: string,
-): Promise<{ layout: WarehouseLayout; storage: StorageMode }> {
+): Promise<SaveLayoutResult> {
   const id = layout.id || `layout_${layout.branchId || "new"}`;
   const payload: WarehouseLayout = normalizeLayout({
     ...layout,
@@ -169,11 +225,16 @@ export async function saveLayout(
       layout: normalizeLayout(data.layout ?? payload),
       storage: "cloud",
     };
-  } catch {
+  } catch (error) {
+    const reason = reasonOf(error);
     const local = readLocalLayouts();
     local[payload.branchId] = payload;
-    writeJson(LAYOUT_KEY, local);
-    return { layout: payload, storage: "local" };
+    if (!writeJson(LAYOUT_KEY, local)) {
+      throw new Error(
+        `The layout could not be saved because this browser's storage is full. ${reason}`,
+      );
+    }
+    return { layout: payload, storage: "local", reason };
   }
 }
 
@@ -236,11 +297,18 @@ export function createSnapshotId(): string {
   return `snap_${Date.now()}_${random}`;
 }
 
+export type SaveSnapshotResult = {
+  meta: SnapshotMeta;
+  storage: StorageMode;
+  /** Why the snapshot was kept in the browser when `storage` is "local". */
+  reason?: string;
+};
+
 export async function saveSnapshot(
   meta: SnapshotMeta,
   records: WarehouseRecord[],
   uploadedBy?: string,
-): Promise<{ meta: SnapshotMeta; storage: StorageMode }> {
+): Promise<SaveSnapshotResult> {
   const localMeta: SnapshotMeta = {
     ...meta,
     layout: normalizeLayout(meta.layout),
@@ -263,13 +331,19 @@ export async function saveSnapshot(
       meta: { ...(data.meta ?? localMeta), storage: "cloud" },
       storage: "cloud",
     };
-  } catch {
+  } catch (error) {
+    const reason = reasonOf(error);
     const local = readLocalSnapshots().filter(
       (entry) => entry.meta.id !== localMeta.id,
     );
     local.unshift({ meta: localMeta, records: cleanedRecords });
-    writeLocalSnapshots(local.slice(0, MAX_LOCAL_SNAPSHOTS));
-    return { meta: localMeta, storage: "local" };
+    const kept = local.slice(0, MAX_LOCAL_SNAPSHOTS);
+    if (!writeLocalSnapshots(kept)) {
+      throw new Error(
+        `The snapshot could not be saved because this browser's storage is full and the warehouse API is unavailable. ${reason}`,
+      );
+    }
+    return { meta: localMeta, storage: "local", reason };
   }
 }
 
@@ -323,12 +397,12 @@ export async function deleteBranchData(branchId: string): Promise<StorageMode> {
     );
     return "cloud";
   } catch {
-    cloudBlocked = true;
+    blockCloud();
     return "local";
   }
 }
 
 /** Called when the rest of the app has already established storage is unreachable. */
 export function markCloudUnavailable(): void {
-  cloudBlocked = true;
+  blockCloud();
 }

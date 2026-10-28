@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { apiAccess } from "@/lib/permissions/server";
+import {
+  InvalidWarehousePayload,
+  prepareForFirestore,
+} from "@/lib/warehouse/firestore-payload";
 import { normalizeLayout } from "@/lib/warehouse/layout";
 import type {
   SnapshotMeta,
@@ -110,7 +114,7 @@ export async function POST(request: NextRequest) {
       if (!editGate.ok) return editGate.response;
       const layout = normalizeLayout(body.layout as WarehouseLayout);
       const id = layout.id || `layout_${layout.branchId || "new"}`;
-      const payload = { ...layout, id };
+      const payload = prepareForFirestore({ ...layout, id }, "layout");
       await adb
         .collection("warehouseLayouts")
         .doc(id)
@@ -129,11 +133,14 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
-      const metaPayload: SnapshotMeta = {
-        ...meta,
-        layout: normalizeLayout(meta.layout),
-        recordCount: records.length,
-      };
+      const metaPayload: SnapshotMeta = prepareForFirestore(
+        {
+          ...meta,
+          layout: normalizeLayout(meta.layout),
+          recordCount: records.length,
+        },
+        "snapshot",
+      );
       delete (metaPayload as { storage?: string }).storage;
 
       const snapshotRef = adb.collection("warehouseSnapshots").doc(meta.id);
@@ -148,7 +155,10 @@ export async function POST(request: NextRequest) {
         chunks.slice(start, start + 400).forEach((chunk, offset) => {
           batch.set(
             snapshotRef.collection("chunks").doc(String(start + offset)),
-            { index: start + offset, records: chunk },
+            {
+              index: start + offset,
+              records: prepareForFirestore(chunk, "snapshot rows"),
+            },
           );
         });
         await batch.commit();
@@ -161,6 +171,9 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   } catch (error) {
+    if (error instanceof InvalidWarehousePayload) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return serverError(error);
   }
 }

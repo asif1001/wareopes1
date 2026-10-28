@@ -510,6 +510,9 @@ export function normalizeLayout(layout: WarehouseLayout): WarehouseLayout {
     branchId: layout?.branchId || "",
     branchName: layout?.branchName || "",
     brandRules: Array.isArray(layout?.brandRules) ? layout.brandRules : [],
+    ...(layout?.rackDesign
+      ? { rackDesign: normalizeRackDesign(layout.rackDesign) }
+      : {}),
     subInventories: subInventories.map((sub) => {
       const rawBins = (sub as unknown as { bins?: unknown }).bins as
         | { values?: unknown[]; min?: number; max?: number; pad?: number }
@@ -535,6 +538,11 @@ export function normalizeLayout(layout: WarehouseLayout): WarehouseLayout {
       } else {
         bins = { values: ["1"], pad: 1 };
       }
+      const locations = Array.isArray(sub.locations)
+        ? sub.locations
+            .map((locator) => normalizeLocator(locator))
+            .filter(Boolean)
+        : [];
       return {
         ...sub,
         aisles: sub.aisles ?? defaultRange(),
@@ -544,11 +552,9 @@ export function normalizeLayout(layout: WarehouseLayout): WarehouseLayout {
             ? sub.levels.map((level) => String(level).toUpperCase())
             : ["1"],
         bins,
-        locations: Array.isArray(sub.locations)
-          ? sub.locations
-              .map((locator) => normalizeLocator(locator))
-              .filter(Boolean)
-          : undefined,
+        // Never emit `locations: undefined`: Firestore refuses documents that
+        // contain undefined values, which made every cloud save fail.
+        ...(locations.length ? { locations } : {}),
       };
     }),
   };
