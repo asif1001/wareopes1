@@ -3,7 +3,9 @@ import { autoLockMonths } from "./locks";
 import { autoCloseOvertime, markOvertimeReminders } from "./overtime";
 import { purgeExpiredPhotos, type PhotoStore } from "./photos";
 import { sendDueReminders } from "./push";
-import { getRules, listStaff, type Db } from "./store";
+import { COL, getRules, listStaff, type Db } from "./store";
+
+export const REMINDER_STATUS_DOC = "reminderStatus";
 import { addDays, localDateOf } from "./time";
 
 /** "reminders" runs every 5 minutes from an outside scheduler (iPhone push reminders); it is not part of "all". */
@@ -36,7 +38,10 @@ export async function runCron(db: Db, job: CronJob, now: Date, photoStore?: () =
     result.monthsLocked = await autoLockMonths(db, rules, now);
   }
   if (job === "reminders") {
-    result.reminders = await sendDueReminders(db, rules, now);
+    const reminders = await sendDueReminders(db, rules, now);
+    result.reminders = reminders;
+    // Shown on Attendance → Setup so an admin can see the outside scheduler is calling us.
+    await db.collection(COL.settings).doc(REMINDER_STATUS_DOC).set({ lastRunAt: now.toISOString(), ...reminders });
   }
   if (run("photo-retention") && photoStore) {
     result.photosDeleted = await purgeExpiredPhotos(db, await photoStore(), rules, now);

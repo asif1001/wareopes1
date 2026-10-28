@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { api, errorMessage } from "./api";
 import { useAttendance } from "./context";
 import { mapsLink } from "./format";
+import { ReminderSetupCard } from "./reminder-setup-card";
 import { Field, Pick } from "./staff-tab";
 
 type Entity = "contractors" | "shifts" | "geofences" | "holidays";
@@ -37,8 +38,10 @@ function useSave() {
 }
 
 export function SetupTab() {
+  const { me } = useAttendance();
   return (
     <div className="grid gap-4 xl:grid-cols-2">
+      {me?.isAdmin && <ReminderSetupCard />}
       <ContractorsCard />
       <ShiftsCard />
       <GeofencesCard />
