@@ -2,10 +2,12 @@ import { ensureDays } from "./days";
 import { autoLockMonths } from "./locks";
 import { autoCloseOvertime, markOvertimeReminders } from "./overtime";
 import { purgeExpiredPhotos, type PhotoStore } from "./photos";
+import { sendDueReminders } from "./push";
 import { getRules, listStaff, type Db } from "./store";
 import { addDays, localDateOf } from "./time";
 
-export const CRON_JOBS = ["days", "overtime", "month-lock", "photo-retention", "all"] as const;
+/** "reminders" runs every 5 minutes from an outside scheduler (iPhone push reminders); it is not part of "all". */
+export const CRON_JOBS = ["days", "overtime", "month-lock", "photo-retention", "reminders", "all"] as const;
 export type CronJob = (typeof CRON_JOBS)[number];
 
 /**
@@ -32,6 +34,9 @@ export async function runCron(db: Db, job: CronJob, now: Date, photoStore?: () =
   }
   if (run("month-lock")) {
     result.monthsLocked = await autoLockMonths(db, rules, now);
+  }
+  if (job === "reminders") {
+    result.reminders = await sendDueReminders(db, rules, now);
   }
   if (run("photo-retention") && photoStore) {
     result.photosDeleted = await purgeExpiredPhotos(db, await photoStore(), rules, now);

@@ -25,6 +25,9 @@ export const COL = {
   consents: "attConsents",
   photos: "attPhotos",
   crashReports: "attCrashReports",
+  requests: "attRequests",
+  pushSubs: "attPushSubs",
+  pushLog: "attPushLog",
 } as const;
 
 export const RULES_DOC = "rules";

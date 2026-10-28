@@ -16,6 +16,8 @@ const loginSchema = z
     password: z.string().max(64).optional(),
     pin: z.string().max(64).optional(),
     deviceId: deviceIdSchema,
+    /** "web" = iPhone / browser check-in page. */
+    client: z.enum(["android", "web"]).default("android"),
   })
   .refine((v) => !!(v.cprNo || v.staffCode) && !!(v.password ?? v.pin));
 
@@ -27,9 +29,13 @@ export type TokenPair = {
 
 const INVALID = "CPR number or password is incorrect.";
 
-function issueTokens(staff: Staff, now: Date): TokenPair {
+export type MobileClient = "android" | "web";
+
+const WEB_NOT_ALLOWED = "iPhone check-in is not turned on for your account. Ask your supervisor.";
+
+function issueTokens(staff: Staff, now: Date, client: MobileClient): TokenPair {
   const secret = getTokenSecret();
-  const claims = { sub: staff.id, did: staff.deviceId ?? "", ver: staff.tokenVersion ?? 0 };
+  const claims = { sub: staff.id, did: staff.deviceId ?? "", ver: staff.tokenVersion ?? 0, cli: client };
   return {
     accessToken: signToken({ ...claims, typ: "access" }, MOBILE_AUTH.accessTokenTtlSec, secret, now),
     refreshToken: signToken({ ...claims, typ: "refresh" }, MOBILE_AUTH.refreshTokenTtlSec, secret, now),
@@ -57,7 +63,7 @@ async function findStaffId(db: Db, loginId: string): Promise<string | null> {
 export async function loginStaff(db: Db, body: unknown, now: Date): Promise<{ staff: Staff; tokens: TokenPair }> {
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) throw badRequest("CPR number, password and device are required");
-  const { deviceId } = parsed.data;
+  const { deviceId, client } = parsed.data;
   const pin = (parsed.data.password ?? parsed.data.pin)!;
 
   const staffId = await findStaffId(db, (parsed.data.cprNo || parsed.data.staffCode)!);
@@ -71,6 +77,7 @@ export async function loginStaff(db: Db, body: unknown, now: Date): Promise<{ st
     const staff = { ...(snap.data() as Staff), id: snap.id };
 
     if (!staff.active) return { error: forbidden("This account is disabled. Contact your supervisor.", "ACCOUNT_DISABLED") };
+    if (client === "web" && !staff.webCheckin) return { error: forbidden(WEB_NOT_ALLOWED, "WEB_NOT_ALLOWED") };
     if (staff.pinLockedUntil && new Date(staff.pinLockedUntil).getTime() > now.getTime()) {
       return { error: tooMany("Too many wrong passwords. Try again in 15 minutes or contact your supervisor.", "PIN_LOCKED") };
     }
@@ -119,7 +126,7 @@ export async function loginStaff(db: Db, body: unknown, now: Date): Promise<{ st
     );
   }
   if (outcome.error) throw outcome.error;
-  return { staff: outcome.staff!, tokens: issueTokens(outcome.staff!, now) };
+  return { staff: outcome.staff!, tokens: issueTokens(outcome.staff!, now, client) };
 }
 
 async function staffFromToken(db: Db, token: string, type: "access" | "refresh", deviceId: string | null, now: Date) {
@@ -133,14 +140,15 @@ async function staffFromToken(db: Db, token: string, type: "access" | "refresh",
   if ((staff.tokenVersion ?? 0) !== payload.ver || staff.deviceId !== payload.did) {
     throw unauthorized("Session revoked. Please log in again.", "TOKEN_REVOKED");
   }
-  return staff;
+  if (payload.cli === "web" && !staff.webCheckin) throw forbidden(WEB_NOT_ALLOWED, "WEB_NOT_ALLOWED");
+  return Object.assign(staff, { client: (payload.cli === "web" ? "web" : "android") as MobileClient });
 }
 
 export async function refreshStaffSession(db: Db, body: unknown, now: Date) {
   const parsed = z.object({ refreshToken: z.string().min(10), deviceId: deviceIdSchema }).safeParse(body);
   if (!parsed.success) throw badRequest("Refresh token and device are required");
   const staff = await staffFromToken(db, parsed.data.refreshToken, "refresh", parsed.data.deviceId, now);
-  return { staff, tokens: issueTokens(staff, now) };
+  return { staff, tokens: issueTokens(staff, now, staff.client) };
 }
 
 /** Authenticate a phone request: `Authorization: Bearer <access>` + `X-Device-Id`. */

@@ -177,6 +177,7 @@ const staffFields = z.object({
   supervisor2Id: z.string().min(1).nullable().default(null),
   shiftId: z.string().min(1),
   geofenceIds: z.array(z.string().min(1)).default([]),
+  webCheckin: z.boolean().default(false),
 });
 
 const createStaffSchema = staffFields.extend({ password });

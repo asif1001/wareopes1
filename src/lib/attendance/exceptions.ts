@@ -2,6 +2,7 @@ import { scopeManagedStaff, scopeStaff, type Actor } from "./actor";
 import { ensureDays } from "./days";
 import { deviceIssues, siteIssuesByStaff, type DeviceIssue } from "./health";
 import { autoCloseOvertime, listOvertime } from "./overtime";
+import { pendingRequestCount } from "./requests";
 import { COL, getRules, listStaff, toStaffPublic, type Db } from "./store";
 import { localDateOf } from "./time";
 import type { AttendanceDay, DayFlag, DeviceHealth, LocalDate, OvertimeRequest, StaffPublic } from "./types";
@@ -154,10 +155,10 @@ export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, 
   return result;
 }
 
-/** Number shown on the nav badge: overtime waiting for this user's decision. */
+/** Number shown on the nav badge: overtime and staff requests waiting for this user's decision. */
 export async function pendingCount(db: Db, actor: Actor) {
   const staff = scopeManagedStaff(actor, await listStaff(db));
   const ids = new Set(staff.map((s) => s.id));
-  const ot = await listOvertime(db, {});
-  return ot.filter((o) => ids.has(o.staffId) && o.otOut && (o.status === "PENDING" || o.status === "AUTO_CLOSED")).length;
+  const [ot, requests] = await Promise.all([listOvertime(db, {}), pendingRequestCount(db, actor, staff)]);
+  return ot.filter((o) => ids.has(o.staffId) && o.otOut && (o.status === "PENDING" || o.status === "AUTO_CLOSED")).length + requests;
 }

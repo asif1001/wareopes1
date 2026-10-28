@@ -26,8 +26,20 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Staff check-in web app (same screens as the Android app), exported from staff-app into public/checkin.
+  async rewrites() {
+    return [
+      { source: "/checkin", destination: "/checkin/index.html" },
+      { source: "/checkin/", destination: "/checkin/index.html" },
+    ];
+  },
   // Remove localhost-specific headers for production
   async headers() {
+    // The check-in shell and its service worker must update as soon as a new version is deployed.
+    const checkin = ["/checkin/index.html", "/checkin/sw.js", "/checkin/manifest.json"].map((source) => ({
+      source,
+      headers: [{ key: "Cache-Control", value: "no-cache" }],
+    }));
     // Gate dev forwarded host behind an env var to avoid chunk mismatches
     const devForwardedHost = process.env.DEV_X_FORWARDED_HOST;
     if (process.env.NODE_ENV === 'development' && devForwardedHost) {
@@ -41,9 +53,10 @@ const nextConfig: NextConfig = {
             },
           ],
         },
+        ...checkin,
       ];
     }
-    return [];
+    return checkin;
   },
   webpack(config, { dev }) {
     if (dev) {

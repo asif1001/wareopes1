@@ -10,6 +10,7 @@ import { AttendanceProvider, useAttendance } from "./context";
 import { OverviewTab } from "./overview-tab";
 import { OvertimeTab } from "./overtime-tab";
 import { RecordsTab } from "./records-tab";
+import { RequestsTab } from "./requests-tab";
 import { ReportsTab } from "./reports-tab";
 import { SettingsTab } from "./settings-tab";
 import { SetupTab } from "./setup-tab";
@@ -58,6 +59,7 @@ function AttendanceTabs() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="today">Today</TabsTrigger>
           <TabsTrigger value="overtime">Overtime</TabsTrigger>
+          <TabsTrigger value="requests">Requests</TabsTrigger>
           <TabsTrigger value="records">Records</TabsTrigger>
           <TabsTrigger value="reports">Month report</TabsTrigger>
           <TabsTrigger value="staff">Staff</TabsTrigger>
@@ -74,6 +76,9 @@ function AttendanceTabs() {
       </TabsContent>
       <TabsContent value="overtime">
         <OvertimeTab />
+      </TabsContent>
+      <TabsContent value="requests">
+        <RequestsTab />
       </TabsContent>
       <TabsContent value="records">
         <RecordsTab />

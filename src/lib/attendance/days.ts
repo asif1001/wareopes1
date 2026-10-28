@@ -34,10 +34,12 @@ export async function recomputeDay(
   }
 
   const shift = options.shift ?? (await getShift(db, staff.shiftId));
-  const [holidays, eventsSnap, correctionsSnap] = await Promise.all([
+  const [holidays, eventsSnap, correctionsSnap, leaveSnap] = await Promise.all([
     getHolidaySet(db, date, date),
     db.collection(COL.events).where("staffId", "==", staff.id).where("attendanceDate", "==", date).get(),
     db.collection(COL.corrections).where("staffId", "==", staff.id).where("date", "==", date).get(),
+    // Approved leave requests list the days they cover as `${staffId}_${date}`.
+    db.collection(COL.requests).where("leaveKeys", "array-contains", dayId(staff.id, date)).limit(1).get(),
   ]);
 
   const dayType = dayTypeOf(date, rules, holidays);
@@ -47,7 +49,7 @@ export async function recomputeDay(
     rules,
     dayType,
     events: eventsSnap.docs.map((d) => ({ ...(d.data() as AttendanceEvent), id: d.id })),
-    leave: false,
+    leave: !leaveSnap.empty,
     corrections: correctionsSnap.docs.map((d) => ({ ...(d.data() as Correction), id: d.id })),
     now,
   });

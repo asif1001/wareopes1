@@ -44,6 +44,8 @@ export type TokenPayload = {
   did: string;
   typ: TokenType;
   ver: number;
+  /** Client that logged in: Android app (default) or the iPhone web page. */
+  cli?: "android" | "web";
   iat: number;
   exp: number;
   jti: string;
@@ -64,7 +66,7 @@ function sign(data: string, secret: string) {
 }
 
 export function signToken(
-  claims: Pick<TokenPayload, "sub" | "did" | "typ" | "ver">,
+  claims: Pick<TokenPayload, "sub" | "did" | "typ" | "ver" | "cli">,
   ttlSec: number,
   secret: string,
   now = new Date(),

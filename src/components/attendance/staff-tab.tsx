@@ -31,6 +31,7 @@ type FormState = {
   supervisor2Id: string;
   shiftId: string;
   geofenceIds: string[];
+  webCheckin: boolean;
   password: string;
 };
 
@@ -46,6 +47,7 @@ const emptyForm: FormState = {
   supervisor2Id: NONE,
   shiftId: "",
   geofenceIds: [],
+  webCheckin: false,
   password: "",
 };
 
@@ -314,6 +316,7 @@ function StaffDialog({ target, onClose, onSaved }: { target: StaffRow | "new" | 
         supervisor2Id: target.supervisor2Id ?? NONE,
         shiftId: target.shiftId,
         geofenceIds: target.geofenceIds ?? [],
+        webCheckin: !!target.webCheckin,
         password: "",
       });
     } else if (target === "new") {
@@ -338,6 +341,7 @@ function StaffDialog({ target, onClose, onSaved }: { target: StaffRow | "new" | 
       supervisor2Id: form.supervisor2Id === NONE ? null : form.supervisor2Id,
       shiftId: form.shiftId,
       geofenceIds: form.geofenceIds,
+      webCheckin: form.webCheckin,
     };
     try {
       if (isNew) await api("/staff", { method: "POST", body: { ...fields, password: form.password } });
@@ -439,6 +443,15 @@ function StaffDialog({ target, onClose, onSaved }: { target: StaffRow | "new" | 
                 ))}
             </div>
           </div>
+          <label className="flex items-start gap-2 text-sm sm:col-span-2">
+            <Checkbox checked={form.webCheckin} onCheckedChange={(checked) => set("webCheckin", checked === true)} />
+            <span>
+              <span className="font-medium">Allow iPhone check-in</span>
+              <span className="block text-xs text-muted-foreground">
+                Lets this person log in at /checkin on an iPhone (or any browser) and tap IN / OUT. iPhones cannot record automatically. Off = Android app only.
+              </span>
+            </span>
+          </label>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

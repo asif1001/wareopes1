@@ -60,6 +60,8 @@ export type Staff = {
   supervisor2Id: string | null;
   shiftId: string;
   geofenceIds: string[];
+  /** May also check in from an iPhone through the web check-in page (no background recording). */
+  webCheckin?: boolean;
   deviceId: string | null;
   deviceBoundAt: IsoInstant | null;
   active: boolean;
@@ -273,6 +275,8 @@ export type LocationPermission = "ALWAYS" | "WHILE_IN_USE" | "DENIED";
 export type DeviceHealth = {
   staffId: string;
   deviceId: string;
+  /** "web" = iPhone / browser check-in page (no background location). */
+  platform?: "android" | "web";
   lastSync: IsoInstant;
   locationPermission: LocationPermission;
   gpsEnabled: boolean;

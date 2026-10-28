@@ -19,11 +19,12 @@ export const healthSchema = z.object({
   model: z.string().trim().max(64).default(""),
 });
 
-export async function reportDeviceHealth(db: Db, staff: Staff, body: unknown, now: Date) {
+export async function reportDeviceHealth(db: Db, staff: Staff & { client?: "android" | "web" }, body: unknown, now: Date) {
   const parsed = healthSchema.safeParse(body);
   if (!parsed.success) throw badRequest("Invalid device health report");
   const health: DeviceHealth = {
     ...parsed.data,
+    platform: staff.client === "web" ? "web" : "android",
     staffId: staff.id,
     deviceId: staff.deviceId ?? "",
     lastSync: now.toISOString(),
@@ -98,13 +99,15 @@ export function deviceIssues(health: Partial<DeviceHealth> | null, rules: Attend
   const issues: DeviceIssue[] = [];
   const lastSync = health.lastSync ? new Date(health.lastSync).getTime() : 0;
   if (now.getTime() - lastSync > rules.noSyncAlertHours * 3600000) issues.push("NO_SYNC");
-  if (health.locationPermission !== "ALWAYS") issues.push("LOCATION_NOT_ALWAYS");
+  // The iPhone web page never records in the background, so background settings do not apply.
+  const web = health.platform === "web";
+  if (!web && health.locationPermission !== "ALWAYS") issues.push("LOCATION_NOT_ALWAYS");
   if (health.gpsEnabled === false) issues.push("GPS_OFF");
-  if (health.batteryOptimised) issues.push("BATTERY_OPTIMISED");
+  if (!web && health.batteryOptimised) issues.push("BATTERY_OPTIMISED");
   if (health.notificationsEnabled === false) issues.push("NOTIFICATIONS_OFF");
   if (health.mockLocationDetected) issues.push("MOCK_APP");
   if (health.rooted) issues.push("ROOTED");
-  if (health.appVersion && compareVersions(health.appVersion, rules.minAppVersion) < 0) issues.push("APP_OUTDATED");
+  if (!web && health.appVersion && compareVersions(health.appVersion, rules.minAppVersion) < 0) issues.push("APP_OUTDATED");
   return issues;
 }
 
