@@ -320,9 +320,9 @@ function GateScreenButton({ siteId, siteName }: { siteId: string; siteName: stri
           <DialogHeader>
             <DialogTitle>Gate screen · {siteName}</DialogTitle>
             <DialogDescription>
-              Open this link on a tablet or PC at the gate (keep it plugged in and online). It shows a QR code that changes every 30 seconds.
-              Staff tap “Scan site QR” in the app (Android or iPhone) to check in or out when GPS is off or there is no internet on their phone.
-              Late check-outs become overtime claims for approval.
+              Open this link on a tablet or PC at the gate (keep it plugged in and online). It is the gate station for this site:
+              it shows a QR code that changes every 30 seconds for staff to scan with the app, and it reads staff members&apos; own QR
+              (“My QR” in the app) with a USB / Bluetooth QR scanner or the device camera. The first scan of the day is IN, later scans are OUT.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

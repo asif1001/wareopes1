@@ -49,6 +49,8 @@ export type DeviceIssue =
 
 /** A tap this far outside every assigned site usually means a wrong site pin. */
 export const FAR_FROM_SITE_M = 1000;
+/** From this Android app version on there is no background recording. */
+const FIRST_MANUAL_APP_VERSION = "1.2.0";
 const FAR_LOOKBACK_MS = 3 * 24 * 3600 * 1000;
 
 /**

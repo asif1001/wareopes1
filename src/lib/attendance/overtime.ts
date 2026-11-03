@@ -7,7 +7,7 @@ import { badRequest, conflict, forbidden, notFound } from "./errors";
 import { assertDateOpen } from "./locks";
 import { otAutoCloseAt, otMinutes } from "./rules";
 import { COL, getRules, type Db } from "./store";
-import type { AttendanceEvent, OvertimeRequest, OvertimeStatus } from "./types";
+import { SYSTEM_APPROVER, type AttendanceEvent, type OvertimeRequest, type OvertimeStatus } from "./types";
 
 export const decisionSchema = z
   .object({
@@ -21,6 +21,10 @@ export const decisionSchema = z
   });
 
 const UNDECIDED: OvertimeStatus[] = ["PENDING", "AUTO_CLOSED"];
+
+/** Undecided, or approved automatically and not yet reviewed by a person. */
+export const isOpenForDecision = (ot: Pick<OvertimeRequest, "status" | "approverId">) =>
+  UNDECIDED.includes(ot.status) || (ot.status === "APPROVED" && ot.approverId === SYSTEM_APPROVER);
 
 export async function getOvertime(db: Db, id: string): Promise<OvertimeRequest> {
   const snap = await db.collection(COL.overtime).doc(id).get();
@@ -43,7 +47,7 @@ export async function decideOvertime(db: Db, actor: Actor, id: string, body: unk
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const current = { ...(snap.data() as OvertimeRequest), id };
-    if (!UNDECIDED.includes(current.status)) throw conflict("This overtime has already been decided");
+    if (!isOpenForDecision(current)) throw conflict("This overtime has already been decided");
     if (!current.otOut) throw conflict("Overtime is still in progress");
 
     const updates: Partial<OvertimeRequest> = {

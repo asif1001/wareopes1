@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { StationPanel } from "./station-panel";
 
 type Gate = { siteName: string; svg: string; expiresAt: string; serverTime: string };
 
@@ -85,9 +86,11 @@ export function GateScreen({ site, gateKey }: { site: string; gateKey: string })
     else void document.documentElement.requestFullscreen?.().catch(() => undefined);
   };
 
+  const qrSize = "w-[min(52vh,40vw)] max-lg:w-[min(60vh,80vw)]";
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between bg-[#0B3A6F] px-6 py-6 text-white select-none">
-      <header className="flex w-full max-w-5xl items-center justify-between">
+    <main className="flex min-h-screen flex-col items-center justify-between gap-4 bg-[#0B3A6F] px-6 py-5 text-white select-none">
+      <header className="flex w-full max-w-6xl items-center justify-between">
         <div>
           <div className="text-sm uppercase tracking-[0.2em] text-white/60">EKK Attendance</div>
           <div className="text-2xl font-semibold sm:text-3xl">{gate?.siteName ?? (error ? "Gate screen" : "Loading…")}</div>
@@ -100,38 +103,47 @@ export function GateScreen({ site, gateKey }: { site: string; gateKey: string })
         </div>
       </header>
 
-      <section className="flex flex-1 flex-col items-center justify-center gap-5 py-6">
-        {error ? (
+      {error ? (
+        <section className="flex flex-1 items-center justify-center">
           <div className="max-w-lg rounded-2xl bg-white/10 p-8 text-center text-lg">{error}</div>
-        ) : gate && !stale ? (
-          <>
-            <div
-              className="aspect-square w-[min(70vh,80vw)] rounded-3xl bg-white p-4 shadow-2xl [&>svg]:h-full [&>svg]:w-full"
-              aria-label="Check-in QR code"
-              dangerouslySetInnerHTML={{ __html: gate.svg }}
-            />
-            <div className="h-2 w-[min(70vh,80vw)] overflow-hidden rounded-full bg-white/15">
-              <div
-                className="h-full rounded-full bg-[#1764E8] transition-[width] duration-1000 ease-linear"
-                style={{ width: `${Math.max(0, Math.min(100, (msLeft / 30_000) * 100))}%` }}
-              />
+        </section>
+      ) : (
+        <section className="grid w-full max-w-6xl flex-1 items-center gap-8 lg:grid-cols-2">
+          <div className="flex flex-col items-center gap-4">
+            <div className="text-xl font-semibold sm:text-2xl">1 · Scan this with the app</div>
+            {gate && !stale ? (
+              <>
+                <div
+                  className={`aspect-square ${qrSize} rounded-3xl bg-white p-4 shadow-2xl [&>svg]:h-full [&>svg]:w-full`}
+                  aria-label="Check-in QR code"
+                  dangerouslySetInnerHTML={{ __html: gate.svg }}
+                />
+                <div className={`h-2 ${qrSize} overflow-hidden rounded-full bg-white/15`}>
+                  <div
+                    className="h-full rounded-full bg-[#1764E8] transition-[width] duration-1000 ease-linear"
+                    style={{ width: `${Math.max(0, Math.min(100, (msLeft / 30_000) * 100))}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="max-w-lg rounded-2xl bg-white/10 p-8 text-center text-lg">
+                {stale ? "No connection — the code cannot be refreshed. Check this screen's internet." : "Loading the check-in code…"}
+              </div>
+            )}
+            <div className="max-w-md text-center text-base text-white/75">
+              Open EKK Attendance and tap <b>Scan site QR</b>. The code changes every 30 seconds — photos of it will not work later.
             </div>
-          </>
-        ) : (
-          <div className="max-w-lg rounded-2xl bg-white/10 p-8 text-center text-lg">
-            {stale ? "No connection — the code cannot be refreshed. Check this screen's internet." : "Loading the check-in code…"}
           </div>
-        )}
-        {offline && !error && <div className="rounded-full bg-amber-500/90 px-4 py-1 text-sm font-medium text-black">Connection lost — reconnecting…</div>}
-      </section>
+          <div className="flex flex-col items-center gap-4">
+            <div className="text-xl font-semibold sm:text-2xl">2 · Or show your QR</div>
+            <StationPanel site={site} gateKey={gateKey} />
+          </div>
+        </section>
+      )}
 
-      <footer className="flex w-full max-w-5xl flex-col items-center gap-3 text-center">
-        <div className="text-xl font-medium sm:text-2xl">Scan to check in or out</div>
-        <div className="max-w-3xl text-base text-white/75 sm:text-lg">
-          Open EKK Attendance on your phone (Android app or iPhone check-in page) and tap <b>Scan site QR</b>. The code changes every 30
-          seconds — photos of it will not work later.
-        </div>
-        <button type="button" onClick={fullscreen} className="mt-1 rounded-full border border-white/30 px-4 py-1.5 text-sm text-white/80 hover:bg-white/10">
+      <footer className="flex w-full max-w-6xl flex-col items-center gap-2 text-center">
+        {offline && !error && <div className="rounded-full bg-amber-500/90 px-4 py-1 text-sm font-medium text-black">Connection lost — reconnecting…</div>}
+        <button type="button" onClick={fullscreen} className="rounded-full border border-white/30 px-4 py-1.5 text-sm text-white/80 hover:bg-white/10">
           Full screen
         </button>
       </footer>

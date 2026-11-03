@@ -87,8 +87,11 @@ export type StaffPublic = Omit<Staff, "pinHash" | "pinFailures" | "pinLockedUnti
 export const EVENT_TYPES = ["IN", "OUT", "OT_IN", "OT_OUT"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
-/** QR = scanned the rotating code on the site gate screen (proves presence without GPS). */
-export const EVENT_SOURCES = ["AUTO", "MANUAL", "QR", "CORRECTION"] as const;
+/**
+ * AUTO = recorded in the background by app 1.1 and older. MANUAL = tapped in the app with GPS.
+ * QR = staff scanned the site gate screen. STATION = the gate station scanned the staff member's own QR.
+ */
+export const EVENT_SOURCES = ["AUTO", "MANUAL", "QR", "STATION", "CORRECTION"] as const;
 export type EventSource = (typeof EVENT_SOURCES)[number];
 
 export const EVENT_TRIGGERS = [
@@ -99,6 +102,7 @@ export const EVENT_TRIGGERS = [
   "NOTIFICATION_TAP",
   "USER_TAP",
   "QR_SCAN",
+  "STATION_SCAN",
 ] as const;
 export type EventTrigger = (typeof EVENT_TRIGGERS)[number];
 
@@ -145,10 +149,13 @@ export type EventFlag =
   | "FUTURE_TIME"
   | "MANUAL"
   | "LOCKED_MONTH"
-  /** Gate QR scanned but not valid (old screenshot, wrong site, tampered) — treated as a manual record. */
+  /** Gate QR scanned but not valid (old screenshot, wrong site, tampered). */
   | "QR_INVALID"
-  /** Overtime created automatically from a check-out long after the shift ended. */
+  /** Overtime created automatically from a late check-out (or off-day work). */
   | "AUTO_DETECTED";
+
+/** approverId of overtime approved automatically; a supervisor can still reject or edit it. */
+export const SYSTEM_APPROVER = "system";
 
 export const DAY_STATUSES = [
   "PRESENT",

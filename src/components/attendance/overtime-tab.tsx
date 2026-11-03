@@ -12,14 +12,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { OvertimeEventSummary } from "@/lib/attendance/overtime";
-import type { OvertimeRequest } from "@/lib/attendance/types";
+import { SYSTEM_APPROVER, type OvertimeRequest } from "@/lib/attendance/types";
 import { api, errorMessage } from "./api";
 import { useAttendance } from "./context";
 import { FlagBadges } from "./day-review-dialog";
 import { fmtDateTime, fmtMinutes, fmtTime, mapsLink, thisMonth } from "./format";
 
 type OtRow = OvertimeRequest & { inEvent: OvertimeEventSummary | null; outEvent: OvertimeEventSummary | null };
-type Filter = "WAITING" | "PENDING" | "AUTO_CLOSED" | "APPROVED" | "REJECTED" | "ALL";
+type Filter = "WAITING" | "AUTO_APPROVED" | "PENDING" | "AUTO_CLOSED" | "APPROVED" | "REJECTED" | "ALL";
+
+const autoApproved = (o: OvertimeRequest) => o.status === "APPROVED" && o.approverId === SYSTEM_APPROVER;
+/** Can still be decided: waiting, or approved automatically and not yet reviewed. */
+const reviewable = (o: OvertimeRequest) => !!o.otOut && (o.status === "PENDING" || o.status === "AUTO_CLOSED" || autoApproved(o));
 
 export function OvertimeTab() {
   const { staffById, manages, me, userName } = useAttendance();
@@ -33,10 +37,14 @@ export function OvertimeTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const status = filter === "ALL" || filter === "WAITING" ? "" : `&status=${filter}`;
+      const status = filter === "ALL" || filter === "WAITING" ? "" : `&status=${filter === "AUTO_APPROVED" ? "APPROVED" : filter}`;
       const res = await api<{ items: OtRow[] }>(`/overtime?month=${month}${status}`);
       setItems(
-        filter === "WAITING" ? res.items.filter((o) => (o.status === "PENDING" || o.status === "AUTO_CLOSED")) : res.items,
+        filter === "WAITING"
+          ? res.items.filter((o) => o.status === "PENDING" || o.status === "AUTO_CLOSED")
+          : filter === "AUTO_APPROVED"
+            ? res.items.filter(autoApproved)
+            : res.items,
       );
     } catch (error) {
       toast({ variant: "destructive", title: "Could not load overtime", description: errorMessage(error) });
@@ -64,6 +72,7 @@ export function OvertimeTab() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="WAITING">Waiting for decision</SelectItem>
+              <SelectItem value="AUTO_APPROVED">Auto-approved (not reviewed)</SelectItem>
               <SelectItem value="AUTO_CLOSED">Auto-closed</SelectItem>
               <SelectItem value="APPROVED">Approved</SelectItem>
               <SelectItem value="REJECTED">Rejected</SelectItem>
@@ -112,7 +121,7 @@ export function OvertimeTab() {
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
                     <Badge variant={o.status === "APPROVED" ? "default" : o.status === "REJECTED" ? "outline" : "destructive"}>
-                      {o.status.replace("_", " ")}
+                      {autoApproved(o) ? "AUTO-APPROVED" : o.status.replace("_", " ")}
                     </Badge>
                     {o.escalatedAt && !o.decidedAt && <Badge variant="destructive">Over 48 h</Badge>}
                     {o.reminderAt && !o.escalatedAt && !o.decidedAt && <Badge variant="secondary">Over 24 h</Badge>}
@@ -121,7 +130,7 @@ export function OvertimeTab() {
                 <TableCell className="max-w-[200px] truncate text-xs">{o.reason || "—"}</TableCell>
                 <TableCell>
                   <Button size="sm" variant="outline" onClick={() => setSelected(o)}>
-                    {manages(staff) && me?.canApprove && o.otOut && (o.status === "PENDING" || o.status === "AUTO_CLOSED") ? "Review" : "View"}
+                    {manages(staff) && me?.canApprove && reviewable(o) ? "Review" : "View"}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -170,7 +179,8 @@ function DecisionDialog({
     setMinutes(ot?.minutes != null ? String(ot.minutes) : "");
   }, [ot]);
 
-  const undecided = ot && ot.otOut && (ot.status === "PENDING" || ot.status === "AUTO_CLOSED");
+  const undecided = !!ot && reviewable(ot);
+  const isAuto = !!ot && autoApproved(ot);
 
   async function decide(action: "APPROVE" | "REJECT" | "EDIT") {
     if (!ot) return;
@@ -180,7 +190,7 @@ function DecisionDialog({
         method: "POST",
         body: { action, note, ...(action === "EDIT" ? { minutes: Number(minutes) } : {}) },
       });
-      toast({ title: action === "REJECT" ? "Overtime rejected" : "Overtime approved" });
+      toast({ title: action === "REJECT" ? "Overtime rejected" : isAuto && action === "APPROVE" ? "Overtime confirmed" : "Overtime approved" });
       onDone();
     } catch (error) {
       toast({ variant: "destructive", title: "Could not save", description: errorMessage(error) });
@@ -208,11 +218,13 @@ function DecisionDialog({
               <EventCard title={`OT Out ${fmtDateTime(ot.otOut)}`} event={ot.outEvent} showPhoto={showPhotos} />
             </div>
             <div className="text-sm">
-              <span className="font-medium">Reason from staff:</span> {ot.reason || "—"}
+              <span className="font-medium">{ot.flags?.includes("AUTO_DETECTED") ? "Details:" : "Reason from staff:"}</span> {ot.reason || "—"}
             </div>
             {ot.decidedAt && (
               <div className="rounded-md bg-muted p-3 text-sm">
-                {ot.status} by {userName(ot.approverId)} on {fmtDateTime(ot.decidedAt)} — {ot.decisionNote}
+                {isAuto
+                  ? `Approved automatically on ${fmtDateTime(ot.decidedAt)}. You can still reject it or change the minutes.`
+                  : `${ot.status} by ${userName(ot.approverId)} on ${fmtDateTime(ot.decidedAt)} — ${ot.decisionNote}`}
               </div>
             )}
             {canDecide && undecided && (
@@ -238,7 +250,7 @@ function DecisionDialog({
             </Button>
             <Button disabled={saving || note.trim().length < 3} onClick={() => void decide(edited ? "EDIT" : "APPROVE")}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {edited ? `Approve ${fmtMinutes(Number(minutes))} h` : "Approve"}
+              {edited ? `Approve ${fmtMinutes(Number(minutes))} h` : isAuto ? "Confirm" : "Approve"}
             </Button>
           </DialogFooter>
         )}

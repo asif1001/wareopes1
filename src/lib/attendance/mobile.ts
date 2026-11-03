@@ -1,4 +1,5 @@
 import { CONSENT_VERSION } from "./config";
+import { badgeKey, GATE_SLOT_SEC } from "./gate";
 import { dayTypeOf, shiftWindows } from "./rules";
 import { COL, dayId, getGeofencesFor, getHolidaySet, getRules, getShift, type Db } from "./store";
 import { addDays, isValidMonth, localDateOf } from "./time";
@@ -65,6 +66,8 @@ export async function getMobileProfile(db: Db, staff: Staff, now: Date) {
     openOvertime: openSnap.empty ? null : ({ ...openSnap.docs[0].data(), id: openSnap.docs[0].id } as OvertimeRequest),
     consent: { required: staff.consentVersion !== CONSENT_VERSION, version: CONSENT_VERSION, acceptedAt: staff.consentAt },
     app: appVersionInfo(rules),
+    /** Key for the rotating "My QR" code the phone shows at the gate station (made offline on the phone). */
+    badge: { key: badgeKey(staff), slotSec: GATE_SLOT_SEC },
     serverTime: now.toISOString(),
   };
 }
