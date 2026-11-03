@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { AttendanceProvider, useAttendance } from "./context";
+import { GateTab, useGateSites } from "./gate-tab";
 import { OverviewTab } from "./overview-tab";
 import { OvertimeTab } from "./overtime-tab";
 import { RecordsTab } from "./records-tab";
@@ -33,6 +34,7 @@ export function AttendanceClientPage() {
 function AttendanceTabs() {
   const { me, loading, error } = useAttendance();
   const [tab, setTab] = useState("overview");
+  const showGate = useGateSites().length > 0;
 
   if (loading) {
     return (
@@ -57,6 +59,7 @@ function AttendanceTabs() {
       <div className="flex flex-wrap items-center gap-2">
         <TabsList className="flex-wrap">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          {showGate && <TabsTrigger value="gate">Gate</TabsTrigger>}
           <TabsTrigger value="today">Today</TabsTrigger>
           <TabsTrigger value="overtime">Overtime</TabsTrigger>
           <TabsTrigger value="requests">Requests</TabsTrigger>
@@ -71,6 +74,11 @@ function AttendanceTabs() {
       <TabsContent value="overview">
         <OverviewTab onOpenOvertime={() => setTab("overtime")} />
       </TabsContent>
+      {showGate && (
+        <TabsContent value="gate">
+          <GateTab />
+        </TabsContent>
+      )}
       <TabsContent value="today">
         <TodayTab />
       </TabsContent>

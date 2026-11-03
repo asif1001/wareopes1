@@ -1,17 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Crosshair, ExternalLink, Loader2, Plus, QrCode, RefreshCw, Trash2 } from "lucide-react";
+import { Crosshair, Loader2, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { api, errorMessage } from "./api";
 import { useAttendance } from "./context";
 import { mapsLink } from "./format";
+import { GateSiteActions, useGateSites } from "./gate-tab";
 import { ReminderSetupCard } from "./reminder-setup-card";
 import { Field, Pick } from "./staff-tab";
 
@@ -195,6 +195,7 @@ function ShiftsCard() {
 
 function GeofencesCard() {
   const { geofences, me } = useAttendance();
+  const gateSites = new Set(useGateSites().map((g) => g.id));
   const { run, saving } = useSave();
   const { toast } = useToast();
   const [form, setForm] = useState({ name: "", lat: "", lng: "", radiusM: "200" });
@@ -271,7 +272,7 @@ function GeofencesCard() {
                 </TableCell>
                 <TableCell>{g.radiusM} m</TableCell>
                 <TableCell className="text-right">
-                  {me?.isAdmin && g.active && <GateScreenButton siteId={g.id} siteName={g.name} />}
+                  {gateSites.has(g.id) && <GateSiteActions siteId={g.id} compact />}
                   <ActiveToggle entity="geofences" id={g.id} active={g.active} />
                 </TableCell>
               </TableRow>
@@ -280,77 +281,6 @@ function GeofencesCard() {
         </Table>
       </CardContent>
     </Card>
-  );
-}
-
-/** Admin only: the link for the rotating check-in QR shown on a screen at this site's gate. */
-function GateScreenButton({ siteId, siteName }: { siteId: string; siteName: string }) {
-  const { toast } = useToast();
-  const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function load(regenerate: boolean) {
-    setBusy(true);
-    try {
-      const res = await api<{ url: string }>("/gate-key", { method: "POST", body: { site: siteId, regenerate } });
-      setUrl(res.url);
-      if (regenerate) toast({ title: "New gate link created", description: "The old link has stopped working. Open the new one on the gate screen." });
-    } catch (error) {
-      toast({ variant: "destructive", title: "Could not get the gate link", description: errorMessage(error) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={() => {
-          setOpen(true);
-          if (!url) void load(false);
-        }}
-      >
-        <QrCode className="mr-1 h-4 w-4" /> Gate screen
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Gate screen · {siteName}</DialogTitle>
-            <DialogDescription>
-              Open this link on a tablet or PC at the gate (keep it plugged in and online). It is the gate station for this site:
-              it shows a QR code that changes every 30 seconds for staff to scan with the app, and it reads staff members&apos; own QR
-              (“My QR” in the app) with a USB / Bluetooth QR scanner or the device camera. The first scan of the day is IN, later scans are OUT.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <code className="block break-all rounded bg-muted px-2 py-1.5 text-xs">{url ?? (busy ? "Loading…" : "—")}</code>
-            <p className="text-xs text-muted-foreground">
-              Keep this link private: anyone with it can show this site&apos;s check-in code. If it leaks, create a new link.
-            </p>
-          </div>
-          <DialogFooter className="gap-2 sm:justify-between">
-            <Button variant="outline" disabled={busy} onClick={() => void load(true)}>
-              {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />} New link
-            </Button>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                disabled={!url}
-                onClick={() => url && void navigator.clipboard.writeText(url).then(() => toast({ title: "Gate link copied" }))}
-              >
-                <Copy className="mr-1 h-4 w-4" /> Copy
-              </Button>
-              <Button disabled={!url} onClick={() => url && window.open(url, "_blank", "noopener")}>
-                <ExternalLink className="mr-1 h-4 w-4" /> Open
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
   );
 }
 
