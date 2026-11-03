@@ -61,9 +61,16 @@ function normalize(entity: SetupEntity, data: Record<string, unknown>) {
   return data;
 }
 
+/** Gate screen display keys never leave the server except through the gate-key endpoint. */
+function withoutSecrets(data: Record<string, unknown> | undefined | null) {
+  if (!data) return data ?? null;
+  const { gateKey, ...rest } = data;
+  return "gateKey" in data ? { ...rest, hasGateScreen: !!gateKey } : rest;
+}
+
 export async function listSetup(db: Db, entity: SetupEntity) {
   const snap = await db.collection(collectionFor[entity]).get();
-  return snap.docs.map((d) => ({ ...d.data(), id: d.id })) as (Contractor | Shift | Geofence | (Holiday & { id: string }))[];
+  return snap.docs.map((d) => ({ ...withoutSecrets(d.data()), id: d.id })) as (Contractor | Shift | Geofence | (Holiday & { id: string }))[];
 }
 
 export async function createSetup(db: Db, actor: Actor, entity: SetupEntity, body: unknown, now: Date) {
@@ -104,8 +111,8 @@ export async function updateSetup(db: Db, actor: Actor, entity: SetupEntity, id:
     await assertSiteUnused(db, id);
   }
   await ref.set(after);
-  await writeAudit(db, { who: actor.userId, what: "UPDATED", entity: collectionFor[entity], entityId: id, before, after }, now);
-  return { ...after, id };
+  await writeAudit(db, { who: actor.userId, what: "UPDATED", entity: collectionFor[entity], entityId: id, before: withoutSecrets(before), after: withoutSecrets(after) }, now);
+  return { ...withoutSecrets(after), id };
 }
 
 /** A site that active staff still use cannot be switched off (their phones would lose it silently). */
@@ -128,7 +135,7 @@ export async function removeSetup(db: Db, actor: Actor, entity: SetupEntity, id:
   else await ref.update({ active: false });
   await writeAudit(
     db,
-    { who: actor.userId, what: entity === "holidays" ? "DELETED" : "DEACTIVATED", entity: collectionFor[entity], entityId: id, before, after: null },
+    { who: actor.userId, what: entity === "holidays" ? "DELETED" : "DEACTIVATED", entity: collectionFor[entity], entityId: id, before: withoutSecrets(before), after: null },
     now,
   );
 }

@@ -64,6 +64,8 @@ export const FLAG_LABELS: Record<string, string> = {
   FUTURE_TIME: "Future time",
   MANUAL: "Manual",
   LOCKED_MONTH: "Locked month",
+  QR_INVALID: "Invalid gate QR",
+  AUTO_DETECTED: "Auto-detected",
 };
 
 export const DEVICE_ISSUE_LABELS: Record<string, string> = {

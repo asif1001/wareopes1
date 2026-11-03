@@ -32,6 +32,8 @@ export type Geofence = {
   lng: number;
   radiusM: number;
   active: boolean;
+  /** Display key in the gate screen link (server only; never sent to clients). */
+  gateKey?: string;
 };
 
 export type HolidayType = "PUBLIC" | "COMPANY";
@@ -85,7 +87,8 @@ export type StaffPublic = Omit<Staff, "pinHash" | "pinFailures" | "pinLockedUnti
 export const EVENT_TYPES = ["IN", "OUT", "OT_IN", "OT_OUT"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
-export const EVENT_SOURCES = ["AUTO", "MANUAL", "CORRECTION"] as const;
+/** QR = scanned the rotating code on the site gate screen (proves presence without GPS). */
+export const EVENT_SOURCES = ["AUTO", "MANUAL", "QR", "CORRECTION"] as const;
 export type EventSource = (typeof EVENT_SOURCES)[number];
 
 export const EVENT_TRIGGERS = [
@@ -95,6 +98,7 @@ export const EVENT_TRIGGERS = [
   "SCHEDULED",
   "NOTIFICATION_TAP",
   "USER_TAP",
+  "QR_SCAN",
 ] as const;
 export type EventTrigger = (typeof EVENT_TRIGGERS)[number];
 
@@ -140,7 +144,11 @@ export type EventFlag =
   | "CLOCK_DRIFT"
   | "FUTURE_TIME"
   | "MANUAL"
-  | "LOCKED_MONTH";
+  | "LOCKED_MONTH"
+  /** Gate QR scanned but not valid (old screenshot, wrong site, tampered) — treated as a manual record. */
+  | "QR_INVALID"
+  /** Overtime created automatically from a check-out long after the shift ended. */
+  | "AUTO_DETECTED";
 
 export const DAY_STATUSES = [
   "PRESENT",

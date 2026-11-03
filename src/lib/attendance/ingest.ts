@@ -1,10 +1,12 @@
+import type { Transaction } from "firebase-admin/firestore";
 import { z } from "zod";
 import { MAX_EVENTS_PER_SYNC, type AttendanceRules } from "./config";
 import { recomputeDay } from "./days";
 import { badRequest } from "./errors";
-import { matchGeofence } from "./geo";
+import { verifyGateCode } from "./gate";
+import { haversineMeters, matchGeofence } from "./geo";
 import { getMonthLockState } from "./locks";
-import { attendanceDateFor, checkOtIn, dayTypeOf, otAutoCloseAt, otMinutes, rateTypeFor } from "./rules";
+import { attendanceDateFor, checkOtIn, dayTypeOf, otAutoCloseAt, otMinutes, rateTypeFor, shiftWindows } from "./rules";
 import { COL, eventId, getGeofencesFor, getHolidaySet, getRules, getShift, type Db } from "./store";
 import { monthOf } from "./time";
 import {
@@ -24,7 +26,7 @@ const idPattern = /^[A-Za-z0-9_-]{8,64}$/;
 export const incomingEventSchema = z.object({
   clientEventId: z.string().regex(idPattern),
   type: z.enum(EVENT_TYPES),
-  source: z.enum(["AUTO", "MANUAL"]),
+  source: z.enum(["AUTO", "MANUAL", "QR"]),
   trigger: z.enum(EVENT_TRIGGERS),
   deviceTime: z.string().datetime({ offset: true }),
   lat: z.number().min(-90).max(90).nullable(),
@@ -34,6 +36,8 @@ export const incomingEventSchema = z.object({
   rooted: z.boolean().default(false),
   photoRef: z.string().regex(idPattern).nullable().default(null),
   reason: z.string().trim().max(500).optional(),
+  /** Code scanned from the site gate screen (or its URL). */
+  gateCode: z.string().trim().max(400).optional(),
 });
 
 export type IncomingEvent = z.infer<typeof incomingEventSchema>;
@@ -78,13 +82,35 @@ function prepare(input: IncomingEvent, ctx: Context): Prepared {
     effective = now;
   }
 
-  const match = matchGeofence(input.lat, input.lng, input.accuracyM, geofences);
-  if (input.lat == null || input.lng == null) flags.add("NO_LOCATION");
-  else if (!match.inside) flags.add("OUTSIDE_GEOFENCE");
-  if (input.accuracyM != null && input.accuracyM > rules.poorAccuracyM) flags.add("POOR_ACCURACY");
+  let match = matchGeofence(input.lat, input.lng, input.accuracyM, geofences);
+  let source: AttendanceEvent["source"] = input.source;
+  let qrVerified = false;
+  if (input.source === "QR" || input.gateCode) {
+    // Checked against the corrected scan time, so a code scanned offline is still valid when it arrives later.
+    const check = input.gateCode ? verifyGateCode(input.gateCode, effective, geofences) : null;
+    if (check?.ok) {
+      qrVerified = true;
+      source = "QR";
+      const site = geofences.find((g) => g.id === check.siteId)!;
+      const distanceM = input.lat != null && input.lng != null ? Math.round(haversineMeters(input.lat, input.lng, site.lat, site.lng)) : null;
+      match = { geofenceId: site.id, distanceM, inside: true };
+      // A reliable fix far from the gate suggests the code was relayed (photo sent to someone elsewhere).
+      if (distanceM != null && (input.accuracyM ?? 0) <= QR_RELAY_MAX_ACCURACY_M && distanceM > Math.max(QR_RELAY_DISTANCE_M, site.radiusM * 3)) {
+        flags.add("OUTSIDE_GEOFENCE");
+      }
+    } else {
+      flags.add("QR_INVALID");
+      if (source === "QR") source = "MANUAL";
+    }
+  }
+  if (!qrVerified) {
+    if (input.lat == null || input.lng == null) flags.add("NO_LOCATION");
+    else if (!match.inside) flags.add("OUTSIDE_GEOFENCE");
+    if (input.accuracyM != null && input.accuracyM > rules.poorAccuracyM) flags.add("POOR_ACCURACY");
+  }
   if (input.mockLocation) flags.add("MOCK_LOCATION");
   if (input.rooted) flags.add("ROOTED");
-  if (input.source === "MANUAL") flags.add("MANUAL");
+  if (source === "MANUAL") flags.add("MANUAL");
 
   const id = eventId(staff.id, input.clientEventId);
   return {
@@ -95,7 +121,7 @@ function prepare(input: IncomingEvent, ctx: Context): Prepared {
       staffId: staff.id,
       deviceId: staff.deviceId ?? "",
       type: input.type,
-      source: input.source,
+      source,
       trigger: input.trigger,
       deviceTime: new Date(input.deviceTime).toISOString(),
       receivedAt: now.toISOString(),
@@ -287,7 +313,84 @@ async function storeEvent(
       }
     }
 
+    if (event.type === "OUT") await autoOvertimeFromLateOut(db, tx, event, ctx, holidays);
+
     tx.create(ref, event);
     return { ...base, attendanceDate: event.attendanceDate, status: "ACCEPTED" };
   });
+}
+
+/** QR scan + a GPS fix at least this good and this far from the site = flag for review. */
+const QR_RELAY_MAX_ACCURACY_M = 300;
+const QR_RELAY_DISTANCE_M = 1000;
+
+const localTime = (iso: string | Date, timeZone: string) =>
+  new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
+
+/**
+ * A check-out well after the shift ended (QR scan, tap, or geofence exit) means the staff
+ * member worked on: create — or extend — an overtime claim for the supervisor to approve.
+ * Never touches overtime the staff member started with OT In.
+ */
+async function autoOvertimeFromLateOut(db: Db, tx: Transaction, event: AttendanceEvent, ctx: Context, holidays: ReadonlySet<string>) {
+  const dayType = dayTypeOf(event.attendanceDate, ctx.rules, holidays);
+  if (dayType !== "WORKDAY") return;
+  const w = shiftWindows(event.attendanceDate, ctx.shift, ctx.rules);
+  const out = new Date(event.effectiveTime);
+  const otIn = w.otAllowedFrom;
+  if (out.getTime() <= otIn.getTime()) return;
+  const cutoff = otAutoCloseAt(otIn, ctx.rules);
+  const capped = out.getTime() > cutoff.getTime();
+  const otOut = capped ? cutoff : out;
+  const minutes = otMinutes(otIn, otOut, ctx.rules);
+  if (minutes <= 0) return;
+
+  const existingSnap = await tx.get(
+    db.collection(COL.overtime).where("staffId", "==", ctx.staff.id).where("date", "==", event.attendanceDate),
+  );
+  const existing = existingSnap.docs.map((d) => ({ ...(d.data() as OvertimeRequest), id: d.id }));
+  const reason = `Auto-detected: checked out at ${localTime(out, ctx.rules.timezone)}, shift ended ${localTime(w.end, ctx.rules.timezone)}.`;
+  const auto = existing.find((o) => o.flags?.includes("AUTO_DETECTED"));
+  if (existing.some((o) => !o.flags?.includes("AUTO_DETECTED"))) return;
+  if (auto) {
+    if (auto.status !== "PENDING" || !auto.otOut || Date.parse(auto.otOut) >= otOut.getTime()) return;
+    tx.update(db.collection(COL.overtime).doc(auto.id), {
+      otOut: otOut.toISOString(),
+      otOutEventId: event.id,
+      claimedMinutes: minutes,
+      minutes,
+      reason,
+      autoClosed: capped,
+    });
+    return;
+  }
+  const ot: Omit<OvertimeRequest, "id"> = {
+    staffId: ctx.staff.id,
+    contractorId: ctx.staff.contractorId,
+    supervisorId: ctx.staff.supervisorId,
+    supervisor2Id: ctx.staff.supervisor2Id ?? null,
+    date: event.attendanceDate,
+    month: monthOf(event.attendanceDate),
+    dayType,
+    rateType: rateTypeFor(event.attendanceDate, dayType, ctx.rules),
+    otIn: otIn.toISOString(),
+    otOut: otOut.toISOString(),
+    otInEventId: event.id,
+    otOutEventId: event.id,
+    inPhotoRef: null,
+    outPhotoRef: event.photoRef,
+    claimedMinutes: minutes,
+    minutes,
+    reason,
+    status: "PENDING",
+    autoClosed: capped,
+    flags: Array.from(new Set<EventFlag>(["AUTO_DETECTED", ...event.flags])).sort(),
+    approverId: null,
+    decidedAt: null,
+    decisionNote: null,
+    reminderAt: null,
+    escalatedAt: null,
+    createdAt: ctx.now.toISOString(),
+  };
+  tx.create(db.collection(COL.overtime).doc(`auto_${event.id}`), ot);
 }
