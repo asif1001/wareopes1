@@ -100,12 +100,14 @@ export function deviceIssues(health: Partial<DeviceHealth> | null, rules: Attend
   if (!health || !health.reportedAt) return ["NO_DATA"];
   const issues: DeviceIssue[] = [];
   const lastSync = health.lastSync ? new Date(health.lastSync).getTime() : 0;
-  if (now.getTime() - lastSync > rules.noSyncAlertHours * 3600000) issues.push("NO_SYNC");
-  // The iPhone web page never records in the background, so background settings do not apply.
+  // The iPhone page and app 1.2+ never record in the background (staff tap or scan), so
+  // background settings — and long gaps between syncs — do not matter for them.
   const web = health.platform === "web";
-  if (!web && health.locationPermission !== "ALWAYS") issues.push("LOCATION_NOT_ALWAYS");
-  if (health.gpsEnabled === false) issues.push("GPS_OFF");
-  if (!web && health.batteryOptimised) issues.push("BATTERY_OPTIMISED");
+  const background = !web && !!health.appVersion && compareVersions(health.appVersion, FIRST_MANUAL_APP_VERSION) < 0;
+  if (background && now.getTime() - lastSync > rules.noSyncAlertHours * 3600000) issues.push("NO_SYNC");
+  if (background && health.locationPermission !== "ALWAYS") issues.push("LOCATION_NOT_ALWAYS");
+  if (background && health.gpsEnabled === false) issues.push("GPS_OFF");
+  if (background && health.batteryOptimised) issues.push("BATTERY_OPTIMISED");
   if (health.notificationsEnabled === false) issues.push("NOTIFICATIONS_OFF");
   if (health.mockLocationDetected) issues.push("MOCK_APP");
   if (health.rooted) issues.push("ROOTED");

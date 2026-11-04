@@ -1,19 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Eye, EyeOff, Loader2, Plus } from "lucide-react";
+import { Eye, EyeOff, Loader2, Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { api, errorMessage } from "./api";
 import { useAttendance, type StaffRow } from "./context";
 import { DEVICE_ISSUE_LABELS, fmtDateTime, todayLocal } from "./format";
+import { EmptyRow, RowActions, matches } from "./section-layout";
 
 const NONE = "__none__";
 const PASSWORD_MIN = 4;
@@ -70,29 +73,54 @@ function ExpiryLine({ label, date }: { label: string; date: string | null | unde
   );
 }
 
+type StatusFilter = "all" | "active" | "blocked" | "problems" | "no-phone";
+const ALL = "__all__";
+
 export function StaffTab() {
-  const { staff, contractors, shifts, geofences, approvers, me, manages, userName, contractorName, reload } = useAttendance();
+  const { staff, contractors, shifts, geofences, me, manages, userName, contractorName, reload } = useAttendance();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [company, setCompany] = useState(ALL);
+  const [site, setSite] = useState(ALL);
+  const [supervisor, setSupervisor] = useState(ALL);
+  const [status, setStatus] = useState<StatusFilter>("all");
   const [showDeleted, setShowDeleted] = useState(false);
   const [editing, setEditing] = useState<StaffRow | "new" | null>(null);
   const [passwordFor, setPasswordFor] = useState<StaffRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return [...staff]
-      .filter((s) => showDeleted || !s.deleted)
-      .filter(
-        (s) =>
-          !q ||
-          s.staffCode.toLowerCase().includes(q) ||
-          s.name.toLowerCase().includes(q) ||
-          (s.cprNo ?? "").includes(q) ||
-          (s.phone ?? "").replace(/\s/g, "").includes(q.replace(/\s/g, "")),
-      )
-      .sort((a, b) => Number(!!a.deleted) - Number(!!b.deleted) || Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
-  }, [staff, search, showDeleted]);
+  const issuesOf = (s: StaffRow) => s.deviceIssues.filter((i) => s.deviceId || i !== "NO_DATA");
+  const rows = useMemo(
+    () =>
+      [...staff]
+        .filter((s) => showDeleted || !s.deleted)
+        .filter((s) => company === ALL || s.contractorId === company)
+        .filter((s) => site === ALL || s.geofenceIds?.includes(site))
+        .filter((s) => supervisor === ALL || s.supervisorId === supervisor || s.supervisor2Id === supervisor)
+        .filter((s) =>
+          status === "all"
+            ? true
+            : status === "active"
+              ? s.active && !s.deleted
+              : status === "blocked"
+                ? !s.active && !s.deleted
+                : status === "problems"
+                  ? issuesOf(s).length > 0
+                  : !s.deviceId && !s.deleted,
+        )
+        .filter((s) => matches(search, s.staffCode, s.name, s.cprNo, s.phone?.replace(/\s/g, ""), contractorName(s.contractorId)))
+        .sort((a, b) => Number(!!a.deleted) - Number(!!b.deleted) || Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [staff, search, company, site, supervisor, status, showDeleted],
+  );
+
+  const current = staff.filter((s) => !s.deleted);
+  const summary = [
+    `${current.length} staff`,
+    `${current.filter((s) => s.active).length} can use the app`,
+    `${current.filter((s) => !s.deviceId).length} not logged in yet`,
+    `${current.filter((s) => issuesOf(s).length).length} with phone problems`,
+  ].join(" · ");
 
   async function action(row: StaffRow, body: Record<string, unknown>, done: string) {
     setBusy(row.id);
@@ -113,152 +141,199 @@ export function StaffTab() {
     const s = shifts.find((x) => x.id === id);
     return s ? `${s.name} (${s.startTime}–${s.endTime})` : "—";
   };
+  const supervisorIds = [...new Set(staff.flatMap((s) => [s.supervisorId, s.supervisor2Id].filter((x): x is string => !!x)))];
+  const filtered = company !== ALL || site !== ALL || supervisor !== ALL || status !== "all" || !!search;
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input placeholder="Search name, CPR, staff code or phone" value={search} onChange={(e) => setSearch(e.target.value)} className="w-72" />
-        {me?.canAdd && (
-          <Button onClick={() => setEditing("new")} disabled={!contractors.length || !shifts.length}>
-            <Plus className="mr-2 h-4 w-4" /> Add staff
-          </Button>
-        )}
-        {me?.canAdd && (!contractors.length || !shifts.length) && (
-          <span className="text-sm text-muted-foreground">Add a contract company and a shift in Setup first.</span>
-        )}
-        <label className="ml-auto flex items-center gap-2 text-sm">
-          <Checkbox checked={showDeleted} onCheckedChange={(v) => setShowDeleted(!!v)} />
-          Show deleted
-        </label>
-      </div>
+      <Card>
+        <div className="flex flex-wrap items-center gap-2 border-b p-3">
+          <div className="relative w-full max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search name, CPR, code, phone" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
+          </div>
+          <div className="w-44">
+            <Pick
+              value={company}
+              onChange={setCompany}
+              options={[{ value: ALL, label: "All companies" }, ...contractors.filter((c) => c.active).map((c) => ({ value: c.id, label: c.name }))]}
+            />
+          </div>
+          <div className="w-44">
+            <Pick value={site} onChange={setSite} options={[{ value: ALL, label: "All sites" }, ...geofences.filter((g) => g.active).map((g) => ({ value: g.id, label: g.name }))]} />
+          </div>
+          <div className="w-48">
+            <Pick value={supervisor} onChange={setSupervisor} options={[{ value: ALL, label: "All supervisors" }, ...supervisorIds.map((id) => ({ value: id, label: userName(id) }))]} />
+          </div>
+          <div className="w-44">
+            <Pick
+              value={status}
+              onChange={(v) => setStatus(v as StatusFilter)}
+              options={[
+                { value: "all", label: "Any status" },
+                { value: "active", label: "Can use the app" },
+                { value: "blocked", label: "Access blocked" },
+                { value: "problems", label: "Phone problems" },
+                { value: "no-phone", label: "Not logged in yet" },
+              ]}
+            />
+          </div>
+          {filtered && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearch("");
+                setCompany(ALL);
+                setSite(ALL);
+                setSupervisor(ALL);
+                setStatus("all");
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
+          <div className="ml-auto flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Switch checked={showDeleted} onCheckedChange={setShowDeleted} /> Show deleted
+            </label>
+            {me?.canAdd && (
+              <Button onClick={() => setEditing("new")} disabled={!contractors.length || !shifts.length}>
+                <Plus className="mr-1 h-4 w-4" /> Add staff
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground">
+          <span>{summary}</span>
+          {filtered && <span>{rows.length} shown</span>}
+          {me?.canAdd && (!contractors.length || !shifts.length) && <span>Add a contract company and a shift first (Administration).</span>}
+        </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Staff</TableHead>
-            <TableHead>CPR / documents</TableHead>
-            <TableHead>Contact</TableHead>
-            <TableHead>Contract company</TableHead>
-            <TableHead>Supervisors</TableHead>
-            <TableHead>Shift</TableHead>
-            <TableHead>App access</TableHead>
-            <TableHead>Phone</TableHead>
-            <TableHead />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((s) => {
-            const canManage = manages(s) && !!me?.canEdit && !s.deleted;
-            return (
-              <TableRow key={s.id} className={s.active ? undefined : "opacity-60"}>
-                <TableCell>
-                  <div className="font-medium">{s.name}</div>
-                  <div className="text-xs text-muted-foreground">Staff code {s.staffCode}</div>
-                </TableCell>
-                <TableCell>
-                  <div className="font-mono text-sm">{s.cprNo ?? "—"}</div>
-                  <ExpiryLine label="CPR exp." date={s.cprExpiry} />
-                  <ExpiryLine label="Visa exp." date={s.visaExpiry} />
-                </TableCell>
-                <TableCell className="text-sm">{s.phone ? <a className="underline" href={`tel:${s.phone}`}>{s.phone}</a> : "—"}</TableCell>
-                <TableCell>{contractorName(s.contractorId)}</TableCell>
-                <TableCell className="text-sm">
-                  <div>1: {userName(s.supervisorId)}</div>
-                  <div className="text-muted-foreground">2: {s.supervisor2Id ? userName(s.supervisor2Id) : "—"}</div>
-                </TableCell>
-                <TableCell className="text-sm">{shiftName(s.shiftId)}</TableCell>
-                <TableCell>
-                  {s.deleted ? (
-                    <Badge variant="outline">Deleted</Badge>
-                  ) : s.active ? (
-                    <Badge>Can use app</Badge>
-                  ) : (
-                    <Badge variant="destructive">Access blocked</Badge>
-                  )}
-                </TableCell>
-                <TableCell className="max-w-[220px]">
-                  {s.deviceId ? (
-                    <div className="text-xs">
-                      Linked {fmtDateTime(s.deviceBoundAt)}
-                      {s.deviceHealth?.model && ` · ${s.deviceHealth.manufacturer ?? ""} ${s.deviceHealth.model}`}
-                      {s.deviceHealth?.appVersion && ` · v${s.deviceHealth.appVersion}`}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Staff</TableHead>
+              <TableHead>Company</TableHead>
+              <TableHead>Supervisors</TableHead>
+              <TableHead>Shift</TableHead>
+              <TableHead>Documents</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="w-32" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {!rows.length && <EmptyRow colSpan={8}>{filtered ? "No staff match these filters." : "No staff yet."}</EmptyRow>}
+            {rows.map((s) => {
+              const canManage = manages(s) && !!me?.canEdit && !s.deleted;
+              const issues = issuesOf(s);
+              return (
+                <TableRow key={s.id} className={s.active && !s.deleted ? undefined : "opacity-60"}>
+                  <TableCell>
+                    <div className="font-medium">{s.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      CPR <span className="font-mono">{s.cprNo ?? "—"}</span>
+                      {s.staffCode !== s.cprNo && <> · code {s.staffCode}</>}
                     </div>
-                  ) : (
-                    !s.deleted && <Badge variant="outline">Not logged in yet</Badge>
-                  )}
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {s.deviceIssues
-                      .filter((i) => s.deviceId || i !== "NO_DATA")
-                      .map((i) => (
-                        <Badge key={i} className="bg-orange-500 text-[11px] hover:bg-orange-500">
-                          {DEVICE_ISSUE_LABELS[i] ?? i}
+                    {s.phone && (
+                      <a className="text-xs text-primary underline-offset-2 hover:underline" href={`tel:${s.phone}`}>
+                        {s.phone}
+                      </a>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">{contractorName(s.contractorId)}</TableCell>
+                  <TableCell className="text-sm">
+                    <div>{userName(s.supervisorId)}</div>
+                    {s.supervisor2Id && <div className="text-muted-foreground">{userName(s.supervisor2Id)}</div>}
+                  </TableCell>
+                  <TableCell className="text-sm">{shiftName(s.shiftId)}</TableCell>
+                  <TableCell>
+                    <ExpiryLine label="CPR" date={s.cprExpiry} />
+                    <ExpiryLine label="Visa" date={s.visaExpiry} />
+                  </TableCell>
+                  <TableCell className="max-w-[220px]">
+                    {s.deviceId ? (
+                      <div className="text-xs text-muted-foreground">
+                        {s.deviceHealth?.model ? `${s.deviceHealth.manufacturer ?? ""} ${s.deviceHealth.model}` : "Linked"}
+                        {s.deviceHealth?.appVersion && ` · v${s.deviceHealth.appVersion}`}
+                        <div>since {fmtDateTime(s.deviceBoundAt)}</div>
+                      </div>
+                    ) : (
+                      !s.deleted && <span className="text-xs text-muted-foreground">Not logged in yet</span>
+                    )}
+                    {issues.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {issues.map((i) => (
+                          <Badge key={i} variant="outline" className="border-orange-300 bg-orange-50 text-[11px] text-orange-700">
+                            {DEVICE_ISSUE_LABELS[i] ?? i}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {s.deleted ? (
+                      <Badge variant="outline">Deleted</Badge>
+                    ) : s.active ? (
+                      <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Active</Badge>
+                    ) : (
+                      <Badge variant="destructive">Blocked</Badge>
+                    )}
+                    {s.webCheckin && !s.deleted && (
+                      <div className="mt-1">
+                        <Badge variant="outline" className="text-[11px]">
+                          iPhone page
                         </Badge>
-                      ))}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {canManage && (
-                    <div className="flex flex-wrap justify-end gap-1">
-                      {busy === s.id && <Loader2 className="h-4 w-4 animate-spin" />}
-                      <Button size="sm" variant="outline" onClick={() => setEditing(s)}>
-                        Edit
-                      </Button>
-                      {me?.isAdmin && (
-                        <Button size="sm" variant="outline" onClick={() => setPasswordFor(s)}>
-                          Change password
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {canManage && (
+                      <div className="flex items-center justify-end gap-1">
+                        {busy === s.id && <Loader2 className="h-4 w-4 animate-spin" />}
+                        <Button size="sm" variant="outline" onClick={() => setEditing(s)}>
+                          Edit
                         </Button>
-                      )}
-                      {s.deviceId && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            confirm(`Unlink ${s.name}'s phone? They can then log in on a new phone.`) &&
-                            void action(s, { action: "resetDevice" }, "Phone unlinked")
-                          }
-                        >
-                          Reset phone
-                        </Button>
-                      )}
-                      {s.active
-                        ? me?.canDelete && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                confirm(`Block ${s.name} from the app? They are logged out at once and cannot log in until you allow access again.`) &&
-                                void action(s, { action: "deactivate" }, "Access blocked")
-                              }
-                            >
-                              Block access
-                            </Button>
-                          )
-                        : (
-                            <Button size="sm" variant="outline" onClick={() => void action(s, { action: "activate" }, "Access allowed again")}>
-                              Allow access
-                            </Button>
-                          )}
-                      {me?.canDelete && (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() =>
-                            confirm(
-                              `Delete ${s.name} (CPR ${s.cprNo ?? s.staffCode})?\n\nTheir app login is removed permanently and the CPR number can be registered again. Past attendance stays in the reports. This cannot be undone.`,
-                            ) && void action(s, { action: "delete" }, "Staff deleted")
-                          }
-                        >
-                          Delete
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+                        <RowActions
+                          actions={[
+                            { label: "Change password", hidden: !me?.isAdmin, onSelect: () => setPasswordFor(s) },
+                            {
+                              label: "Reset phone",
+                              hidden: !s.deviceId,
+                              onSelect: () =>
+                                confirm(`Unlink ${s.name}'s phone? They can then log in on a new phone.`) && void action(s, { action: "resetDevice" }, "Phone unlinked"),
+                            },
+                            s.active
+                              ? {
+                                  label: "Block access",
+                                  hidden: !me?.canDelete,
+                                  onSelect: () =>
+                                    confirm(`Block ${s.name} from the app? They are logged out at once and cannot log in until you allow access again.`) &&
+                                    void action(s, { action: "deactivate" }, "Access blocked"),
+                                }
+                              : { label: "Allow access again", onSelect: () => void action(s, { action: "activate" }, "Access allowed again") },
+                            {
+                              label: "Delete staff",
+                              danger: true,
+                              separatorBefore: true,
+                              hidden: !me?.canDelete,
+                              onSelect: () =>
+                                confirm(
+                                  `Delete ${s.name} (CPR ${s.cprNo ?? s.staffCode})?\n\nTheir app login is removed permanently and the CPR number can be registered again. Past attendance stays in the reports. This cannot be undone.`,
+                                ) && void action(s, { action: "delete" }, "Staff deleted"),
+                            },
+                          ]}
+                        />
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </Card>
 
       <StaffDialog
         target={editing}
@@ -280,7 +355,6 @@ export function StaffTab() {
     </div>
   );
 }
-
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [show, setShow] = useState(false);
   return (
@@ -448,7 +522,7 @@ function StaffDialog({ target, onClose, onSaved }: { target: StaffRow | "new" | 
             <span>
               <span className="font-medium">Allow iPhone check-in</span>
               <span className="block text-xs text-muted-foreground">
-                Lets this person log in at /checkin on an iPhone (or any browser) and tap IN / OUT. iPhones cannot record automatically. Off = Android app only.
+                Lets this person use the iPhone check-in page (/checkin, any browser) instead of the Android app. Same three ways to check in: GPS, site QR or My QR.
               </span>
             </span>
           </label>

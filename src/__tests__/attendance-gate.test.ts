@@ -1,13 +1,14 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Actor } from "@/lib/attendance/actor";
 import { badgeCode, currentGateCode, extractGateCode, gateCode, gateScreenKey, verifyGateCode } from "@/lib/attendance/gate";
+import { deviceIssues } from "@/lib/attendance/health";
 import { ingestEvents } from "@/lib/attendance/ingest";
 import { getMobileProfile } from "@/lib/attendance/mobile";
 import { loginStaff } from "@/lib/attendance/mobile-auth";
 import { decideOvertime } from "@/lib/attendance/overtime";
 import { createSetup, createStaff, listSetup, updateStaff } from "@/lib/attendance/setup";
 import { recordStationScans } from "@/lib/attendance/station";
-import { COL, getStaff } from "@/lib/attendance/store";
+import { COL, getRules, getStaff } from "@/lib/attendance/store";
 import { zonedToUtc } from "@/lib/attendance/time";
 import type { AttendanceDay, AttendanceEvent, OvertimeRequest, Staff } from "@/lib/attendance/types";
 import { FakeFirestore } from "./helpers/fake-firestore";
@@ -281,6 +282,25 @@ describe("gate station (staff shows My QR)", () => {
     const profile = await getMobileProfile(db, await getStaff(db, staff.id), at(MONDAY, "06:00"));
     expect(profile.badge).toMatchObject({ slotSec: 30 });
     expect(profile.badge.key).toHaveLength(43);
+  });
+});
+
+describe("phone warnings without background recording", () => {
+  it("does not warn app 1.2+ phones about background settings, but still warns 1.1 phones", async () => {
+    const rules = await getRules(new FakeFirestore().asFirestore());
+    const now = at(MONDAY, "12:00");
+    const base = {
+      reportedAt: now.toISOString(),
+      lastSync: at("2026-10-30", "12:00").toISOString(),
+      locationPermission: "WHILE_IN_USE" as const,
+      gpsEnabled: false,
+      batteryOptimised: true,
+      notificationsEnabled: true,
+    };
+    expect(deviceIssues({ ...base, appVersion: "1.2.0" }, rules, now)).toEqual([]);
+    expect(deviceIssues({ ...base, appVersion: "1.1.0" }, rules, now)).toEqual(
+      expect.arrayContaining(["NO_SYNC", "LOCATION_NOT_ALWAYS", "GPS_OFF", "BATTERY_OPTIMISED"]),
+    );
   });
 });
 

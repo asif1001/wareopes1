@@ -13,7 +13,7 @@ import { DayReviewDialog, FlagBadges, StatusBadge } from "./day-review-dialog";
 import { DEVICE_ISSUE_LABELS, fmtDateTime, fmtMinutes, fmtTime, todayLocal } from "./format";
 
 /** Problems only, grouped by kind. */
-export function OverviewTab({ onOpenOvertime }: { onOpenOvertime: () => void }) {
+export function OverviewTab({ onNavigate }: { onNavigate: (section: string) => void }) {
   const { toast } = useToast();
   const [date, setDate] = useState(todayLocal());
   const [data, setData] = useState<DailyExceptions | null>(null);
@@ -60,17 +60,16 @@ export function OverviewTab({ onOpenOvertime }: { onOpenOvertime: () => void }) 
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
           Refresh
         </Button>
-        <p className="text-sm text-muted-foreground">Only problems are listed. Click a row to review or correct it.</p>
       </div>
 
       {data && (
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Stat label="Missing IN / absent" value={data.missingIn.length} tone="red" />
-          <Stat label="Missing OUT" value={data.missingOut.length} tone="red" />
-          <Stat label="Late" value={data.late.length} tone="amber" />
-          <Stat label="Overtime waiting" value={data.overtimePending.length + data.overtimeAutoClosed.length} tone="amber" />
-          <Stat label="Phone problems" value={data.devices.length} tone="orange" />
-          <Stat label="Documents expiring" value={data.documents.length} tone="orange" />
+          <Stat label="Missing IN / absent" value={data.missingIn.length} tone="red" onClick={() => onNavigate("today")} />
+          <Stat label="Missing OUT" value={data.missingOut.length} tone="red" onClick={() => onNavigate("today")} />
+          <Stat label="Late" value={data.late.length} tone="amber" onClick={() => onNavigate("today")} />
+          <Stat label="Overtime waiting" value={data.overtimePending.length + data.overtimeAutoClosed.length} tone="amber" onClick={() => onNavigate("overtime")} />
+          <Stat label="Phone problems" value={data.devices.length} tone="orange" onClick={() => onNavigate("staff")} />
+          <Stat label="Documents expiring" value={data.documents.length} tone="orange" onClick={() => onNavigate("staff")} />
         </div>
       )}
 
@@ -109,7 +108,7 @@ export function OverviewTab({ onOpenOvertime }: { onOpenOvertime: () => void }) 
                     </span>
                   </div>
                 ))}
-                <Button size="sm" variant="link" className="px-0" onClick={onOpenOvertime}>
+                <Button size="sm" variant="link" className="px-0" onClick={() => onNavigate("overtime")}>
                   Open overtime approvals →
                 </Button>
               </CardContent>
@@ -120,10 +119,10 @@ export function OverviewTab({ onOpenOvertime }: { onOpenOvertime: () => void }) 
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Phone problems</CardTitle>
-                <CardDescription>Fix these so check-in keeps working automatically.</CardDescription>
+                <CardDescription>Phone settings that stop check-in or reminders from working.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                {data.devices.map((d) => (
+                {data.devices.slice(0, LIST_LIMIT).map((d) => (
                   <div key={d.staff.id}>
                     <div className="font-medium">
                       {d.staff.staffCode} · {d.staff.name}
@@ -138,6 +137,11 @@ export function OverviewTab({ onOpenOvertime }: { onOpenOvertime: () => void }) 
                     </div>
                   </div>
                 ))}
+                {data.devices.length > LIST_LIMIT && (
+                  <Button size="sm" variant="link" className="px-0" onClick={() => onNavigate("staff")}>
+                    All {data.devices.length} in Staff →
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}
@@ -175,20 +179,28 @@ export function OverviewTab({ onOpenOvertime }: { onOpenOvertime: () => void }) 
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone: "red" | "orange" | "amber" }) {
+const LIST_LIMIT = 6;
+
+function Stat({ label, value, tone, onClick }: { label: string; value: number; tone: "red" | "orange" | "amber"; onClick: () => void }) {
   const color = value === 0 ? "text-muted-foreground" : tone === "red" ? "text-red-600" : tone === "orange" ? "text-orange-600" : "text-amber-600";
+  const bar = value === 0 ? "bg-muted" : tone === "red" ? "bg-red-500" : tone === "orange" ? "bg-orange-500" : "bg-amber-500";
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className={`text-2xl font-bold ${color}`}>{value}</div>
-        <div className="text-xs text-muted-foreground">{label}</div>
-      </CardContent>
-    </Card>
+    <button type="button" onClick={onClick} className="text-left">
+      <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
+        <div className={`absolute inset-x-0 top-0 h-1 ${bar}`} />
+        <CardContent className="p-4">
+          <div className={`text-2xl font-bold tabular-nums ${color}`}>{value}</div>
+          <div className="text-xs text-muted-foreground">{label}</div>
+        </CardContent>
+      </Card>
+    </button>
   );
 }
 
 function IssueCard({ title, items, onOpen }: { title: string; items: DayIssue[]; onOpen: (r: { staffId: string; date: string }) => void }) {
+  const [all, setAll] = useState(false);
   if (!items.length) return null;
+  const shown = all ? items : items.slice(0, LIST_LIMIT);
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -197,7 +209,7 @@ function IssueCard({ title, items, onOpen }: { title: string; items: DayIssue[];
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">
-        {items.map(({ staff, day }) => (
+        {shown.map(({ staff, day }) => (
           <button
             key={`${staff.id}-${day.date}`}
             type="button"
@@ -217,6 +229,11 @@ function IssueCard({ title, items, onOpen }: { title: string; items: DayIssue[];
             </span>
           </button>
         ))}
+        {items.length > LIST_LIMIT && (
+          <Button size="sm" variant="link" className="px-2" onClick={() => setAll((v) => !v)}>
+            {all ? "Show fewer" : `Show all ${items.length}`}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

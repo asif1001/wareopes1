@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,9 +22,17 @@ export function SettingsTab() {
   const { toast } = useToast();
   const [draft, setDraft] = useState<AttendanceRules | null>(rules);
   const [saving, setSaving] = useState(false);
+  const [viewerSearch, setViewerSearch] = useState("");
 
   useEffect(() => setDraft(rules), [rules]);
   if (!draft || !rules) return null;
+
+  const changed = Object.keys(draft).filter(
+    (k) => JSON.stringify(draft[k as keyof AttendanceRules]) !== JSON.stringify(rules[k as keyof AttendanceRules]),
+  ).length;
+  const viewers = approvers
+    .filter((a) => !viewerSearch.trim() || `${a.name} ${a.role}`.toLowerCase().includes(viewerSearch.trim().toLowerCase()))
+    .sort((a, b) => Number(draft.reportViewerIds.includes(b.id)) - Number(draft.reportViewerIds.includes(a.id)) || a.name.localeCompare(b.name));
 
   const editable = !!me?.canEdit;
   const set = <K extends keyof AttendanceRules>(key: K, value: AttendanceRules[K]) => setDraft((d) => (d ? { ...d, [key]: value } : d));
@@ -53,7 +61,8 @@ export function SettingsTab() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Week and overtime rates</CardTitle>
+            <CardTitle className="text-base">Work week & overtime rates</CardTitle>
+            <CardDescription>Which days are off, and the pay rate used for overtime on each kind of day.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <Label>Weekly off-days</Label>
@@ -97,8 +106,8 @@ export function SettingsTab() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Daily rules</CardTitle>
-            <CardDescription>The IN / OUT window sizes are set per shift in Setup.</CardDescription>
+            <CardTitle className="text-base">Day calculation</CardTitle>
+            <CardDescription>How late arrivals, early leaving and paid hours are worked out. The check-in windows are set per shift.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
             <Field label="Late means">
@@ -145,15 +154,16 @@ export function SettingsTab() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Overtime</CardTitle>
+            <CardDescription>A check-out after the overtime start time is recorded as overtime and approved automatically.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
-            <Field label="OT In allowed from (min after shift end)">
+            <Field label="Overtime starts (min after shift end)">
               <Input type="number" min={0} value={draft.otStartAfterShiftEndMin} onChange={num("otStartAfterShiftEndMin")} />
             </Field>
-            <Field label="Auto-close after (min)">
+            <Field label="Longest overtime counted (min)">
               <Input type="number" min={15} value={draft.otAutoCloseAfterMin} onChange={num("otAutoCloseAfterMin")} />
             </Field>
-            <Field label="…or at this time, whichever is first">
+            <Field label="…or until this time, whichever is first">
               <Input type="time" value={draft.otAutoCloseAtLocal ?? ""} onChange={(e) => set("otAutoCloseAtLocal", e.target.value || null)} />
             </Field>
             <div />
@@ -168,7 +178,8 @@ export function SettingsTab() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Month end, privacy and alerts</CardTitle>
+            <CardTitle className="text-base">Month end, privacy & alerts</CardTitle>
+            <CardDescription>When a month is locked for payroll, how long selfies are kept, and when a record is flagged.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
             <Field label="Lock month on day … of next month">
@@ -194,14 +205,20 @@ export function SettingsTab() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Report viewers (read-only)</CardTitle>
+            <CardTitle className="text-base">
+              Report access (read-only) <span className="text-sm font-normal text-muted-foreground">· {draft.reportViewerIds.length} selected</span>
+            </CardTitle>
             <CardDescription>
               These users can view and download reports for every staff member but cannot edit, approve or see selfies. Only an admin can change this list.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <fieldset disabled={!me?.isAdmin} className="grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2">
-              {approvers.map((a) => (
+          <CardContent className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input value={viewerSearch} onChange={(e) => setViewerSearch(e.target.value)} placeholder="Search users…" className="pl-8" />
+            </div>
+            <fieldset disabled={!me?.isAdmin} className="grid max-h-64 gap-2 overflow-y-auto rounded-md border p-2 sm:grid-cols-2">
+              {viewers.map((a) => (
                 <label key={a.id} className="flex items-center gap-2 text-sm">
                   <Checkbox
                     checked={draft.reportViewerIds.includes(a.id)}
@@ -219,7 +236,7 @@ export function SettingsTab() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Staff app update</CardTitle>
+            <CardTitle className="text-base">Staff app version</CardTitle>
             <CardDescription>Phones check this and offer the download. Below the minimum version the app asks staff to update.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
@@ -244,14 +261,23 @@ export function SettingsTab() {
       </div>
 
       {editable && (
-        <div className="flex gap-2">
-          <Button onClick={() => void save()} disabled={saving}>
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save settings
-          </Button>
-          <Button variant="outline" onClick={() => setDraft(rules)}>
-            Undo changes
-          </Button>
+        <div
+          className={`sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 shadow-sm backdrop-blur ${
+            changed ? "border-primary/40 bg-primary/5" : "bg-background/95"
+          }`}
+        >
+          <span className="text-sm text-muted-foreground">
+            {changed ? `${changed} unsaved change${changed === 1 ? "" : "s"} — new rules apply to days recalculated from now on.` : "All changes saved."}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setDraft(rules)} disabled={!changed || saving}>
+              Undo changes
+            </Button>
+            <Button onClick={() => void save()} disabled={!changed || saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save settings
+            </Button>
+          </div>
         </div>
       )}
     </fieldset>

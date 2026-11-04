@@ -156,9 +156,16 @@ export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, 
 }
 
 /** Number shown on the nav badge: overtime and staff requests waiting for this user's decision. */
-export async function pendingCount(db: Db, actor: Actor) {
+/** Overtime and staff requests waiting for this user's decision. */
+export async function pendingCounts(db: Db, actor: Actor) {
   const staff = scopeManagedStaff(actor, await listStaff(db));
   const ids = new Set(staff.map((s) => s.id));
   const [ot, requests] = await Promise.all([listOvertime(db, {}), pendingRequestCount(db, actor, staff)]);
-  return ot.filter((o) => ids.has(o.staffId) && o.otOut && (o.status === "PENDING" || o.status === "AUTO_CLOSED")).length + requests;
+  const overtime = ot.filter((o) => ids.has(o.staffId) && o.otOut && (o.status === "PENDING" || o.status === "AUTO_CLOSED")).length;
+  return { overtime, requests };
+}
+
+export async function pendingCount(db: Db, actor: Actor) {
+  const { overtime, requests } = await pendingCounts(db, actor);
+  return overtime + requests;
 }
