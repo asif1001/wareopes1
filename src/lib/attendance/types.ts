@@ -305,4 +305,8 @@ export type DeviceHealth = {
   manufacturer: string;
   model: string;
   reportedAt: IsoInstant;
+  /** Latest location sent by the phone (any record with GPS), kept at each sync. */
+  lastFix?: { lat: number; lng: number; at: IsoInstant } | null;
+  /** Set once the phone has synced since lastFix was introduced. */
+  fixTracked?: boolean;
 };

@@ -1,6 +1,7 @@
 import type { Actor } from "./actor";
 import { DEFAULT_RULES, rulesSchema } from "./config";
 import { writeAudit } from "./audit";
+import { bumpCacheVersion } from "./cache";
 import { badRequest, forbidden } from "./errors";
 import { COL, RULES_DOC, getRules, type Db } from "./store";
 
@@ -28,6 +29,7 @@ export async function updateSettings(db: Db, actor: Actor, body: unknown, now: D
     throw badRequest("Escalation must be later than the reminder");
   }
   await db.collection(COL.settings).doc(RULES_DOC).set(after);
+  await bumpCacheVersion(db);
   await writeAudit(db, { who: actor.userId, what: "SETTINGS_UPDATED", entity: COL.settings, entityId: RULES_DOC, before, after }, now);
   return after;
 }

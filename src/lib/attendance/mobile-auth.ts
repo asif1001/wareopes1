@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { MOBILE_AUTH } from "./config";
 import { writeAudit } from "./audit";
+import { bumpCacheVersion } from "./cache";
 import { AttendanceError, badRequest, forbidden, tooMany, unauthorized } from "./errors";
 import { COL, getStaff, normalizeCpr, normalizeStaffCode, type Db } from "./store";
 import { getTokenSecret, signToken, verifyPin, verifyToken } from "./tokens";
@@ -110,6 +111,7 @@ export async function loginStaff(db: Db, body: unknown, now: Date): Promise<{ st
     tx.update(ref, updates);
     return { staff: { ...staff, ...updates }, audit: binding ? "DEVICE_BOUND" : null };
   });
+  await bumpCacheVersion(db);
 
   if (outcome.audit && outcome.staff) {
     await writeAudit(

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DEFAULT_GEOFENCE_RADIUS_M, DEFAULT_SHIFT_GRACE_MIN, MOBILE_AUTH } from "./config";
 import { canManageStaff, type Actor } from "./actor";
 import { writeAudit } from "./audit";
+import { bumpCacheVersion, cached } from "./cache";
 import { badRequest, conflict, forbidden, notFound } from "./errors";
 import { shiftCrossesMidnight } from "./rules";
 import { COL, getStaff, normalizeCpr, normalizeStaffCode, toStaffPublic, type Db } from "./store";
@@ -69,8 +70,10 @@ function withoutSecrets(data: Record<string, unknown> | undefined | null) {
 }
 
 export async function listSetup(db: Db, entity: SetupEntity) {
-  const snap = await db.collection(collectionFor[entity]).get();
-  return snap.docs.map((d) => ({ ...withoutSecrets(d.data()), id: d.id })) as (Contractor | Shift | Geofence | (Holiday & { id: string }))[];
+  return cached(db, `setup:${entity}`, async () => {
+    const snap = await db.collection(collectionFor[entity]).get();
+    return snap.docs.map((d) => ({ ...withoutSecrets(d.data()), id: d.id })) as (Contractor | Shift | Geofence | (Holiday & { id: string }))[];
+  });
 }
 
 export async function createSetup(db: Db, actor: Actor, entity: SetupEntity, body: unknown, now: Date) {
@@ -88,6 +91,7 @@ export async function createSetup(db: Db, actor: Actor, entity: SetupEntity, bod
     const ref = await col.add({ ...data, active: true, createdAt: now.toISOString() });
     id = ref.id;
   }
+  await bumpCacheVersion(db);
   await writeAudit(db, { who: actor.userId, what: "CREATED", entity: collectionFor[entity], entityId: id, before: null, after: data }, now);
   return { ...data, id };
 }
@@ -111,6 +115,7 @@ export async function updateSetup(db: Db, actor: Actor, entity: SetupEntity, id:
     await assertSiteUnused(db, id);
   }
   await ref.set(after);
+  await bumpCacheVersion(db);
   await writeAudit(db, { who: actor.userId, what: "UPDATED", entity: collectionFor[entity], entityId: id, before: withoutSecrets(before), after: withoutSecrets(after) }, now);
   return { ...withoutSecrets(after), id };
 }
@@ -133,6 +138,7 @@ export async function removeSetup(db: Db, actor: Actor, entity: SetupEntity, id:
   if (entity === "geofences") await assertSiteUnused(db, id);
   if (entity === "holidays") await ref.delete();
   else await ref.update({ active: false });
+  await bumpCacheVersion(db);
   await writeAudit(
     db,
     { who: actor.userId, what: entity === "holidays" ? "DELETED" : "DEACTIVATED", entity: collectionFor[entity], entityId: id, before: withoutSecrets(before), after: null },
@@ -264,6 +270,7 @@ export async function createStaff(db: Db, actor: Actor, body: unknown, now: Date
     tx.create(staffRef, staff);
   });
   const created = { ...staff, id: staffRef.id };
+  await bumpCacheVersion(db);
   await writeAudit(db, { who: actor.userId, what: "STAFF_CREATED", entity: COL.staff, entityId: created.id, before: null, after: toStaffPublic(created) }, now);
   return toStaffPublic(created);
 }
@@ -376,6 +383,7 @@ export async function updateStaff(db: Db, actor: Actor, staffId: string, rawBody
   }
 
   const after = { ...staff, ...updates };
+  await bumpCacheVersion(db);
   await writeAudit(
     db,
     { who: actor.userId, what, entity: COL.staff, entityId: staffId, before: toStaffPublic(staff), after: toStaffPublic(after) },

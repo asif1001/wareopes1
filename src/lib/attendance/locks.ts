@@ -1,5 +1,6 @@
 import type { AttendanceRules } from "./config";
 import { writeAudit } from "./audit";
+import { bumpCacheVersion, cached } from "./cache";
 import { badRequest, forbidden, locked } from "./errors";
 import { COL, type Db } from "./store";
 import { localDateOf, monthOf, nextMonth } from "./time";
@@ -19,8 +20,10 @@ export function isLockedByRule(month: string, rules: AttendanceRules, now: Date)
  * lock); without one, the month locks on `monthLockDay` of the next month.
  */
 export async function getMonthLockState(db: Db, month: string, rules: AttendanceRules, now: Date) {
-  const snap = await db.collection(COL.monthLocks).doc(month).get();
-  const doc = snap.exists ? (snap.data() as MonthLock) : null;
+  const doc = await cached(db, `lock:${month}`, async () => {
+    const snap = await db.collection(COL.monthLocks).doc(month).get();
+    return snap.exists ? (snap.data() as MonthLock) : null;
+  });
   const isLocked = doc ? doc.locked : isLockedByRule(month, rules, now);
   return { month, locked: isLocked, doc, autoLockDate: autoLockDate(month, rules) };
 }
@@ -43,6 +46,7 @@ export async function lockMonth(db: Db, actorId: string, month: string, now: Dat
     unlockReason: (before as MonthLock | null)?.unlockReason ?? null,
   };
   await ref.set(after);
+  await bumpCacheVersion(db);
   await writeAudit(db, { who: actorId, what: "MONTH_LOCKED", entity: COL.monthLocks, entityId: month, before, after }, now);
   return after;
 }
@@ -68,6 +72,7 @@ export async function unlockMonth(
     unlockReason: reason.trim(),
   };
   await ref.set(after);
+  await bumpCacheVersion(db);
   await writeAudit(
     db,
     { who: actor.userId, what: "MONTH_UNLOCKED", entity: COL.monthLocks, entityId: month, before, after },

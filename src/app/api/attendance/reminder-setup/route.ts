@@ -57,7 +57,8 @@ export async function POST() {
     const db = await attendanceDb();
     const now = new Date();
     const result = await sendDueReminders(db, await getRules(db), now);
-    await db.collection(COL.settings).doc(REMINDER_STATUS_DOC).set({ lastRunAt: now.toISOString(), ...result, manual: true });
+    // Kept apart from the scheduler's own "last run", which is saved only hourly.
+    await db.collection(COL.settings).doc(REMINDER_STATUS_DOC).set({ lastManualRunAt: now.toISOString(), manual: false }, { merge: true });
     return ok({ result });
   } catch (error) {
     return fail(error);

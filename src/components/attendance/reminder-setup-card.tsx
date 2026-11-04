@@ -96,7 +96,8 @@ export function ReminderSetupCard() {
   if (error) return null;
   const last = setup?.lastRun;
   const minutesAgo = last ? Math.round((Date.now() - Date.parse(last.lastRunAt)) / 60000) : null;
-  const healthy = minutesAgo !== null && minutesAgo <= 15 && !last?.manual;
+  // The job runs every 5 minutes but records that it ran only once an hour.
+  const healthy = minutesAgo !== null && minutesAgo <= 75 && !last?.manual;
 
   return (
     <Card className="xl:col-span-2">

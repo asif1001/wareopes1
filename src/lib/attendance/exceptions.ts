@@ -83,15 +83,17 @@ export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, 
   const pick = (test: (d: AttendanceDay) => boolean) =>
     days.filter(test).map(issue).filter((x): x is DayIssue => !!x);
 
-  const allOt = await listOvertime(db, {});
+  // Only overtime that is still open or waiting is shown here (never the full history).
+  const allOt = await listOvertime(db, { statusIn: ["PENDING", "AUTO_CLOSED"] });
   const withStaff = (ot: OvertimeRequest) => {
     const staff = staffById.get(ot.staffId);
     return staff ? { ...ot, staff: ref(staff) } : null;
   };
   const scopedOt = allOt.map(withStaff).filter((x): x is OvertimeRequest & { staff: StaffRef } => !!x);
 
-  const [healthSnap, siteIssues] = await Promise.all([db.collection(COL.deviceHealth).get(), siteIssuesByStaff(db, staffList, now)]);
+  const healthSnap = await db.collection(COL.deviceHealth).get();
   const health = new Map(healthSnap.docs.map((d) => [d.id, d.data() as Partial<DeviceHealth>]));
+  const siteIssues = await siteIssuesByStaff(db, staffList, now, health);
   const issuesOf = (id: string) => [...(siteIssues.get(id) ?? []), ...deviceIssues(health.get(id) ?? null, rules, now)];
   const devices = staffList
     .map((s) => {
@@ -160,7 +162,7 @@ export async function getDailyExceptions(db: Db, actor: Actor, date: LocalDate, 
 export async function pendingCounts(db: Db, actor: Actor) {
   const staff = scopeManagedStaff(actor, await listStaff(db));
   const ids = new Set(staff.map((s) => s.id));
-  const [ot, requests] = await Promise.all([listOvertime(db, {}), pendingRequestCount(db, actor, staff)]);
+  const [ot, requests] = await Promise.all([listOvertime(db, { statusIn: ["PENDING", "AUTO_CLOSED"] }), pendingRequestCount(db, actor, staff)]);
   const overtime = ot.filter((o) => ids.has(o.staffId) && o.otOut && (o.status === "PENDING" || o.status === "AUTO_CLOSED")).length;
   return { overtime, requests };
 }

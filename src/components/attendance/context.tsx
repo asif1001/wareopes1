@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { AttendanceRules } from "@/lib/attendance/config";
 import type { Contractor, DeviceHealth, Geofence, Holiday, Shift, StaffPublic } from "@/lib/attendance/types";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "./api";
 
 export type Me = {
@@ -42,7 +43,19 @@ type Refs = {
 
 const AttendanceContext = createContext<Refs | null>(null);
 
+type Loaded = Omit<Refs, "reload" | "manages" | "staffById" | "userName" | "contractorName">;
+
+/**
+ * Lists loaded for Attendance are kept in this browser tab for a few minutes, so leaving
+ * Attendance and coming back does not reload everything. Any save calls reload(), which
+ * always fetches fresh data.
+ */
+const REUSE_MS = 3 * 60 * 1000;
+let lastLoad: { at: number; userId: string; state: Loaded } | null = null;
+
 export function AttendanceProvider({ children }: { children: React.ReactNode }) {
+  const auth = useAuth();
+  const userId = auth.user?.id ?? "";
   const [state, setState] = useState<Omit<Refs, "reload" | "manages" | "staffById" | "userName" | "contractorName">>({
     me: null,
     staff: [],
@@ -68,7 +81,7 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
         api<{ items: Approver[] }>("/approvers"),
         api<{ rules: AttendanceRules }>("/settings"),
       ]);
-      setState({
+      const next: Loaded = {
         me: who.me,
         staff: staff.items,
         contractors: contractors.items,
@@ -79,15 +92,19 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
         rules: settings.rules,
         loading: false,
         error: null,
-      });
+      };
+      lastLoad = userId ? { at: Date.now(), userId, state: next } : null;
+      setState(next);
     } catch (error) {
       setState((s) => ({ ...s, loading: false, error: error instanceof Error ? error.message : "Could not load attendance" }));
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    if (auth.isLoading) return;
+    if (lastLoad && userId && lastLoad.userId === userId && Date.now() - lastLoad.at < REUSE_MS) setState(lastLoad.state);
+    else void reload();
+  }, [reload, userId, auth.isLoading]);
 
   const value = useMemo<Refs>(() => {
     const staffById = new Map(state.staff.map((s) => [s.id, s]));

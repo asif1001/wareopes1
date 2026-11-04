@@ -240,10 +240,25 @@ export async function ingestEvents(
     await recomputeDay(db, staff, date, now, { rules, shift });
   }
 
-  await db
-    .collection(COL.deviceHealth)
-    .doc(staff.id)
-    .set({ staffId: staff.id, deviceId: staff.deviceId, lastSync: now.toISOString() }, { merge: true });
+  // The gate station is not the staff member's phone: it does not touch the phone's sync record.
+  if (!stationSiteId) {
+    const located = prepared
+      .filter((p): p is Prepared & { index: number } => !!p && p.input.lat != null && p.input.lng != null)
+      .sort((a, b) => b.event.deviceTime.localeCompare(a.event.deviceTime))[0];
+    await db
+      .collection(COL.deviceHealth)
+      .doc(staff.id)
+      .set(
+        {
+          staffId: staff.id,
+          deviceId: staff.deviceId,
+          lastSync: now.toISOString(),
+          fixTracked: true,
+          ...(located ? { lastFix: { lat: located.input.lat!, lng: located.input.lng!, at: located.event.deviceTime } } : {}),
+        },
+        { merge: true },
+      );
+  }
 
   return results;
 }

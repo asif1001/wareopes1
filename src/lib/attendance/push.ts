@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { AttendanceRules } from "./config";
 import { badRequest } from "./errors";
 import { dayTypeOf, shiftWindows } from "./rules";
-import { COL, dayId, getHolidaySet, getShift, listStaff, type Db } from "./store";
+import { COL, dayId, getHolidaySet, getShift, listShifts, listStaff, type Db } from "./store";
 import { localDateOf } from "./time";
 import type { AttendanceDay, Shift, Staff } from "./types";
 
@@ -40,6 +40,13 @@ export async function removeSubscription(db: Db, staff: Staff, endpoint: string)
 type Reminder = { kind: "in" | "out"; title: string; body: string; url: string };
 
 /** Which reminder (if any) is due for this day right now. */
+/** Whether `now` is inside the check-in or check-out reminder window of `shift` (see dueReminder). */
+function inReminderWindow(shift: Shift, rules: AttendanceRules, date: string, now: Date) {
+  const w = shiftWindows(date, shift, rules);
+  const t = now.getTime();
+  return (t >= w.inOpen.getTime() && t < w.inClose.getTime() + 60 * 60000) || (t >= w.outOpen.getTime() && t < w.outClose.getTime());
+}
+
 export function dueReminder(shift: Shift, rules: AttendanceRules, date: string, day: AttendanceDay | null, now: Date, sent: { in?: string; out?: string }): Reminder | null {
   const w = shiftWindows(date, shift, rules);
   const t = now.getTime();
@@ -69,6 +76,10 @@ async function defaultSender(): Promise<Sender | null> {
 export async function sendDueReminders(db: Db, rules: AttendanceRules, now: Date, sender?: Sender) {
   const send = sender ?? (await defaultSender());
   if (!send) return { sent: 0, skipped: "WEB_PUSH keys not configured" };
+  // Most runs fall outside every reminder window: stop before reading subscriptions and staff.
+  const today = localDateOf(now, rules.timezone);
+  if (dayTypeOf(today, rules, await getHolidaySet(db, today, today)) !== "WORKDAY") return { sent: 0 };
+  if (!(await listShifts(db)).some((shift) => inReminderWindow(shift, rules, today, now))) return { sent: 0 };
   const subsSnap = await db.collection(COL.pushSubs).get();
   if (subsSnap.empty) return { sent: 0 };
   const subsByStaff = new Map<string, { id: string; endpoint: string; keys: { p256dh: string; auth: string } }[]>();

@@ -125,18 +125,28 @@ export function DashboardNav() {
     const [attendanceCount, setAttendanceCount] = useState<number | null>(null);
     const [attendanceCounts, setAttendanceCounts] = useState<AttendanceCounts | null>(null);
     const [attendanceMe, setAttendanceMe] = useState<AttendanceAccess | null>(null);
+    // Refreshed every few minutes and when the window comes back into focus, not on every page click.
     useEffect(() => {
         let cancelled = false;
-        fetch('/api/attendance/pending-count', { cache: 'no-store', credentials: 'same-origin' })
-            .then(async (res) => {
-                if (cancelled) return;
-                const data = res.ok ? await res.json() : null;
-                setAttendanceCount(data?.success ? Number(data.count ?? 0) : null);
-                if (data?.success) setAttendanceCounts({ overtime: Number(data.overtime ?? 0), requests: Number(data.requests ?? 0) });
-            })
-            .catch(() => !cancelled && setAttendanceCount(null));
-        return () => { cancelled = true; };
-    }, [pathname]);
+        const load = () =>
+            fetch('/api/attendance/pending-count', { cache: 'no-store', credentials: 'same-origin' })
+                .then(async (res) => {
+                    if (cancelled) return;
+                    const data = res.ok ? await res.json() : null;
+                    setAttendanceCount(data?.success ? Number(data.count ?? 0) : null);
+                    if (data?.success) setAttendanceCounts({ overtime: Number(data.overtime ?? 0), requests: Number(data.requests ?? 0) });
+                })
+                .catch(() => !cancelled && setAttendanceCount(null));
+        void load();
+        const timer = setInterval(load, 3 * 60 * 1000);
+        const onFocus = () => document.visibilityState === 'visible' && void load();
+        document.addEventListener('visibilitychange', onFocus);
+        return () => {
+            cancelled = true;
+            clearInterval(timer);
+            document.removeEventListener('visibilitychange', onFocus);
+        };
+    }, []);
     useEffect(() => {
         if (attendanceCount === null || attendanceMe) return;
         let cancelled = false;

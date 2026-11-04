@@ -1,4 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
+import { cached } from "./cache";
 import { mergeRules, type AttendanceRules } from "./config";
 import { notFound } from "./errors";
 import type { Geofence, Holiday, LocalDate, Shift, Staff, StaffPublic } from "./types";
@@ -38,8 +39,10 @@ export const normalizeStaffCode = (code: string) => code.trim().toUpperCase();
 export const normalizeCpr = (cpr: string) => cpr.replace(/\D/g, "");
 
 export async function getRules(db: Db): Promise<AttendanceRules> {
-  const snap = await db.collection(COL.settings).doc(RULES_DOC).get();
-  return mergeRules(snap.exists ? snap.data() : undefined);
+  return cached(db, "rules", async () => {
+    const snap = await db.collection(COL.settings).doc(RULES_DOC).get();
+    return mergeRules(snap.exists ? snap.data() : undefined);
+  });
 }
 
 export async function getStaff(db: Db, staffId: string): Promise<Staff> {
@@ -48,9 +51,12 @@ export async function getStaff(db: Db, staffId: string): Promise<Staff> {
   return { ...(snap.data() as Staff), id: snap.id };
 }
 
+/** All staff (cached; every write to a staff record bumps the cache version). Use getStaff for a fresh single record. */
 export async function listStaff(db: Db): Promise<Staff[]> {
-  const snap = await db.collection(COL.staff).get();
-  return snap.docs.map((d) => ({ ...(d.data() as Staff), id: d.id }));
+  return cached(db, "staff", async () => {
+    const snap = await db.collection(COL.staff).get();
+    return snap.docs.map((d) => ({ ...(d.data() as Staff), id: d.id }));
+  });
 }
 
 export function toStaffPublic(staff: Staff): StaffPublic {
@@ -59,24 +65,36 @@ export function toStaffPublic(staff: Staff): StaffPublic {
 }
 
 export async function getShift(db: Db, shiftId: string): Promise<Shift> {
-  const snap = await db.collection(COL.shifts).doc(shiftId).get();
-  if (!snap.exists) throw notFound("Shift not found");
-  return { ...(snap.data() as Shift), id: snap.id };
+  const shift = (await listShifts(db)).find((s) => s.id === shiftId);
+  if (!shift) throw notFound("Shift not found");
+  return shift;
 }
 
 export async function listShifts(db: Db): Promise<Shift[]> {
-  const snap = await db.collection(COL.shifts).get();
-  return snap.docs.map((d) => ({ ...(d.data() as Shift), id: d.id }));
+  return cached(db, "shifts", async () => {
+    const snap = await db.collection(COL.shifts).get();
+    return snap.docs.map((d) => ({ ...(d.data() as Shift), id: d.id }));
+  });
+}
+
+/** Every site, active or not, including server-only fields such as the gate key. */
+export async function listAllGeofences(db: Db): Promise<Geofence[]> {
+  return cached(db, "geofences", async () => {
+    const snap = await db.collection(COL.geofences).get();
+    return snap.docs.map((d) => ({ ...(d.data() as Geofence), id: d.id }));
+  });
 }
 
 export async function getGeofencesFor(db: Db, staff: Pick<Staff, "geofenceIds">): Promise<Geofence[]> {
-  const snap = await db.collection(COL.geofences).get();
-  const all = snap.docs.map((d) => ({ ...(d.data() as Geofence), id: d.id })).filter((g) => g.active);
+  const all = (await listAllGeofences(db)).filter((g) => g.active);
   if (!staff.geofenceIds?.length) return all;
   return all.filter((g) => staff.geofenceIds.includes(g.id));
 }
 
 export async function getHolidaySet(db: Db, from: LocalDate, to: LocalDate): Promise<Set<string>> {
-  const snap = await db.collection(COL.holidays).where("date", ">=", from).where("date", "<=", to).get();
-  return new Set(snap.docs.map((d) => (d.data() as Holiday).date));
+  const all = await cached(db, "holidays", async () => {
+    const snap = await db.collection(COL.holidays).get();
+    return snap.docs.map((d) => (d.data() as Holiday).date);
+  });
+  return new Set(all.filter((date) => date >= from && date <= to));
 }

@@ -1,6 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { badRequest, forbidden, notFound } from "./errors";
-import { COL, type Db } from "./store";
+import { bumpCacheVersion } from "./cache";
+import { COL, listAllGeofences, type Db } from "./store";
 import { getTokenSecret, safeEqual } from "./tokens";
 import type { Geofence, Staff } from "./types";
 
@@ -66,6 +67,7 @@ export async function gateScreenKey(db: Db, siteId: string, regenerate: boolean)
   if (!key || regenerate) {
     key = randomBytes(18).toString("base64url");
     await ref.update({ gateKey: key });
+    await bumpCacheVersion(db);
   }
   return { key, siteName: String(snap.get("name") ?? "") };
 }
@@ -73,12 +75,13 @@ export async function gateScreenKey(db: Db, siteId: string, regenerate: boolean)
 /** The gate screen / station link carries the site's display key instead of a login. */
 export async function assertSiteKey(db: Db, siteId: string, key: string): Promise<Geofence> {
   if (!siteId || !key) throw badRequest("Site and key are required");
-  const snap = await db.collection(COL.geofences).doc(siteId).get();
-  if (!snap.exists) throw notFound("Site not found");
-  const stored = snap.get("gateKey") as string | undefined;
+  // Cached site list: a gate screen refreshing every 30 s costs no database reads.
+  const site = (await listAllGeofences(db)).find((g) => g.id === siteId);
+  if (!site) throw notFound("Site not found");
+  const stored = site.gateKey;
   if (!stored || !safeEqual(key, stored)) throw forbidden("This gate screen link is no longer valid. Open the new link from WareOps → Attendance → Setup.", "GATE_KEY_INVALID");
-  if (snap.get("active") === false) throw forbidden("This site is inactive.", "SITE_INACTIVE");
-  return { ...(snap.data() as Geofence), id: snap.id };
+  if (site.active === false) throw forbidden("This site is inactive.", "SITE_INACTIVE");
+  return site;
 }
 
 /** Current code for a gate screen. */

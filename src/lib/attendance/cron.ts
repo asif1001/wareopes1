@@ -16,6 +16,10 @@ export type CronJob = (typeof CRON_JOBS)[number];
  * Scheduled maintenance. Every job is idempotent, so running it late or twice
  * is harmless. Intended to be called every 15 minutes by Cloud Scheduler.
  */
+/** How often the reminder job's "last run" (shown in Staff app & reminders) is saved. */
+export const REMINDER_STATUS_EVERY_MS = 60 * 60 * 1000;
+let lastReminderStatusAt = 0;
+
 export async function runCron(db: Db, job: CronJob, now: Date, photoStore?: () => Promise<PhotoStore>) {
   const rules = await getRules(db);
   const result: Record<string, unknown> = {};
@@ -41,7 +45,11 @@ export async function runCron(db: Db, job: CronJob, now: Date, photoStore?: () =
     const reminders = await sendDueReminders(db, rules, now);
     result.reminders = reminders;
     // Shown on Attendance → Setup so an admin can see the outside scheduler is calling us.
-    await db.collection(COL.settings).doc(REMINDER_STATUS_DOC).set({ lastRunAt: now.toISOString(), ...reminders });
+    // Saved at most once an hour (or when something was sent), not on every 5-minute call.
+    if ((reminders.sent ?? 0) > 0 || now.getTime() - lastReminderStatusAt >= REMINDER_STATUS_EVERY_MS) {
+      await db.collection(COL.settings).doc(REMINDER_STATUS_DOC).set({ lastRunAt: now.toISOString(), ...reminders });
+      lastReminderStatusAt = now.getTime();
+    }
   }
   if (run("photo-retention") && photoStore) {
     result.photosDeleted = await purgeExpiredPhotos(db, await photoStore(), rules, now);

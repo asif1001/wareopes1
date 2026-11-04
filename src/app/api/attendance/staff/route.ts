@@ -21,7 +21,7 @@ export async function GET() {
     ]);
     const health = new Map(healthSnap.docs.map((d) => [d.id, d.data() as Partial<DeviceHealth>]));
     const scoped = scopeStaff(actor, staff);
-    const siteIssues = await siteIssuesByStaff(db, scoped, now);
+    const siteIssues = await siteIssuesByStaff(db, scoped, now, health);
     const items = scoped.map((s) => {
       const h = health.get(s.id) ?? null;
       const issues = s.active ? [...(siteIssues.get(s.id) ?? []), ...deviceIssues(h, rules, now)] : [];

@@ -159,9 +159,10 @@ export async function withEventDetails(db: Db, items: OvertimeRequest[]) {
   );
 }
 
-export async function listOvertime(db: Db, filter: { status?: OvertimeStatus; month?: string; staffId?: string }) {
+export async function listOvertime(db: Db, filter: { status?: OvertimeStatus; statusIn?: OvertimeStatus[]; month?: string; staffId?: string }) {
   let query: Query = db.collection(COL.overtime);
   if (filter.status) query = query.where("status", "==", filter.status);
+  else if (filter.statusIn?.length) query = query.where("status", "in", filter.statusIn);
   if (filter.month) query = query.where("month", "==", filter.month);
   if (filter.staffId) query = query.where("staffId", "==", filter.staffId);
   const snap = await query.get();
