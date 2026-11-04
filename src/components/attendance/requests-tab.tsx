@@ -8,7 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableBody, TableCell, TableHead, TableRow } from "@/components/ui/table";
+import { STICKY_TOOLBAR } from "./section-layout";
+import { ScrollTable, StickyHeader } from "./sticky-table";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { StaffRequest } from "@/lib/attendance/requests";
@@ -57,7 +59,7 @@ export function RequestsTab({ onChanged }: { onChanged?: () => void }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-2">
+      <div className={`flex flex-wrap items-end gap-2 ${STICKY_TOOLBAR}`}>
         <div>
           <div className="text-sm text-muted-foreground">Show</div>
           <Select value={filter} onValueChange={(v) => setFilter(v as Filter)}>
@@ -79,8 +81,8 @@ export function RequestsTab({ onChanged }: { onChanged?: () => void }) {
         </p>
       </div>
 
-      <Table>
-        <TableHeader>
+      <ScrollTable>
+        <StickyHeader surface="page">
           <TableRow>
             <TableHead>Staff</TableHead>
             <TableHead>Day</TableHead>
@@ -90,7 +92,7 @@ export function RequestsTab({ onChanged }: { onChanged?: () => void }) {
             <TableHead>Status</TableHead>
             <TableHead />
           </TableRow>
-        </TableHeader>
+        </StickyHeader>
         <TableBody>
           {items.length === 0 && (
             <TableRow>
@@ -130,7 +132,7 @@ export function RequestsTab({ onChanged }: { onChanged?: () => void }) {
             );
           })}
         </TableBody>
-      </Table>
+      </ScrollTable>
 
       <RequestDialog
         request={selected}

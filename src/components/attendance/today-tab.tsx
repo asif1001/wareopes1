@@ -6,7 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableBody, TableCell, TableHead, TableRow } from "@/components/ui/table";
+import { STICKY_TOOLBAR } from "./section-layout";
+import { ScrollTable, StickyHeader } from "./sticky-table";
 import { useToast } from "@/hooks/use-toast";
 import type { DailyExceptions, RosterRow } from "@/lib/attendance/exceptions";
 import { cn } from "@/lib/utils";
@@ -91,7 +93,7 @@ export function TodayTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-2">
+      <div className={`flex flex-wrap items-end gap-2 ${STICKY_TOOLBAR}`}>
         <div>
           <div className="text-sm text-muted-foreground">Date</div>
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-44" />
@@ -115,8 +117,8 @@ export function TodayTab() {
         <Legend className="bg-gray-300" label={`Not started / day off / leave (${counts.off})`} />
       </div>
 
-      <Table>
-        <TableHeader>
+      <ScrollTable>
+        <StickyHeader surface="page">
           <TableRow>
             <TableHead>Staff</TableHead>
             <TableHead>Contract company</TableHead>
@@ -127,7 +129,7 @@ export function TodayTab() {
             <TableHead>Status</TableHead>
             <TableHead>Problems</TableHead>
           </TableRow>
-        </TableHeader>
+        </StickyHeader>
         <TableBody>
           {visible.length === 0 && (
             <TableRow>
@@ -180,7 +182,7 @@ export function TodayTab() {
             );
           })}
         </TableBody>
-      </Table>
+      </ScrollTable>
 
       <DayReviewDialog staffId={review} date={review ? date : null} open={!!review} onOpenChange={(open) => !open && setReview(null)} onChanged={() => void load()} />
     </div>

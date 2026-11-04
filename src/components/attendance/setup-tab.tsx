@@ -8,7 +8,8 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableBody, TableCell, TableHead, TableRow } from "@/components/ui/table";
+import { ScrollTable, StickyHeader } from "./sticky-table";
 import { useToast } from "@/hooks/use-toast";
 import type { Contractor, Geofence, Holiday, Shift } from "@/lib/attendance/types";
 import { api, errorMessage } from "./api";
@@ -56,7 +57,7 @@ function activeActions(entity: Entity, item: { id: string; name: string; active:
 
 function Toolbar({ search, onSearch, showInactive, onShowInactive, summary }: { search: string; onSearch: (v: string) => void; showInactive?: boolean; onShowInactive?: (v: boolean) => void; summary: string }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 border-b p-3">
+    <div className="sticky top-[var(--att-header-h,0px)] z-[15] flex flex-wrap items-center gap-3 rounded-t-lg border-b bg-card p-3">
       <div className="relative w-full max-w-xs">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input value={search} onChange={(e) => onSearch(e.target.value)} placeholder="Search…" className="pl-8" />
@@ -164,15 +165,15 @@ export function CompaniesSection() {
       />
       <Card>
         <Toolbar search={list.search} onSearch={list.setSearch} showInactive={list.showInactive} onShowInactive={list.setShowInactive} summary={list.summary} />
-        <Table>
-          <TableHeader>
+        <ScrollTable>
+          <StickyHeader>
             <TableRow>
               <TableHead>Company</TableHead>
               <TableHead>Staff</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-12" />
             </TableRow>
-          </TableHeader>
+          </StickyHeader>
           <TableBody>
             {!list.rows.length && <EmptyRow colSpan={4}>No contract companies.</EmptyRow>}
             {list.rows.map((c) => (
@@ -188,7 +189,7 @@ export function CompaniesSection() {
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ScrollTable>
       </Card>
       <FormDialog
         open={!!editing}
@@ -267,8 +268,8 @@ export function ShiftsSection() {
       />
       <Card>
         <Toolbar search={list.search} onSearch={list.setSearch} showInactive={list.showInactive} onShowInactive={list.setShowInactive} summary={list.summary} />
-        <Table>
-          <TableHeader>
+        <ScrollTable>
+          <StickyHeader>
             <TableRow>
               <TableHead>Shift</TableHead>
               <TableHead>Hours</TableHead>
@@ -278,7 +279,7 @@ export function ShiftsSection() {
               <TableHead>Status</TableHead>
               <TableHead className="w-12" />
             </TableRow>
-          </TableHeader>
+          </StickyHeader>
           <TableBody>
             {!list.rows.length && <EmptyRow colSpan={7}>No shifts.</EmptyRow>}
             {list.rows.map((s) => (
@@ -301,7 +302,7 @@ export function ShiftsSection() {
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ScrollTable>
       </Card>
       <FormDialog
         open={!!editing}
@@ -400,8 +401,8 @@ export function SitesSection() {
       />
       <Card>
         <Toolbar search={list.search} onSearch={list.setSearch} showInactive={list.showInactive} onShowInactive={list.setShowInactive} summary={list.summary} />
-        <Table>
-          <TableHeader>
+        <ScrollTable>
+          <StickyHeader>
             <TableRow>
               <TableHead>Site</TableHead>
               <TableHead>Location</TableHead>
@@ -411,7 +412,7 @@ export function SitesSection() {
               <TableHead className="text-right">Gate screen</TableHead>
               <TableHead className="w-12" />
             </TableRow>
-          </TableHeader>
+          </StickyHeader>
           <TableBody>
             {!list.rows.length && <EmptyRow colSpan={7}>No work sites.</EmptyRow>}
             {list.rows.map((g) => (
@@ -434,7 +435,7 @@ export function SitesSection() {
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ScrollTable>
       </Card>
       <FormDialog
         open={!!editing}
@@ -509,7 +510,7 @@ export function HolidaysSection() {
         }
       />
       <Card>
-        <div className="flex flex-wrap items-center gap-3 border-b p-3">
+        <div className="sticky top-[var(--att-header-h,0px)] z-[15] flex flex-wrap items-center gap-3 rounded-t-lg border-b bg-card p-3">
           <div className="relative w-full max-w-xs">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className="pl-8" />
@@ -519,15 +520,15 @@ export function HolidaysSection() {
           </div>
           <span className="ml-auto text-xs text-muted-foreground">{rows.length} in {year}</span>
         </div>
-        <Table>
-          <TableHeader>
+        <ScrollTable>
+          <StickyHeader>
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Holiday</TableHead>
               <TableHead>Type</TableHead>
               <TableHead className="w-12" />
             </TableRow>
-          </TableHeader>
+          </StickyHeader>
           <TableBody>
             {!rows.length && <EmptyRow colSpan={4}>No holidays in {year}.</EmptyRow>}
             {rows.map((h) => (
@@ -554,7 +555,7 @@ export function HolidaysSection() {
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ScrollTable>
       </Card>
       <FormDialog open={adding} title="Add holiday" onClose={() => setAdding(false)} onSave={() => void save()} valid={!!form.date && !!form.name.trim()} saving={saving}>
         <Field label="Date">

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
+import { useEffect, useRef, type ComponentType, type ReactNode } from "react";
 import { MoreHorizontal, Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -78,10 +78,28 @@ export function SectionLayout({ sections, active, onChange, children }: { sectio
   );
 }
 
-/** Page title of the selected section, with its main actions on the right. */
+/**
+ * Page title of the selected section, with its main actions on the right. It stays fixed at
+ * the top while the page scrolls and publishes its height as --att-header-h, so filter bars
+ * (STICKY_TOOLBAR) can stay fixed just below it.
+ */
 export function SectionHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    const scroller = el?.closest("main");
+    if (!el || !scroller) return;
+    const update = () => scroller.style.setProperty("--att-header-h", `${el.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   return (
-    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b pb-4">
+    <div
+      ref={ref}
+      className="sticky top-0 z-20 -mx-4 mb-4 flex flex-wrap items-start justify-between gap-3 border-b bg-background px-4 pb-4 pt-4 lg:-mx-6 lg:px-6 lg:pt-6"
+    >
       <div className="min-w-0">
         <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
         {description && <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>}
@@ -90,6 +108,9 @@ export function SectionHeader({ title, description, actions }: { title: string; 
     </div>
   );
 }
+
+/** Filter / action bar directly under the page heading: stays fixed below it while scrolling. */
+export const STICKY_TOOLBAR = "sticky top-[var(--att-header-h,0px)] z-[15] -mx-1 bg-background px-1 py-2";
 
 /** Title, description, counts and the toolbar above a list. */
 export function ListHeader({

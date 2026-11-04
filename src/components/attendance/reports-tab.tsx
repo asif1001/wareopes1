@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableBody, TableCell, TableHead, TableRow } from "@/components/ui/table";
+import { STICKY_TOOLBAR } from "./section-layout";
+import { ScrollTable, StickyHeader } from "./sticky-table";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { MonthReport, Mismatch } from "@/lib/attendance/report";
@@ -132,7 +134,7 @@ export function ReportsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-2">
+      <div className={`flex flex-wrap items-end gap-2 ${STICKY_TOOLBAR}`}>
         <div>
           <div className="text-sm text-muted-foreground">Month</div>
           <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-40" />
@@ -208,8 +210,8 @@ export function ReportsTab() {
           </CardHeader>
           {mismatches.length > 0 && (
             <CardContent>
-              <Table>
-                <TableHeader>
+              <ScrollTable maxHeight="28rem">
+                <StickyHeader>
                   <TableRow>
                     <TableHead>Staff</TableHead>
                     <TableHead>Date</TableHead>
@@ -217,7 +219,7 @@ export function ReportsTab() {
                     <TableHead>Contractor</TableHead>
                     <TableHead>Ours</TableHead>
                   </TableRow>
-                </TableHeader>
+                </StickyHeader>
                 <TableBody>
                   {mismatches.map((m, i) => (
                     <TableRow key={`${m.staffCode}-${m.date}-${m.kind}-${i}`}>
@@ -233,7 +235,7 @@ export function ReportsTab() {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </ScrollTable>
             </CardContent>
           )}
         </Card>
@@ -247,8 +249,8 @@ export function ReportsTab() {
               <CardDescription>Only approved overtime is counted.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
+              <ScrollTable maxHeight="28rem">
+                <StickyHeader>
                   <TableRow>
                     <TableHead>Contractor</TableHead>
                     <TableHead>Staff</TableHead>
@@ -260,7 +262,7 @@ export function ReportsTab() {
                     <TableHead>OT Friday</TableHead>
                     <TableHead>OT holiday</TableHead>
                   </TableRow>
-                </TableHeader>
+                </StickyHeader>
                 <TableBody>
                   {report.contractors.map((c) => (
                     <TableRow key={c.contractorId}>
@@ -276,7 +278,7 @@ export function ReportsTab() {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </ScrollTable>
             </CardContent>
           </Card>
 
@@ -285,8 +287,8 @@ export function ReportsTab() {
               <CardTitle className="text-base">Per staff</CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
+              <ScrollTable maxHeight="28rem">
+                <StickyHeader>
                   <TableRow>
                     <TableHead>Staff</TableHead>
                     <TableHead>Present</TableHead>
@@ -298,7 +300,7 @@ export function ReportsTab() {
                     <TableHead>OT h (W / F / H)</TableHead>
                     <TableHead>Exceptions</TableHead>
                   </TableRow>
-                </TableHeader>
+                </StickyHeader>
                 <TableBody>
                   {report.staff.map((r) => (
                     <TableRow key={r.staffId}>
@@ -330,7 +332,7 @@ export function ReportsTab() {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </ScrollTable>
             </CardContent>
           </Card>
         </>

@@ -26,9 +26,11 @@ export function AttendanceLayoutClient({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const section = ATTENDANCE_SECTIONS.find((s) => s.key === sectionFromPath(pathname));
   return (
-    <div className="flex h-full flex-col">
+    // Exactly the screen height, so this area (not the window) scrolls and the page heading and
+    // filter bars can stay fixed at its top.
+    <div className="flex h-svh flex-col">
       <DashboardHeader title={section && section.key !== "overview" ? `Attendance · ${section.label}` : "Attendance"} />
-      <main className="flex-1 overflow-auto p-4 lg:p-6">
+      <main className="min-h-0 flex-1 overflow-auto px-4 pb-4 lg:px-6 lg:pb-6">
         <AttendanceProvider>
           <AttendanceGate>{children}</AttendanceGate>
         </AttendanceProvider>
@@ -41,14 +43,14 @@ function AttendanceGate({ children }: { children: ReactNode }) {
   const { me, loading, error } = useAttendance();
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-muted-foreground">
+      <div className="flex items-center gap-2 pt-4 text-muted-foreground lg:pt-6">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading attendance…
       </div>
     );
   }
   if (error || !me) {
     return (
-      <Alert variant="destructive">
+      <Alert variant="destructive" className="mt-4 lg:mt-6">
         <AlertTitle>Attendance is not available</AlertTitle>
         <AlertDescription>{error ?? "You do not have access to this module."}</AlertDescription>
       </Alert>
@@ -109,7 +111,7 @@ export function AttendanceClientPage({ section }: { section: string }) {
   if (!def || !view) return null;
   if (!canOpenSection(def, me)) {
     return (
-      <Alert>
+      <Alert className="mt-4 lg:mt-6">
         <AlertTitle>{def.label}</AlertTitle>
         <AlertDescription>You do not have access to this page.</AlertDescription>
       </Alert>

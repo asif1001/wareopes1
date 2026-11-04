@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableBody, TableCell, TableHead, TableRow } from "@/components/ui/table";
+import { STICKY_TOOLBAR } from "./section-layout";
+import { ScrollTable, StickyHeader } from "./sticky-table";
 import { useToast } from "@/hooks/use-toast";
 import type { AttendanceDay } from "@/lib/attendance/types";
 import { api, errorMessage } from "./api";
@@ -48,7 +50,7 @@ export function RecordsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-2">
+      <div className={`flex flex-wrap items-end gap-2 ${STICKY_TOOLBAR}`}>
         <div>
           <div className="text-sm text-muted-foreground">Staff</div>
           <Select value={staffId} onValueChange={setStaffId}>
@@ -75,8 +77,8 @@ export function RecordsTab() {
         </div>
       </div>
 
-      <Table>
-        <TableHeader>
+      <ScrollTable>
+        <StickyHeader surface="page">
           <TableRow>
             <TableHead>Date</TableHead>
             <TableHead>Day</TableHead>
@@ -86,7 +88,7 @@ export function RecordsTab() {
             <TableHead>Hours</TableHead>
             <TableHead>Flags</TableHead>
           </TableRow>
-        </TableHeader>
+        </StickyHeader>
         <TableBody>
           {days.length === 0 && (
             <TableRow>
@@ -112,7 +114,7 @@ export function RecordsTab() {
             </TableRow>
           ))}
         </TableBody>
-      </Table>
+      </ScrollTable>
 
       <DayReviewDialog
         staffId={staffId || null}

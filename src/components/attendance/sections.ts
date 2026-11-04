@@ -23,7 +23,7 @@ export type AttendanceSection = {
   key: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
-  group: "Daily" | "Approvals" | "Records" | "People" | "Administration";
+  group: AttendanceGroup;
   access: SectionAccess;
   /** Which pending count to show next to it in the sidebar. */
   badge?: "overtime" | "requests";
@@ -36,8 +36,8 @@ export const ATTENDANCE_SECTIONS: AttendanceSection[] = [
   { key: "overview", label: "Overview", icon: LayoutDashboard, group: "Daily", access: "all" },
   { key: "today", label: "Today", icon: CalendarCheck, group: "Daily", access: "all" },
   { key: "gate", label: "Gate screens", icon: QrCode, group: "Daily", access: "all" },
-  { key: "overtime", label: "Overtime", icon: Timer, group: "Approvals", access: "all", badge: "overtime" },
-  { key: "requests", label: "Requests", icon: Inbox, group: "Approvals", access: "all", badge: "requests" },
+  { key: "overtime", label: "Overtime", icon: Timer, group: "Approval", access: "all", badge: "overtime" },
+  { key: "requests", label: "Requests", icon: Inbox, group: "Approval", access: "all", badge: "requests" },
   { key: "records", label: "Records", icon: ClipboardList, group: "Records", access: "all" },
   { key: "reports", label: "Month report", icon: FileSpreadsheet, group: "Records", access: "all" },
   { key: "staff", label: "Staff", icon: Users, group: "People", access: "all" },
@@ -49,7 +49,8 @@ export const ATTENDANCE_SECTIONS: AttendanceSection[] = [
   { key: "settings", label: "Rules & settings", icon: Settings2, group: "Administration", access: "all" },
 ];
 
-export const ATTENDANCE_GROUPS = ["Daily", "Approvals", "Records", "People", "Administration"] as const;
+export const ATTENDANCE_GROUPS = ["Daily", "Approval", "Records", "People", "Administration"] as const;
+export type AttendanceGroup = (typeof ATTENDANCE_GROUPS)[number];
 
 export type AttendanceAccess = { isAdmin: boolean; canAdd: boolean; canEdit: boolean };
 

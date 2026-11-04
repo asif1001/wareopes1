@@ -11,7 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableBody, TableCell, TableHead, TableRow } from "@/components/ui/table";
+import { ScrollTable, StickyHeader } from "./sticky-table";
 import { useToast } from "@/hooks/use-toast";
 import { api, errorMessage } from "./api";
 import { useAttendance, type StaffRow } from "./context";
@@ -147,7 +148,7 @@ export function StaffTab() {
   return (
     <div className="space-y-4">
       <Card>
-        <div className="flex flex-wrap items-center gap-2 border-b p-3">
+        <div className="sticky top-[var(--att-header-h,0px)] z-[15] flex flex-wrap items-center gap-2 rounded-t-lg border-b bg-card p-3">
           <div className="relative w-full max-w-xs">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search name, CPR, code, phone" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
@@ -210,8 +211,8 @@ export function StaffTab() {
           {me?.canAdd && (!contractors.length || !shifts.length) && <span>Add a contract company and a shift first (Administration).</span>}
         </div>
 
-        <Table>
-          <TableHeader>
+        <ScrollTable>
+          <StickyHeader>
             <TableRow>
               <TableHead>Staff</TableHead>
               <TableHead>Company</TableHead>
@@ -222,7 +223,7 @@ export function StaffTab() {
               <TableHead>Status</TableHead>
               <TableHead className="w-32" />
             </TableRow>
-          </TableHeader>
+          </StickyHeader>
           <TableBody>
             {!rows.length && <EmptyRow colSpan={8}>{filtered ? "No staff match these filters." : "No staff yet."}</EmptyRow>}
             {rows.map((s) => {
@@ -332,7 +333,7 @@ export function StaffTab() {
               );
             })}
           </TableBody>
-        </Table>
+        </ScrollTable>
       </Card>
 
       <StaffDialog
