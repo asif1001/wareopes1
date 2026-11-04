@@ -10,6 +10,8 @@ import type { AppPageKey } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEffect, useRef, useState } from "react";
+import { AttendanceNavItem, type AttendanceCounts } from "@/components/attendance-nav";
+import type { AttendanceAccess } from "@/components/attendance/sections";
 
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -121,6 +123,8 @@ export function DashboardNav() {
 
     // Attendance access also covers read-only report viewers, so it is decided by the API rather than role permissions.
     const [attendanceCount, setAttendanceCount] = useState<number | null>(null);
+    const [attendanceCounts, setAttendanceCounts] = useState<AttendanceCounts | null>(null);
+    const [attendanceMe, setAttendanceMe] = useState<AttendanceAccess | null>(null);
     useEffect(() => {
         let cancelled = false;
         fetch('/api/attendance/pending-count', { cache: 'no-store', credentials: 'same-origin' })
@@ -128,10 +132,22 @@ export function DashboardNav() {
                 if (cancelled) return;
                 const data = res.ok ? await res.json() : null;
                 setAttendanceCount(data?.success ? Number(data.count ?? 0) : null);
+                if (data?.success) setAttendanceCounts({ overtime: Number(data.overtime ?? 0), requests: Number(data.requests ?? 0) });
             })
             .catch(() => !cancelled && setAttendanceCount(null));
         return () => { cancelled = true; };
-    }, []);
+    }, [pathname]);
+    useEffect(() => {
+        if (attendanceCount === null || attendanceMe) return;
+        let cancelled = false;
+        fetch('/api/attendance/whoami', { cache: 'no-store', credentials: 'same-origin' })
+            .then(async (res) => {
+                const data = res.ok ? await res.json() : null;
+                if (!cancelled && data?.success) setAttendanceMe(data.me);
+            })
+            .catch(() => undefined);
+        return () => { cancelled = true; };
+    }, [attendanceCount, attendanceMe]);
 
     // Initial auto refresh on load, then a one-time refresh after 20s, and no further automatic refreshes
     useEffect(() => {
@@ -180,7 +196,9 @@ export function DashboardNav() {
             </div>
             <div className="flex-1 overflow-y-auto">
                 <SidebarMenu className="p-2">
-                    {filteredNavItems.map((item) => (
+                    {filteredNavItems.map((item) => item.href === "/dashboard/attendance" ? (
+                        <AttendanceNavItem key={item.href} counts={attendanceCounts} me={attendanceMe} />
+                    ) : (
                         <SidebarMenuItem key={item.href}>
                             <SidebarMenuButton 
                                 asChild
@@ -233,21 +251,6 @@ export function DashboardNav() {
                                                 <TooltipContent>
                                                     {expiringCount === null ? 'Error loading expiring count' : 'Due within 60 days'}
                                                 </TooltipContent>
-                                            </Tooltip>
-                                        )}
-                                        {item.href === "/dashboard/attendance" && (attendanceCount !== null && attendanceCount > 0) && (
-                                            <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                    <Badge
-                                                        variant="destructive"
-                                                        className="ml-1 px-1.5 py-0.5 text-[11px] rounded-sm"
-                                                        aria-label={`Overtime waiting for approval: ${attendanceCount}`}
-                                                        role="status"
-                                                    >
-                                                        {attendanceCount}
-                                                    </Badge>
-                                                </TooltipTrigger>
-                                                <TooltipContent>Overtime waiting for your approval</TooltipContent>
                                             </Tooltip>
                                         )}
                                         {item.href === "/dashboard/driver-license" && (licensesExpiringCount !== null && licensesExpiringCount > 0) && (
