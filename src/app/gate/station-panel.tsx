@@ -18,6 +18,35 @@ const RETRY_MS = 15_000;
 /** The same code read again by the camera within this time is ignored. */
 const SAME_CODE_MS = 8000;
 
+/** US-layout character for the physical key a scanner "pressed" (independent of the PC's keyboard language). */
+const US_KEYS: Record<string, [string, string]> = {
+  Period: [".", ">"],
+  Comma: [",", "<"],
+  Minus: ["-", "_"],
+  Equal: ["=", "+"],
+  Slash: ["/", "?"],
+  Backslash: ["\\", "|"],
+  Semicolon: [";", ":"],
+  Quote: ["'", '"'],
+  BracketLeft: ["[", "{"],
+  BracketRight: ["]", "}"],
+  Backquote: ["`", "~"],
+  Space: [" ", " "],
+  NumpadDecimal: [".", "."],
+  NumpadSubtract: ["-", "-"],
+};
+const SHIFT_DIGITS = ")!@#$%^&*(";
+
+function scannerChar(e: KeyboardEvent): string {
+  const code = e.code ?? "";
+  if (/^Key[A-Z]$/.test(code)) return e.shiftKey ? code.slice(3) : code.slice(3).toLowerCase();
+  if (/^Digit\d$/.test(code)) return e.shiftKey ? SHIFT_DIGITS[Number(code[5])] : code[5];
+  if (/^Numpad\d$/.test(code)) return code[6];
+  const mapped = US_KEYS[code];
+  if (mapped) return e.shiftKey ? mapped[1] : mapped[0];
+  return e.key && e.key.length === 1 ? e.key : "";
+}
+
 function beep(ok: boolean) {
   try {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -47,6 +76,8 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
   const [queued, setQueued] = useState(0);
   const [camera, setCamera] = useState<"off" | "user" | "environment">("off");
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [focused, setFocused] = useState(true);
+  const [reading, setReading] = useState(false);
   const video = useRef<HTMLVideoElement | null>(null);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recent = useRef(new Map<string, number>());
@@ -128,28 +159,70 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
     return () => clearInterval(timer);
   }, [post, readQueue, writeQueue]);
 
-  // USB / Bluetooth scanners type the code and press Enter.
+  // USB / Bluetooth scanners act as a keyboard: they type the code (usually followed by Enter).
+  // Characters are taken from the physical key (e.code), so an Arabic keyboard layout or
+  // Caps Lock on the gate PC cannot change what the scanner typed.
   useEffect(() => {
     let buffer = "";
     let last = 0;
+    let idle: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      const code = buffer.match(STAFF_CODE)?.[0];
+      buffer = "";
+      if (code) void submit(code);
+    };
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
       const now = Date.now();
       if (now - last > 1000) buffer = "";
       last = now;
-      if (e.key === "Enter") {
-        if (buffer.length > 8) void submit(buffer);
+      if (idle) clearTimeout(idle);
+      if (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") {
+        // Do not let the scanner's Enter press a focused button (Full screen, Use camera…).
+        if (buffer) e.preventDefault();
+        if (buffer.length > 8) {
+          if (STAFF_CODE.test(buffer)) flush();
+          else {
+            void submit(buffer);
+            buffer = "";
+          }
+        }
         buffer = "";
-      } else if (e.key.length === 1) {
-        buffer += e.key;
+        return;
       }
+      const ch = scannerChar(e);
+      if (!ch) return;
+      buffer += ch;
+      setReading(true);
+      // Scanners without an Enter suffix: submit once typing pauses and a whole code is there.
+      idle = setTimeout(() => {
+        setReading(false);
+        if (STAFF_CODE.test(buffer)) flush();
+      }, 250);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      if (idle) clearTimeout(idle);
+    };
   }, [submit]);
 
-  // Camera scanning.
+  // The scanner only reaches this page while its window has keyboard focus.
+  useEffect(() => {
+    const update = () => setFocused(document.hasFocus());
+    update();
+    window.addEventListener("focus", update);
+    window.addEventListener("blur", update);
+    const timer = setInterval(update, 2000);
+    return () => {
+      window.removeEventListener("focus", update);
+      window.removeEventListener("blur", update);
+      clearInterval(timer);
+    };
+  }, []);
+
+  // Camera scanning (BarcodeDetector where the browser has it, otherwise jsQR).
   useEffect(() => {
     if (camera === "off") return;
     let stream: MediaStream | null = null;
@@ -157,23 +230,41 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
     let stopped = false;
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const Detector = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => { detect(src: CanvasImageSource): Promise<{ rawValue: string }[]> } })
+      .BarcodeDetector;
+    const detector = Detector ? new Detector({ formats: ["qr_code"] }) : null;
+    let busy = false;
     setCameraError(null);
     (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: camera } }, audio: false });
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: camera }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false,
+        });
         if (stopped || !video.current) return;
         video.current.srcObject = stream;
         await video.current.play().catch(() => undefined);
-        timer = setInterval(() => {
+        timer = setInterval(async () => {
           const v = video.current;
-          if (!v || !ctx || v.readyState < 2 || !v.videoWidth) return;
-          const scale = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
-          canvas.width = Math.round(v.videoWidth * scale);
-          canvas.height = Math.round(v.videoHeight * scale);
-          ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-          const found = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: "attemptBoth" });
-          if (found?.data && STAFF_CODE.test(found.data)) void submit(found.data);
-        }, 300);
+          if (busy || !v || !ctx || v.readyState < 2 || !v.videoWidth) return;
+          busy = true;
+          try {
+            if (detector) {
+              const found = await detector.detect(v).catch(() => []);
+              const hit = found.map((f) => f.rawValue).find((t) => STAFF_CODE.test(t));
+              if (hit) void submit(hit);
+              return;
+            }
+            const scale = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
+            canvas.width = Math.round(v.videoWidth * scale);
+            canvas.height = Math.round(v.videoHeight * scale);
+            ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+            const found = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: "attemptBoth" });
+            if (found?.data && STAFF_CODE.test(found.data)) void submit(found.data);
+          } finally {
+            busy = false;
+          }
+        }, 250);
       } catch {
         setCameraError("Camera not available. Allow camera access for this page, or use a QR scanner.");
         setCamera("off");
@@ -185,7 +276,6 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
       stream?.getTracks().forEach((t) => t.stop());
     };
   }, [camera, submit]);
-
   const tone =
     result?.status === "ACCEPTED"
       ? "bg-emerald-500 text-white"
@@ -230,12 +320,26 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
           />
         )}
       </div>
+      {!focused && camera === "off" && (
+        <button
+          type="button"
+          onClick={() => window.focus()}
+          className="w-full animate-pulse rounded-2xl bg-amber-400 px-4 py-3 text-center text-lg font-semibold text-black"
+        >
+          Scanner not active — click anywhere on this screen
+        </button>
+      )}
       <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
-        <span className="rounded-full bg-white/10 px-3 py-1 text-white/80">Scanner ready</span>
+        <span className={`rounded-full px-3 py-1 ${!focused ? "bg-red-500 text-white" : reading ? "bg-emerald-500 text-white" : "bg-white/10 text-white/80"}`}>
+          {!focused ? "Scanner not active" : reading ? "Reading QR…" : "Scanner ready"}
+        </span>
         {queued > 0 && <span className="rounded-full bg-amber-400 px-3 py-1 font-medium text-black">{queued} scan(s) waiting to send</span>}
         <button
           type="button"
-          onClick={() => setCamera(camera === "off" ? "user" : "off")}
+          onClick={(e) => {
+            e.currentTarget.blur();
+            setCamera(camera === "off" ? "user" : "off");
+          }}
           className="rounded-full border border-white/30 px-3 py-1 text-white/80 hover:bg-white/10"
         >
           {camera === "off" ? "Use camera" : "Stop camera"}
@@ -243,7 +347,10 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
         {camera !== "off" && (
           <button
             type="button"
-            onClick={() => setCamera(camera === "user" ? "environment" : "user")}
+            onClick={(e) => {
+              e.currentTarget.blur();
+              setCamera(camera === "user" ? "environment" : "user");
+            }}
             className="rounded-full border border-white/30 px-3 py-1 text-white/80 hover:bg-white/10"
           >
             Switch camera

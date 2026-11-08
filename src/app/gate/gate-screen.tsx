@@ -143,7 +143,14 @@ export function GateScreen({ site, gateKey }: { site: string; gateKey: string })
 
       <footer className="flex w-full max-w-6xl flex-col items-center gap-2 text-center">
         {offline && !error && <div className="rounded-full bg-amber-500/90 px-4 py-1 text-sm font-medium text-black">Connection lost — reconnecting…</div>}
-        <button type="button" onClick={fullscreen} className="rounded-full border border-white/30 px-4 py-1.5 text-sm text-white/80 hover:bg-white/10">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.currentTarget.blur();
+            fullscreen();
+          }}
+          className="rounded-full border border-white/30 px-4 py-1.5 text-sm text-white/80 hover:bg-white/10"
+        >
           Full screen
         </button>
       </footer>
