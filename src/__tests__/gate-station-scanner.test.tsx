@@ -1,4 +1,4 @@
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StationPanel } from "@/app/gate/station-panel";
 
@@ -85,6 +85,28 @@ describe("gate station scanner input", () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(view.getByText(/The scanner sent “HELLO-WORLD-12345”/)).toBeTruthy();
+  });
+
+  it("says it is waiting until a scan has really arrived, then that the scanner works", async () => {
+    const view = render(<StationPanel site="site1" gateKey="key1" />);
+    expect(view.getByText(/Waiting for the scanner/)).toBeTruthy();
+    await act(async () => {
+      for (const e of scannerEvents(CODE, (ch) => ch)) window.dispatchEvent(e);
+      vi.advanceTimersByTime(400);
+    });
+    expect(view.getByText(/Scanner working · last read/)).toBeTruthy();
+  });
+
+  it("tests the scanner without recording anything", async () => {
+    const view = render(<StationPanel site="site1" gateKey="key1" />);
+    fireEvent.click(view.getByText("Test scanner"));
+    expect(view.getByText(/Test mode — scan any QR code now/)).toBeTruthy();
+    await act(async () => {
+      for (const e of scannerEvents(CODE, (ch) => ch)) window.dispatchEvent(e);
+      vi.advanceTimersByTime(400);
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(view.getByText(/Scanner works\. It read a staff QR code correctly/)).toBeTruthy();
   });
 
   it("shows a warning when the window does not have focus", async () => {

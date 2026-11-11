@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 
 type Result = {
-  status: "ACCEPTED" | "DUPLICATE" | "REJECTED" | "QUEUED";
+  status: "ACCEPTED" | "DUPLICATE" | "REJECTED" | "QUEUED" | "TEST";
   type?: "IN" | "OUT";
   at?: string;
   staff?: { name: string; staffCode: string; company: string };
@@ -82,6 +82,32 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
   const [focused, setFocused] = useState(true);
   const [reading, setReading] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  // A browser cannot see whether a USB / Bluetooth scanner is connected (it is just a keyboard),
+  // so the scanner counts as working only once a scan has actually arrived.
+  const [scannerSeenAt, setScannerSeenAt] = useState<number | null>(null);
+  const [testing, setTesting] = useState(false);
+  const testingRef = useRef(false);
+  const [, setTick] = useState(0);
+  const seenKey = `ekk.station.scannerSeen.${site}`;
+
+  useEffect(() => {
+    const saved = Number(localStorage.getItem(seenKey));
+    if (saved) setScannerSeenAt(saved);
+    const timer = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(timer);
+  }, [seenKey]);
+
+  const markScannerSeen = useCallback(() => {
+    const now = Date.now();
+    localStorage.setItem(seenKey, String(now));
+    setScannerSeenAt(now);
+  }, [seenKey]);
+
+  const startTest = () => {
+    testingRef.current = true;
+    setTesting(true);
+    window.focus();
+  };
   const video = useRef<HTMLVideoElement | null>(null);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recent = useRef(new Map<string, number>());
@@ -108,7 +134,7 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
       const when = new Date(r.at ?? Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       setHistory((h) => [{ key: Date.now(), time: when, name: r.staff!.name, type: r.type, note: r.status === "DUPLICATE" ? "already recorded" : r.note, status: r.status }, ...h].slice(0, 6));
     }
-    beep(r.status === "ACCEPTED" || r.status === "QUEUED");
+    beep(r.status === "ACCEPTED" || r.status === "QUEUED" || r.status === "TEST");
     if (clearTimer.current) clearTimeout(clearTimer.current);
     clearTimer.current = setTimeout(() => setResult(null), RESULT_MS);
   }, []);
@@ -187,7 +213,21 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
       const text = buffer;
       buffer = "";
       setReading(false);
+      if (text.length < 4) return;
+      markScannerSeen();
       const code = text.match(STAFF_CODE)?.[0];
+      if (testingRef.current) {
+        testingRef.current = false;
+        setTesting(false);
+        const shown = text.length > 28 ? `${text.slice(0, 28)}…` : text;
+        show({
+          status: code ? "TEST" : "REJECTED",
+          message: code
+            ? "Scanner works. It read a staff QR code correctly (test only — nothing was recorded)."
+            : `The scanner works but sent “${shown}”, which is not an EKK staff QR code. Set the scanner to keyboard mode with US English layout.`,
+        });
+        return;
+      }
       if (code) void submit(code);
       else if (text.length >= 10) unreadable(text);
     };
@@ -231,7 +271,7 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
       window.removeEventListener("keyup", onKeyUp, true);
       if (idle) clearTimeout(idle);
     };
-  }, [submit, show]);
+  }, [submit, show, markScannerSeen]);
 
   // The scanner only reaches this page while its window has keyboard focus.
   useEffect(() => {
@@ -302,7 +342,9 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
     };
   }, [camera, submit]);
   const tone =
-    result?.status === "ACCEPTED"
+    result?.status === "TEST"
+      ? "bg-sky-600 text-white"
+      : result?.status === "ACCEPTED"
       ? "bg-emerald-500 text-white"
       : result?.status === "REJECTED"
         ? "bg-red-600 text-white"
@@ -357,20 +399,48 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
           Scanner not active — click anywhere on this screen
         </button>
       )}
-      {(focused || camera !== "off") && (
-        <div
-          role="status"
-          className={`flex w-full items-center justify-center gap-3 rounded-2xl px-4 py-3 text-lg font-semibold text-white ${reading ? "bg-sky-500" : "bg-emerald-600"}`}
-        >
-          <span className="relative flex h-3.5 w-3.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
-            <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-white" />
-          </span>
-          {reading ? "Reading QR…" : camera !== "off" ? "Camera ready — show My QR to the camera" : "Scanner ready — scan My QR now"}
-        </div>
-      )}
+      {(focused || camera !== "off") && (() => {
+        const minutesAgo = scannerSeenAt ? Math.round((Date.now() - scannerSeenAt) / 60000) : null;
+        const working = camera !== "off" || (minutesAgo !== null && minutesAgo < 12 * 60);
+        const lastRead = scannerSeenAt ? new Date(scannerSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+        const [bg, text] = reading
+          ? ["bg-sky-500", "Reading QR…"]
+          : testing
+            ? ["bg-violet-600", "Test mode — scan any QR code now (nothing is recorded)"]
+            : camera !== "off"
+              ? ["bg-emerald-600", "Camera ready — show My QR to the camera"]
+              : working
+                ? ["bg-emerald-600", `Scanner working · last read ${lastRead}${minutesAgo ? ` (${minutesAgo < 60 ? `${minutesAgo} min` : `${Math.floor(minutesAgo / 60)} h`} ago)` : ""}`]
+                : ["bg-slate-500", "Waiting for the scanner — no scan received yet. Press “Test scanner” to check it."];
+        return (
+          <div role="status" className={`flex w-full items-center justify-center gap-3 rounded-2xl px-4 py-3 text-center text-lg font-semibold text-white ${bg}`}>
+            {(working || reading || testing) && (
+              <span className="relative flex h-3.5 w-3.5 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
+                <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-white" />
+              </span>
+            )}
+            {text}
+          </div>
+        );
+      })()}
       <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
         {queued > 0 && <span className="rounded-full bg-amber-400 px-3 py-1 font-medium text-black">{queued} scan(s) waiting to send</span>}
+        {camera === "off" && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              if (testing) {
+                testingRef.current = false;
+                setTesting(false);
+              } else startTest();
+            }}
+            className="rounded-full border border-white/30 px-3 py-1 text-white/80 hover:bg-white/10"
+          >
+            {testing ? "Cancel test" : "Test scanner"}
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) => {
