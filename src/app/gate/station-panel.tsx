@@ -357,10 +357,19 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
           Scanner not active — click anywhere on this screen
         </button>
       )}
+      {(focused || camera !== "off") && (
+        <div
+          role="status"
+          className={`flex w-full items-center justify-center gap-3 rounded-2xl px-4 py-3 text-lg font-semibold text-white ${reading ? "bg-sky-500" : "bg-emerald-600"}`}
+        >
+          <span className="relative flex h-3.5 w-3.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
+            <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-white" />
+          </span>
+          {reading ? "Reading QR…" : camera !== "off" ? "Camera ready — show My QR to the camera" : "Scanner ready — scan My QR now"}
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
-        <span className={`rounded-full px-3 py-1 ${!focused ? "bg-red-500 text-white" : reading ? "bg-emerald-500 text-white" : "bg-white/10 text-white/80"}`}>
-          {!focused ? "Scanner not active" : reading ? "Reading QR…" : "Scanner ready"}
-        </span>
         {queued > 0 && <span className="rounded-full bg-amber-400 px-3 py-1 font-medium text-black">{queued} scan(s) waiting to send</span>}
         <button
           type="button"
