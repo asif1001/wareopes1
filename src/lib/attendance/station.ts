@@ -2,9 +2,10 @@ import { z } from "zod";
 import { badRequest } from "./errors";
 import { assertSiteKey, parseBadgeCode, verifyBadge } from "./gate";
 import { ingestEvents } from "./ingest";
-import { attendanceDateFor } from "./rules";
-import { COL, dayId, getRules, getShift, type Db } from "./store";
-import type { AttendanceDay, Geofence, Staff } from "./types";
+import type { AttendanceRules } from "./config";
+import { attendanceDateFor, dayTypeOf, shiftWindows } from "./rules";
+import { COL, dayId, getHolidaySet, getRules, getShift, type Db } from "./store";
+import type { AttendanceDay, Geofence, Shift, Staff } from "./types";
 
 /**
  * Gate station: a PC or tablet at the site gate reads the staff member's own QR ("My QR"
@@ -29,7 +30,32 @@ export type StationResult = {
   at?: string;
   staff?: { name: string; staffCode: string; company: string };
   message: string;
+  /** e.g. "On time", "Late by 12 min", "Left early", "Overtime 1 h 30 min". */
+  note?: string;
+  noteTone?: "ok" | "warn";
 };
+
+const duration = (ms: number) => {
+  const min = Math.max(0, Math.round(ms / 60000));
+  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ""}`;
+};
+
+/** How the scan compares with the shift, for the gate screen. */
+function punctuality(type: "IN" | "OUT", at: Date, date: string, shift: Shift, rules: AttendanceRules, holidays: ReadonlySet<string>) {
+  const dayType = dayTypeOf(date, rules, holidays);
+  if (dayType !== "WORKDAY") return { note: dayType === "HOLIDAY" ? "Holiday — counted as overtime" : "Day off — counted as overtime", noteTone: "ok" as const };
+  const w = shiftWindows(date, shift, rules);
+  const t = at.getTime();
+  if (type === "IN") {
+    const lateFrom = rules.lateThreshold === "AFTER_START" ? w.start : w.inClose;
+    return t > lateFrom.getTime()
+      ? { note: `Late by ${duration(t - w.start.getTime())}`, noteTone: "warn" as const }
+      : { note: "On time", noteTone: "ok" as const };
+  }
+  if (t < w.outOpen.getTime()) return { note: `Left early — shift ends ${time(w.end, rules.timezone)}`, noteTone: "warn" as const };
+  if (t > w.otAllowedFrom.getTime()) return { note: `Overtime ${duration(t - w.otAllowedFrom.getTime())}`, noteTone: "ok" as const };
+  return { note: "Shift complete", noteTone: "ok" as const };
+}
 
 /** A second scan this soon after the last IN / OUT is ignored (staff scanning twice). */
 export const STATION_REPEAT_MS = 2 * 60 * 1000;
@@ -111,12 +137,14 @@ async function recordOne(db: Db, site: Geofence, code: string, at: Date, now: Da
   );
   if (result.status === "REJECTED") return refuse(result.message ?? "Not recorded.");
   if (result.status === "DUPLICATE") return { status: "DUPLICATE", type, at: at.toISOString(), staff: who, message: "Already recorded." };
+  const holidays = await getHolidaySet(db, date, date);
   return {
     status: "ACCEPTED",
     type,
     at: at.toISOString(),
     staff: who,
     message: `${type === "IN" ? "Checked in" : "Checked out"} at ${time(at, rules.timezone)}`,
+    ...punctuality(type, at, date, shift, rules, holidays),
   };
 }
 

@@ -61,6 +61,32 @@ describe("gate station scanner input", () => {
     expect(sentCode()).toBe(CODE);
   });
 
+  it("reads scanners that type every character as an Alt + number-pad code", async () => {
+    render(<StationPanel site="site1" gateKey="key1" />);
+    await act(async () => {
+      for (const ch of CODE) {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Alt", code: "AltLeft", altKey: true, bubbles: true }));
+        for (const d of String(ch.charCodeAt(0))) {
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: d, code: `Numpad${d}`, altKey: true, bubbles: true }));
+        }
+        window.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", code: "AltLeft", bubbles: true }));
+      }
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sentCode()).toBe(CODE);
+  });
+
+  it("says what it received when the scanner sends something that is not a staff code", async () => {
+    const view = render(<StationPanel site="site1" gateKey="key1" />);
+    await act(async () => {
+      for (const e of scannerEvents("HELLO-WORLD-12345", (ch) => ch)) window.dispatchEvent(e);
+      vi.advanceTimersByTime(400);
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(view.getByText(/The scanner sent “HELLO-WORLD-12345”/)).toBeTruthy();
+  });
+
   it("shows a warning when the window does not have focus", async () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
     const view = render(<StationPanel site="site1" gateKey="key1" />);

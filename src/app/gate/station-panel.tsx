@@ -9,7 +9,10 @@ type Result = {
   at?: string;
   staff?: { name: string; staffCode: string; company: string };
   message: string;
+  note?: string;
+  noteTone?: "ok" | "warn";
 };
+type HistoryItem = { key: number; time: string; name: string; type?: "IN" | "OUT"; note?: string; status: Result["status"] };
 type QueuedScan = { code: string; scannedAt: string };
 
 const STAFF_CODE = /EKKB1\.[A-Za-z0-9_-]{4,64}\.\d{6,12}\.[A-Za-z0-9_-]{22}/;
@@ -78,6 +81,7 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [focused, setFocused] = useState(true);
   const [reading, setReading] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const video = useRef<HTMLVideoElement | null>(null);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recent = useRef(new Map<string, number>());
@@ -100,6 +104,10 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
 
   const show = useCallback((r: Result) => {
     setResult(r);
+    if (r.staff && (r.status === "ACCEPTED" || r.status === "DUPLICATE")) {
+      const when = new Date(r.at ?? Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setHistory((h) => [{ key: Date.now(), time: when, name: r.staff!.name, type: r.type, note: r.status === "DUPLICATE" ? "already recorded" : r.note, status: r.status }, ...h].slice(0, 6));
+    }
     beep(r.status === "ACCEPTED" || r.status === "QUEUED");
     if (clearTimer.current) clearTimeout(clearTimer.current);
     clearTimer.current = setTimeout(() => setResult(null), RESULT_MS);
@@ -165,11 +173,31 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
   useEffect(() => {
     let buffer = "";
     let last = 0;
+    let altDigits = "";
     let idle: ReturnType<typeof setTimeout> | null = null;
-    const flush = () => {
-      const code = buffer.match(STAFF_CODE)?.[0];
+    // Never silent: text that arrived but is not a staff code is shown with how to fix the scanner.
+    const unreadable = (text: string) => {
+      const shown = text.length > 28 ? `${text.slice(0, 28)}…` : text;
+      show({
+        status: "REJECTED",
+        message: `The scanner sent “${shown}” (${text.length} characters), which is not an EKK staff QR code. Set the scanner to keyboard mode with US English layout (not Alt codes or another language), then scan again.`,
+      });
+    };
+    const finish = () => {
+      const text = buffer;
       buffer = "";
+      setReading(false);
+      const code = text.match(STAFF_CODE)?.[0];
       if (code) void submit(code);
+      else if (text.length >= 10) unreadable(text);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      // Alt + number pad: some scanners type every character as its character code.
+      if (e.key === "Alt" && altDigits) {
+        const ch = String.fromCharCode(Number(altDigits));
+        altDigits = "";
+        if (ch >= " ") buffer += ch;
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -181,32 +209,29 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
       if (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") {
         // Do not let the scanner's Enter press a focused button (Full screen, Use camera…).
         if (buffer) e.preventDefault();
-        if (buffer.length > 8) {
-          if (STAFF_CODE.test(buffer)) flush();
-          else {
-            void submit(buffer);
-            buffer = "";
-          }
-        }
-        buffer = "";
+        finish();
         return;
       }
-      const ch = scannerChar(e);
-      if (!ch) return;
-      buffer += ch;
+      if (e.altKey && /^Numpad\d$/.test(e.code)) {
+        altDigits += e.code[6];
+        e.preventDefault();
+      } else {
+        const ch = scannerChar(e);
+        if (!ch) return;
+        buffer += ch;
+      }
       setReading(true);
-      // Scanners without an Enter suffix: submit once typing pauses and a whole code is there.
-      idle = setTimeout(() => {
-        setReading(false);
-        if (STAFF_CODE.test(buffer)) flush();
-      }, 250);
+      // Scanners without an Enter suffix: finish once typing pauses.
+      idle = setTimeout(finish, 300);
     };
     window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keyup", onKeyUp, true);
     return () => {
       window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keyup", onKeyUp, true);
       if (idle) clearTimeout(idle);
     };
-  }, [submit]);
+  }, [submit, show]);
 
   // The scanner only reaches this page while its window has keyboard focus.
   useEffect(() => {
@@ -301,6 +326,9 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
               <div className="mt-2 text-5xl font-extrabold tracking-wide sm:text-6xl">{result.type === "IN" ? "IN" : "OUT"}</div>
             )}
             <div className="text-xl font-medium sm:text-2xl">{result.message}</div>
+            {result.status === "ACCEPTED" && result.note && (
+              <div className={`mt-1 rounded-full px-5 py-1.5 text-xl font-semibold ${result.noteTone === "warn" ? "bg-amber-300 text-black" : "bg-white/25"}`}>{result.note}</div>
+            )}
           </>
         ) : camera !== "off" ? null : (
           <>
@@ -358,6 +386,19 @@ export function StationPanel({ site, gateKey }: { site: string; gateKey: string 
         )}
       </div>
       {cameraError && <div className="text-sm text-amber-300">{cameraError}</div>}
+      {history.length > 0 && (
+        <div className="w-full rounded-2xl bg-white/5 p-3 text-left text-sm">
+          <div className="mb-1 text-xs uppercase tracking-wider text-white/50">Last scans</div>
+          {history.map((h) => (
+            <div key={h.key} className="flex items-center gap-2 py-0.5 text-white/85">
+              <span className="w-12 tabular-nums text-white/60">{h.time}</span>
+              <span className="min-w-0 flex-1 truncate font-medium">{h.name}</span>
+              {h.type && <span className={`rounded px-1.5 text-xs font-bold ${h.type === "IN" ? "bg-emerald-500/80" : "bg-sky-500/80"}`}>{h.type}</span>}
+              {h.note && <span className="truncate text-xs text-white/60">{h.note}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

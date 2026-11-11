@@ -243,13 +243,20 @@ describe("gate station (staff shows My QR)", () => {
 
   it("records the first scan as IN and a later scan as OUT, showing who it was", async () => {
     const first = await scanAt(MONDAY, "06:58");
-    expect(first).toMatchObject({ status: "ACCEPTED", type: "IN", staff: { name: "Ali", company: "Acme Manpower" } });
+    expect(first).toMatchObject({ status: "ACCEPTED", type: "IN", staff: { name: "Ali", company: "Acme Manpower" }, note: "On time", noteTone: "ok" });
     const out = await scanAt(MONDAY, "16:05");
-    expect(out).toMatchObject({ status: "ACCEPTED", type: "OUT" });
+    expect(out).toMatchObject({ status: "ACCEPTED", type: "OUT", note: "Shift complete" });
     const day = dayDoc(MONDAY)!;
     expect(day.status).toBe("PRESENT");
     expect(events().map((e) => e.source)).toEqual(["STATION", "STATION"]);
     expect(events()[0]).toMatchObject({ geofenceId: siteId, insideGeofence: true, trigger: "STATION_SCAN" });
+  });
+
+  it("tells late arrivals, early leavers and overtime at the gate", async () => {
+    expect(await scanAt(MONDAY, "07:40")).toMatchObject({ type: "IN", note: "Late by 40 min", noteTone: "warn" });
+    expect(await scanAt(MONDAY, "12:00")).toMatchObject({ type: "OUT", noteTone: "warn" });
+    expect((await scanAt(MONDAY, "12:00")).note ?? "").toBe("");
+    expect(await scanAt(MONDAY, "18:00")).toMatchObject({ type: "OUT", note: "Overtime 1 h 30 min" });
   });
 
   it("ignores a second scan within 2 minutes", async () => {
