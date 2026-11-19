@@ -1,9 +1,8 @@
 
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import {
-  File,
   ListFilter,
   Search,
 } from "lucide-react";
@@ -39,6 +38,7 @@ import { DashboardHeader } from "@/components/dashboard-header";
 import { ShipmentForm } from "@/components/shipment-form";
 import { format, differenceInDays, startOfDay } from "date-fns";
 import { ContainerBookingModal } from "@/components/container-booking-modal";
+import { ShipmentDetailModal } from "@/components/shipment-detail-modal";
 import { cn } from "@/lib/utils";
 import type { SerializableShipment, Source, ContainerSize, Branch } from "@/lib/types";
 
@@ -70,7 +70,21 @@ const getDateColorClass = (dateString: string | null, today: Date) => {
   return "";
 };
 
-function ShipmentTable({ shipments, sources, containerSizes, today, branches }: { shipments: SerializableShipment[], sources: any[], containerSizes: any[], today: Date, branches: Branch[] }) {
+function ShipmentTable({
+  shipments,
+  sources,
+  containerSizes,
+  today,
+  branches,
+  onSelect,
+}: {
+  shipments: SerializableShipment[];
+  sources: any[];
+  containerSizes: any[];
+  today: Date;
+  branches: Branch[];
+  onSelect: (shipment: SerializableShipment) => void;
+}) {
     if (shipments.length === 0) {
         return <div className="text-center p-8 text-muted-foreground">No shipments found.</div>
     }
@@ -90,7 +104,12 @@ function ShipmentTable({ shipments, sources, containerSizes, today, branches }: 
             </TableHeader>
             <TableBody>
                 {shipments.map((shipment) => (
-                    <TableRow key={shipment.id}>
+                    <TableRow
+                      key={shipment.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => onSelect(shipment)}
+                      data-testid={`shipment-row-${shipment.id}`}
+                    >
                         <TableCell className="font-medium">{shipment.invoice}</TableCell>
                         <TableCell>{shipment.billOfLading}</TableCell>
                         <TableCell>{shipment.source}</TableCell>
@@ -102,15 +121,20 @@ function ShipmentTable({ shipments, sources, containerSizes, today, branches }: 
                         <TableCell>
                             <Badge variant={shipment.cleared ? 'default' : 'secondary'}>{shipment.cleared ? 'Yes' : 'No'}</Badge>
                         </TableCell>
-                        <TableCell className="text-right flex items-center justify-end">
-                            <ContainerBookingModal shipment={shipment} />
-                            <ShipmentForm
-                                shipment={shipment}
-                                sources={sources}
-                                containerSizes={containerSizes}
-                                branches={branches}
-                                isEditMode={true}
-                            />
+                        <TableCell
+                          className="text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-end">
+                              <ContainerBookingModal shipment={shipment} />
+                              <ShipmentForm
+                                  shipment={shipment}
+                                  sources={sources}
+                                  containerSizes={containerSizes}
+                                  branches={branches}
+                                  isEditMode={true}
+                              />
+                            </div>
                         </TableCell>
                     </TableRow>
                 ))}
@@ -135,6 +159,7 @@ export function ShipmentsClientPage({
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [today] = useState(() => startOfDay(new Date()));
+  const [selectedShipment, setSelectedShipment] = useState<SerializableShipment | null>(null);
 
 
   const filteredShipments = useMemo(() => {
@@ -214,7 +239,14 @@ export function ShipmentsClientPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ShipmentTable shipments={filteredShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
+                <ShipmentTable
+                  shipments={filteredShipments}
+                  sources={sources}
+                  containerSizes={containerSizes}
+                  today={today}
+                  branches={branches}
+                  onSelect={setSelectedShipment}
+                />
               </CardContent>
             </Card>
           </TabsContent>
@@ -227,7 +259,14 @@ export function ShipmentsClientPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                 <ShipmentTable shipments={notClearedShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
+                 <ShipmentTable
+                   shipments={notClearedShipments}
+                   sources={sources}
+                   containerSizes={containerSizes}
+                   today={today}
+                   branches={branches}
+                   onSelect={setSelectedShipment}
+                 />
               </CardContent>
             </Card>
           </TabsContent>
@@ -240,7 +279,14 @@ export function ShipmentsClientPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                 <ShipmentTable shipments={wipShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
+                 <ShipmentTable
+                   shipments={wipShipments}
+                   sources={sources}
+                   containerSizes={containerSizes}
+                   today={today}
+                   branches={branches}
+                   onSelect={setSelectedShipment}
+                 />
               </CardContent>
             </Card>
           </TabsContent>
@@ -253,7 +299,14 @@ export function ShipmentsClientPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                 <ShipmentTable shipments={arrivedShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
+                 <ShipmentTable
+                   shipments={arrivedShipments}
+                   sources={sources}
+                   containerSizes={containerSizes}
+                   today={today}
+                   branches={branches}
+                   onSelect={setSelectedShipment}
+                 />
               </CardContent>
             </Card>
           </TabsContent>
@@ -266,11 +319,25 @@ export function ShipmentsClientPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                 <ShipmentTable shipments={completedShipments} sources={sources} containerSizes={containerSizes} today={today} branches={branches} />
+                 <ShipmentTable
+                   shipments={completedShipments}
+                   sources={sources}
+                   containerSizes={containerSizes}
+                   today={today}
+                   branches={branches}
+                   onSelect={setSelectedShipment}
+                 />
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
+        <ShipmentDetailModal
+          shipment={selectedShipment}
+          open={!!selectedShipment}
+          onOpenChange={(open) => {
+            if (!open) setSelectedShipment(null);
+          }}
+        />
       </main>
     </div>
   );
