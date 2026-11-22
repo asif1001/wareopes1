@@ -43,9 +43,10 @@ import { ShipmentDetailModal } from "@/components/shipment-detail-modal";
 import { cn } from "@/lib/utils";
 import type { SerializableShipment, Source, ContainerSize, Branch } from "@/lib/types";
 import {
-  buildProgressRows,
+  buildProgressSummary,
   exportProgressSummaryExcel,
   formatProgressDate,
+  type ProgressSummary,
   type ShipmentProgressRow,
 } from "@/lib/shipments/progress-summary";
 import { useToast } from "@/hooks/use-toast";
@@ -156,22 +157,66 @@ function pendingDaysClass(days: number | null): string {
   return "font-medium";
 }
 
+function statusBadgeVariant(status: ShipmentProgressRow["status"]): "default" | "secondary" | "outline" {
+  if (status === "Completed") return "default";
+  if (status === "WIP") return "outline";
+  return "secondary";
+}
+
+function ProgressRowCells({ row }: { row: ShipmentProgressRow }) {
+  return (
+    <>
+      <TableCell>
+        <div className="font-medium">{row.shipmentNo}</div>
+        <Badge variant={statusBadgeVariant(row.status)} className="mt-1">
+          {row.status}
+        </Badge>
+      </TableCell>
+      <TableCell>{row.source}</TableCell>
+      <TableCell className="text-right tabular-nums">{row.numContainers}</TableCell>
+      <TableCell>{formatProgressDate(row.arrivalDate)}</TableCell>
+      <TableCell>{formatProgressDate(row.startDate)}</TableCell>
+      <TableCell>{formatProgressDate(row.endDate)}</TableCell>
+      <TableCell className="text-right tabular-nums">{row.totalLines}</TableCell>
+      <TableCell className="text-right tabular-nums">{row.bulkLines}</TableCell>
+      <TableCell className="text-right tabular-nums">{row.domLines}</TableCell>
+      <TableCell className={cn("text-right tabular-nums", pendingDaysClass(row.pendingDays))}>
+        {row.pendingDays == null ? "—" : row.pendingDays}
+      </TableCell>
+    </>
+  );
+}
+
 function ProgressSummaryTable({
-  rows,
+  summary,
   onSelect,
   shipmentById,
 }: {
-  rows: ShipmentProgressRow[];
+  summary: ProgressSummary;
   onSelect: (shipment: SerializableShipment) => void;
   shipmentById: Map<string, SerializableShipment>;
 }) {
-  if (rows.length === 0) {
+  if (summary.rows.length === 0) {
     return (
       <div className="text-center p-8 text-muted-foreground">
-        No Arrived or WIP shipments to show.
+        No Arrived, WIP, or recent completed shipments to show.
       </div>
     );
   }
+
+  const renderRow = (row: ShipmentProgressRow) => (
+    <TableRow
+      key={row.id}
+      className="cursor-pointer hover:bg-muted/50"
+      onClick={() => {
+        const shipment = shipmentById.get(row.id);
+        if (shipment) onSelect(shipment);
+      }}
+      data-testid={`progress-row-${row.id}`}
+    >
+      <ProgressRowCells row={row} />
+    </TableRow>
+  );
 
   return (
     <div className="overflow-x-auto">
@@ -179,6 +224,7 @@ function ProgressSummaryTable({
         <TableHeader>
           <TableRow>
             <TableHead>Shipment No.</TableHead>
+            <TableHead>Source</TableHead>
             <TableHead className="text-right">Containers</TableHead>
             <TableHead>Arrival Date</TableHead>
             <TableHead>Start Date</TableHead>
@@ -190,34 +236,32 @@ function ProgressSummaryTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => (
-            <TableRow
-              key={row.id}
-              className="cursor-pointer hover:bg-muted/50"
-              onClick={() => {
-                const shipment = shipmentById.get(row.id);
-                if (shipment) onSelect(shipment);
-              }}
-              data-testid={`progress-row-${row.id}`}
-            >
-              <TableCell>
-                <div className="font-medium">{row.shipmentNo}</div>
-                <Badge variant={row.status === "WIP" ? "outline" : "secondary"} className="mt-1">
-                  {row.status}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-right tabular-nums">{row.numContainers}</TableCell>
-              <TableCell>{formatProgressDate(row.arrivalDate)}</TableCell>
-              <TableCell>{formatProgressDate(row.startDate)}</TableCell>
-              <TableCell>{formatProgressDate(row.endDate)}</TableCell>
-              <TableCell className="text-right tabular-nums">{row.totalLines}</TableCell>
-              <TableCell className="text-right tabular-nums">{row.bulkLines}</TableCell>
-              <TableCell className="text-right tabular-nums">{row.domLines}</TableCell>
-              <TableCell className={cn("text-right tabular-nums", pendingDaysClass(row.pendingDays))}>
-                {row.pendingDays == null ? "—" : row.pendingDays}
+          {summary.active.length > 0 ? (
+            summary.active.map(renderRow)
+          ) : (
+            <TableRow>
+              <TableCell colSpan={10} className="text-center text-muted-foreground">
+                No Arrived or WIP shipments right now.
               </TableCell>
             </TableRow>
-          ))}
+          )}
+          <TableRow className="hover:bg-transparent">
+            <TableCell
+              colSpan={10}
+              className="bg-muted/40 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            >
+              Last 5 completed shipments
+            </TableCell>
+          </TableRow>
+          {summary.recentCompleted.length > 0 ? (
+            summary.recentCompleted.map(renderRow)
+          ) : (
+            <TableRow>
+              <TableCell colSpan={10} className="text-center text-muted-foreground">
+                No completed shipments yet.
+              </TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
     </div>
@@ -263,8 +307,8 @@ export function ShipmentsClientPage({
   const wipShipments = filteredShipments.filter(s => s.status === 'WIP');
   const arrivedShipments = filteredShipments.filter(s => s.status === 'Arrived');
   const completedShipments = filteredShipments.filter(s => s.status === 'Completed');
-  const progressRows = useMemo(
-    () => buildProgressRows(filteredShipments, today),
+  const progressSummary = useMemo(
+    () => buildProgressSummary(filteredShipments, today),
     [filteredShipments, today],
   );
   const shipmentById = useMemo(
@@ -273,19 +317,19 @@ export function ShipmentsClientPage({
   );
 
   async function handleExportProgress() {
-    if (progressRows.length === 0) {
+    if (progressSummary.rows.length === 0) {
       toast({
         title: "Nothing to export",
-        description: "There are no Arrived or WIP shipments in this view.",
+        description: "There are no Arrived, WIP, or recent completed shipments in this view.",
       });
       return;
     }
     setExporting(true);
     try {
-      await exportProgressSummaryExcel(progressRows);
+      await exportProgressSummaryExcel(progressSummary);
       toast({
         title: "Excel ready",
-        description: `Exported ${progressRows.length} shipment${progressRows.length === 1 ? "" : "s"}.`,
+        description: `Exported ${progressSummary.rows.length} shipment${progressSummary.rows.length === 1 ? "" : "s"}.`,
       });
     } catch (error: any) {
       toast({
@@ -310,7 +354,7 @@ export function ShipmentsClientPage({
               <TabsTrigger value="wip">WIP ({wipShipments.length})</TabsTrigger>
               <TabsTrigger value="arrived">Arrived ({arrivedShipments.length})</TabsTrigger>
               <TabsTrigger value="completed">Completed ({completedShipments.length})</TabsTrigger>
-              <TabsTrigger value="progress">Progress ({progressRows.length})</TabsTrigger>
+              <TabsTrigger value="progress">Progress ({progressSummary.rows.length})</TabsTrigger>
             </TabsList>
             <div className="ml-auto flex items-center gap-3">
               <div className="relative">
@@ -454,9 +498,10 @@ export function ShipmentsClientPage({
                 <div className="space-y-1.5">
                   <CardTitle>Progress overview</CardTitle>
                   <CardDescription>
-                    Arrived and WIP shipments only. Arrival uses Actual Bahrain ETA
-                    (or Bahrain ETA). Start uses Actual Cleared Date (or W/H ETA).
-                    End uses Last Storage Date. Pending Days counts from arrival to today.
+                    Arrived and WIP shipments, plus the last 5 completed. Includes source.
+                    Arrival uses Actual Bahrain ETA (or Bahrain ETA). Start uses Actual
+                    Cleared Date (or W/H ETA). End uses Last Storage Date. Pending Days
+                    counts from arrival to today for open shipments.
                   </CardDescription>
                 </div>
                 <Button
@@ -464,7 +509,7 @@ export function ShipmentsClientPage({
                   variant="outline"
                   className="shrink-0 gap-2"
                   onClick={() => void handleExportProgress()}
-                  disabled={exporting || progressRows.length === 0}
+                  disabled={exporting || progressSummary.rows.length === 0}
                   data-testid="export-progress-excel"
                 >
                   <FileSpreadsheet className="h-4 w-4" />
@@ -473,7 +518,7 @@ export function ShipmentsClientPage({
               </CardHeader>
               <CardContent>
                 <ProgressSummaryTable
-                  rows={progressRows}
+                  summary={progressSummary}
                   onSelect={setSelectedShipment}
                   shipmentById={shipmentById}
                 />
