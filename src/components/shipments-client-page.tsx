@@ -3,6 +3,7 @@
 
 import { useState, useMemo } from "react";
 import {
+  FileSpreadsheet,
   ListFilter,
   Search,
 } from "lucide-react";
@@ -41,8 +42,13 @@ import { ContainerBookingModal } from "@/components/container-booking-modal";
 import { ShipmentDetailModal } from "@/components/shipment-detail-modal";
 import { cn } from "@/lib/utils";
 import type { SerializableShipment, Source, ContainerSize, Branch } from "@/lib/types";
-
-// Export option removed from toolbar
+import {
+  buildProgressRows,
+  exportProgressSummaryExcel,
+  formatProgressDate,
+  type ShipmentProgressRow,
+} from "@/lib/shipments/progress-summary";
+import { useToast } from "@/hooks/use-toast";
 
 const getDateColorClass = (dateString: string | null, today: Date) => {
   if (!dateString) {
@@ -143,6 +149,81 @@ function ShipmentTable({
     )
 }
 
+function pendingDaysClass(days: number | null): string {
+  if (days == null) return "text-muted-foreground";
+  if (days >= 14) return "text-red-600 font-semibold";
+  if (days >= 7) return "text-amber-600 font-semibold";
+  return "font-medium";
+}
+
+function ProgressSummaryTable({
+  rows,
+  onSelect,
+  shipmentById,
+}: {
+  rows: ShipmentProgressRow[];
+  onSelect: (shipment: SerializableShipment) => void;
+  shipmentById: Map<string, SerializableShipment>;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="text-center p-8 text-muted-foreground">
+        No Arrived or WIP shipments to show.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Shipment No.</TableHead>
+            <TableHead className="text-right">Containers</TableHead>
+            <TableHead>Arrival Date</TableHead>
+            <TableHead>Start Date</TableHead>
+            <TableHead>End Date</TableHead>
+            <TableHead className="text-right">Total Lines</TableHead>
+            <TableHead className="text-right">Bulk Lines</TableHead>
+            <TableHead className="text-right">DOM Lines</TableHead>
+            <TableHead className="text-right">Pending Days</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow
+              key={row.id}
+              className="cursor-pointer hover:bg-muted/50"
+              onClick={() => {
+                const shipment = shipmentById.get(row.id);
+                if (shipment) onSelect(shipment);
+              }}
+              data-testid={`progress-row-${row.id}`}
+            >
+              <TableCell>
+                <div className="font-medium">{row.shipmentNo}</div>
+                <Badge variant={row.status === "WIP" ? "outline" : "secondary"} className="mt-1">
+                  {row.status}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{row.numContainers}</TableCell>
+              <TableCell>{formatProgressDate(row.arrivalDate)}</TableCell>
+              <TableCell>{formatProgressDate(row.startDate)}</TableCell>
+              <TableCell>{formatProgressDate(row.endDate)}</TableCell>
+              <TableCell className="text-right tabular-nums">{row.totalLines}</TableCell>
+              <TableCell className="text-right tabular-nums">{row.bulkLines}</TableCell>
+              <TableCell className="text-right tabular-nums">{row.domLines}</TableCell>
+              <TableCell className={cn("text-right tabular-nums", pendingDaysClass(row.pendingDays))}>
+                {row.pendingDays == null ? "—" : row.pendingDays}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 export function ShipmentsClientPage({
     shipments,
     sources,
@@ -156,10 +237,12 @@ export function ShipmentsClientPage({
     branches: Branch[];
     label?: string;
 }) {
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [today] = useState(() => startOfDay(new Date()));
   const [selectedShipment, setSelectedShipment] = useState<SerializableShipment | null>(null);
+  const [exporting, setExporting] = useState(false);
 
 
   const filteredShipments = useMemo(() => {
@@ -180,6 +263,40 @@ export function ShipmentsClientPage({
   const wipShipments = filteredShipments.filter(s => s.status === 'WIP');
   const arrivedShipments = filteredShipments.filter(s => s.status === 'Arrived');
   const completedShipments = filteredShipments.filter(s => s.status === 'Completed');
+  const progressRows = useMemo(
+    () => buildProgressRows(filteredShipments, today),
+    [filteredShipments, today],
+  );
+  const shipmentById = useMemo(
+    () => new Map(shipments.map((shipment) => [shipment.id, shipment])),
+    [shipments],
+  );
+
+  async function handleExportProgress() {
+    if (progressRows.length === 0) {
+      toast({
+        title: "Nothing to export",
+        description: "There are no Arrived or WIP shipments in this view.",
+      });
+      return;
+    }
+    setExporting(true);
+    try {
+      await exportProgressSummaryExcel(progressRows);
+      toast({
+        title: "Excel ready",
+        description: `Exported ${progressRows.length} shipment${progressRows.length === 1 ? "" : "s"}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Export failed",
+        description: error?.message || "Could not create the Excel file.",
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -193,6 +310,7 @@ export function ShipmentsClientPage({
               <TabsTrigger value="wip">WIP ({wipShipments.length})</TabsTrigger>
               <TabsTrigger value="arrived">Arrived ({arrivedShipments.length})</TabsTrigger>
               <TabsTrigger value="completed">Completed ({completedShipments.length})</TabsTrigger>
+              <TabsTrigger value="progress">Progress ({progressRows.length})</TabsTrigger>
             </TabsList>
             <div className="ml-auto flex items-center gap-3">
               <div className="relative">
@@ -327,6 +445,38 @@ export function ShipmentsClientPage({
                    branches={branches}
                    onSelect={setSelectedShipment}
                  />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="progress">
+            <Card>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1.5">
+                  <CardTitle>Progress overview</CardTitle>
+                  <CardDescription>
+                    Arrived and WIP shipments only. Arrival uses Actual Bahrain ETA
+                    (or Bahrain ETA). Start uses Actual Cleared Date (or W/H ETA).
+                    End uses Last Storage Date. Pending Days counts from arrival to today.
+                  </CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0 gap-2"
+                  onClick={() => void handleExportProgress()}
+                  disabled={exporting || progressRows.length === 0}
+                  data-testid="export-progress-excel"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  {exporting ? "Exporting…" : "Export Excel"}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <ProgressSummaryTable
+                  rows={progressRows}
+                  onSelect={setSelectedShipment}
+                  shipmentById={shipmentById}
+                />
               </CardContent>
             </Card>
           </TabsContent>
